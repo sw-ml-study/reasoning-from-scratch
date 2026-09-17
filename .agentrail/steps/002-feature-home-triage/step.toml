@@ -1,9 +1,10 @@
 number = 2
 slug = "feature-home-triage"
-status = "in-progress"
+status = "completed"
 description = "Planning revision, no MLPL code: decide the home (sw-mlpl core, MLPL library ..."
 role = "meta"
 context_files = []
 created_at = "2026-09-16T17:45:09"
+completed_at = "2026-09-16T17:52:25"
 task_type = "planning"
-commits = []
+commits = ["6c59e2b8e0db2d301d4f79f47df49c9bd28dbeb8"]

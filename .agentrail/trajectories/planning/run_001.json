@@ -1,0 +1,11 @@
+{
+  "task_type": "planning",
+  "state": {
+    "number": 2,
+    "step": "feature-home-triage"
+  },
+  "action": "Read demo-extensions README, ABI design, extension manifests, and the http-client bounds; applied the home rule; edited docs with heredocs and perl; agentrail insert/begin/plan --update/complete.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-16T17:52:25"
+}
