@@ -79,8 +79,15 @@ expressions: 23 tests cover every rule in isolation plus composed cases.
 Upstream has since shipped scientific-notation literals (build 2a774891),
 which the probe suite caught and the ledger records.
 
+The verifier is complete. Exact-rational arithmetic and a bounded
+recursive-descent evaluator replace the symbolic algebra system the
+reference uses, and grading compares tuples part by part in order. Across
+44 tests plus an opt-in run over the real evaluation set, all 500 MATH-500
+reference answers grade correct against themselves with no false positives.
+
 Saga 1 (verifier and evaluation harness, no model needed) is active; its
-next step is `expression-equivalence`. Nothing yet generates text.
+next step is `evaluation-harness`, which closes it. Nothing yet generates
+text.
 
 ## Build and check
 
@@ -98,6 +105,7 @@ just sources    # no Python, nothing byte-identical to the reference clone
 just capabilities  # run the probes and compare with catalog/probes.tsv
 just upstream   # print upstream commits, interpreter build, extension and library signals
 just fetch-math500  # opt-in download of the evaluation set into ignored data/
+just math500-self-grade  # opt-in verifier check over all 500 reference answers
 just check      # the complete precommit gate
 ```
 

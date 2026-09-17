@@ -11,10 +11,11 @@ Measured against:
 
 ```text
 mlpl-repl 0.22.0
-Commit: 2a774891
+Commit: 3250cea9
 MLX feature: not compiled into this binary
-Previous pins: 1b4d29e5 (2026-09-16T11:08), 0dfa3eae (2026-09-16T20:00, shipped
-sqrt/sin/cos backward rules); 2a774891 shipped scientific-notation literals
+Previous pins on 2026-09-16: 1b4d29e5, then 0dfa3eae (sqrt, sin, cos backward
+rules), 2a774891 (scientific-notation literals), 8a1fe24a (pow with a constant
+integer exponent), 3250cea9 (lenient unknown string escapes)
 Machine: Apple M1 Max, 10 cores, 64 GB
 ```
 
@@ -33,7 +34,7 @@ workaround), **missing** (a step is blocked or must stop with an honest
 | Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
 | `sqrt` inside `grad` | supported since 0dfa3eae | `grad-sqrt`: gradient of `reduce_add(sqrt(w))` at `[1, 4, 9]` is `[0.5, 0.25, 0.1667]` | shipped upstream (RS1); the `exp(0.5 * log(x))` spelling remains as a cross-check |
-| `pow` inside `grad` | missing | `grad-pow`: "function 'pow' not supported inside grad()" | core (upstream in progress); multiply explicitly |
+| `pow` inside `grad` | supported since 8a1fe24a | `grad-pow`: gradient of `reduce_add(pow(w, 2))` at `[1, 2, 3]` is `[2, 4, 6]` | shipped upstream for constant integer exponents (RS1); a variable exponent still needs `exp(k * log(x))` |
 | `sin`, `cos` inside `grad` | supported since 0dfa3eae | `grad-sin-cos`: gradient of `sin(w) + cos(w)` matches `cos(w) - sin(w)` | shipped upstream (RS1) |
 | `softmax(a, axis)` inside `grad` | missing | `grad-softmax-axis`: eager axis form works (row sums 1), tape form "softmax expects 1 arguments, got 2" | core; `softmax-rowwise` proves the 1-argument form is row-wise on rank-2, which per-head `[T, T]` scores need |
 | rank-3 `matmul` | missing | `matmul-rank3`: "index has 3 components but array has rank 2" (message names the wrong problem) | core; loop over heads with rank-2 `matmul` |

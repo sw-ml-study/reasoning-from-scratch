@@ -29,13 +29,31 @@ documentation = "docs/verifier-contract.md"
 status = "accepted"
 
 [[component]]
+id = "VNUM"
+slug = "exact-rational-arithmetic"
+chapter = 3
+source = "lib/verify/number.mlpl"
+test = "tests/test_verify_expr.mlpl"
+documentation = "docs/verifier-contract.md"
+status = "accepted"
+
+[[component]]
+id = "VEXPR"
+slug = "expression-evaluator"
+chapter = 3
+source = "lib/verify/expr.mlpl"
+test = "tests/test_verify_expr.mlpl"
+documentation = "docs/verifier-contract.md"
+status = "accepted"
+
+[[component]]
 id = "VER"
-slug = "expression-equivalence"
+slug = "answer-grading"
 chapter = 3
 source = "lib/verify/grade.mlpl"
 test = "tests/test_verify_grade.mlpl"
 documentation = "docs/verifier-contract.md"
-status = "planned"
+status = "accepted"
 
 [[component]]
 id = "DATA"

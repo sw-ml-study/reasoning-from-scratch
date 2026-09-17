@@ -1,0 +1,118 @@
+# Answer grading: tuple splitting, part-wise equivalence, and the total grade function. Requires lib/text/text.mlpl, lib/verify/number.mlpl, lib/verify/expr.mlpl, and lib/verify/normalize.mlpl included first.
+
+def u:verify_bracket_depth(c, depth) {
+  "Depth after reading one character: opening brackets add, closing brackets subtract.";
+  depth + str_eq(c, "(") + str_eq(c, "[") + str_eq(c, "{") - str_eq(c, ")") - str_eq(c, "]") - str_eq(c, "}")
+}
+
+def u:verify_split_parts(text) {
+  "Split a bracketed comma-separated answer into trimmed parts; anything else, and any split that would leave an empty part, stays one part. An empty input has no parts.";
+  n = str_len(text);
+  if n {
+    first = u:text_char_at(text, 0);
+    last = u:text_char_at(text, n - 1);
+    opened = str_eq(first, "(") + str_eq(first, "[");
+    closed = str_eq(last, ")") + str_eq(last, "]");
+    if opened * closed {
+      joined = "";
+      piece = "";
+      depth = 0;
+      commas = 0;
+      empty = 0;
+      i = 1;
+      while lt(i, n - 1) {
+        c = u:text_char_at(text, i);
+        if str_eq(c, ",") * (1 - depth) {
+          trimmed = u:text_trim(piece);
+          if str_eq(trimmed, "") {
+            empty = 1
+          } else {
+            0
+          };
+          joined = if commas {
+            str_concat(joined, str_concat("\n", trimmed))
+          } else {
+            trimmed
+          };
+          commas = commas + 1;
+          piece = ""
+        } else {
+          depth = u:verify_bracket_depth(c, depth);
+          piece = str_concat(piece, c)
+        };
+        i = i + 1
+      };
+      trimmed = u:text_trim(piece);
+      if str_eq(trimmed, "") {
+        empty = 1
+      } else {
+        0
+      };
+      joined = if commas {
+        str_concat(joined, str_concat("\n", trimmed))
+      } else {
+        trimmed
+      };
+      if commas * (1 - empty) {
+        str_split(joined, "\n")
+      } else {
+        str_split(text, "\n")
+      }
+    } else {
+      str_split(text, "\n")
+    }
+  } else {
+    str_split("", "")
+  }
+}
+
+def u:verify_equivalent(left, right) {
+  "1 when two already-normalized parts are equal as numbers, or, when either fails to evaluate, as strings compared with every space removed. Symbolic rearrangement is deliberately not recognized.";
+  if str_eq(left, right) {
+    1
+  } else {
+    a = u:verify_parse(left);
+    b = u:verify_parse(right);
+    if is_ok(a) * is_ok(b) {
+      u:verify_equal_values(unwrap(a), unwrap(b))
+    } else {
+      str_eq(u:text_replace_all(left, " ", ""), u:text_replace_all(right, " ", ""))
+    }
+  }
+}
+
+def u:verify_grade(candidate, reference) {
+  "1 when the candidate answer matches the reference: both normalize, split into the same number of parts, and every aligned pair is equivalent in order. Total: an empty or unparsable side grades 0 rather than raising.";
+  if str_eq(candidate, "") + str_eq(reference, "") {
+    0
+  } else {
+    left = u:verify_split_parts(u:verify_normalize(candidate));
+    right = u:verify_split_parts(u:verify_normalize(reference));
+    count = list_len(left);
+    if count - list_len(right) {
+      0
+    } else {
+      if count {
+        matched = 1;
+        i = 0;
+        while lt(i, count) {
+          if u:verify_equivalent(unwrap(list_get(left, i)), unwrap(list_get(right, i))) {
+            0
+          } else {
+            matched = 0;
+            i = count
+          };
+          i = i + 1
+        };
+        matched
+      } else {
+        0
+      }
+    }
+  }
+}
+
+def u:verify_grade_response(response, reference, mode) {
+  "Extract the final answer from a model response using the given fallback mode, then grade it. This is the reward function used by evaluation and reinforcement learning.";
+  u:verify_grade(u:verify_final_candidate(response, mode), reference)
+}

@@ -1,0 +1,272 @@
+# Bounded recursive-descent parser and evaluator for normalized answers. Requires lib/text/text.mlpl and lib/verify/number.mlpl included first.
+
+def u:verify_expr_limit() {
+  "Longest input the parser accepts, in characters.";
+  2000
+}
+
+def u:verify_fail(kind, message) {
+  "A parse failure carrying its classification.";
+  {ok: 0, pos: 0, value: {num: 0, den: 1, exact: 1}, kind: kind, message: message}
+}
+
+def u:verify_step(pos, value) {
+  "A successful parse step: the value and the position just past it.";
+  {ok: 1, pos: pos, value: value, kind: "", message: ""}
+}
+
+def u:verify_skip(s, i) {
+  "Index of the first non-space character at or after i.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * u:text_is_space(u:text_char_at(s, j)) {
+    j = j + 1
+  };
+  j
+}
+
+def u:verify_digits_value(s, a, b) {
+  "Decimal value of the digits in [a, b).";
+  v = 0;
+  i = a;
+  while lt(i, b) {
+    v = v * 10 + unwrap(to_number(u:text_char_at(s, i)));
+    i = i + 1
+  };
+  v
+}
+
+def u:verify_scan_number(s, i) {
+  "Parse an unsigned number (digits, optional fraction, optional exponent) into an exact rational.";
+  n = str_len(s);
+  a = u:text_digits_end(s, i);
+  if a - i {
+    whole = u:verify_digits_value(s, i, a);
+    pos = a;
+    frac = {num: 0, den: 1, exact: 1};
+    if str_eq(u:text_char_at(s, pos), ".") {
+      b = u:text_digits_end(s, pos + 1);
+      frac = u:verify_rational(u:verify_digits_value(s, pos + 1, b), u:verify_pow_int({num: 10, den: 1, exact: 1}, b - pos - 1).num);
+      pos = b
+    } else {
+      0
+    };
+    value = u:verify_add(u:verify_rational(whole, 1), frac);
+    marker = u:text_char_at(s, pos);
+    if str_eq(marker, "e") + str_eq(marker, "E") {
+      k = pos + 1;
+      negative = str_eq(u:text_char_at(s, k), "-");
+      if negative + str_eq(u:text_char_at(s, k), "+") {
+        k = k + 1
+      } else {
+        0
+      };
+      if u:text_is_digit(u:text_char_at(s, k)) {
+        stop = u:text_digits_end(s, k);
+        scale = u:verify_pow_int({num: 10, den: 1, exact: 1}, u:verify_digits_value(s, k, stop));
+        value = if negative { u:verify_div(value, scale) } else { u:verify_mul(value, scale) };
+        pos = stop
+      } else {
+        0
+      }
+    } else {
+      0
+    };
+    u:verify_step(pos, value)
+  } else {
+    u:verify_fail("syntax", "expected a number")
+  }
+}
+
+def u:verify_scan_name(s, i) {
+  "Index just past a run of ASCII letters starting at i.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * u:text_is_letter(u:text_char_at(s, j)) {
+    j = j + 1
+  };
+  j
+}
+
+def u:verify_parse_primary(s, i) {
+  "Parse a number, a parenthesized expression, sqrt applied to one, or a known constant; an unknown name is a symbolic failure.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "") {
+    u:verify_fail("syntax", "unexpected end of input")
+  } else {
+    if str_eq(c, "(") {
+      inner = u:verify_parse_expr(s, pos + 1);
+      if inner.ok {
+        after = u:verify_skip(s, inner.pos);
+        if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, inner.value) } else { u:verify_fail("syntax", "missing closing parenthesis") }
+      } else {
+        inner
+      }
+    } else {
+      if u:text_is_digit(c) {
+        u:verify_scan_number(s, pos)
+      } else {
+        if u:text_is_letter(c) {
+          stop = u:verify_scan_name(s, pos);
+          name = str_slice(s, pos, stop - pos);
+          if str_eq(name, "sqrt") {
+            open = u:verify_skip(s, stop);
+            if str_eq(u:text_char_at(s, open), "(") {
+              inner = u:verify_parse_expr(s, open + 1);
+              if inner.ok {
+                after = u:verify_skip(s, inner.pos);
+                if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, u:verify_sqrt(inner.value)) } else { u:verify_fail("syntax", "missing closing parenthesis after sqrt") }
+              } else {
+                inner
+              }
+            } else {
+              u:verify_fail("syntax", "sqrt without an argument")
+            }
+          } else {
+            if str_eq(name, "pi") {
+              u:verify_step(stop, u:verify_float(pi()))
+            } else {
+              if str_eq(name, "e") { u:verify_step(stop, u:verify_float(e())) } else { u:verify_fail("symbolic", str_concat("free symbol: ", name)) }
+            }
+          }
+        } else {
+          u:verify_fail("syntax", str_concat("unexpected character: ", c))
+        }
+      }
+    }
+  }
+}
+
+def u:verify_parse_power(s, i) {
+  "Parse a primary optionally raised to a power; the exponent is right-associative and may carry a sign.";
+  base = u:verify_parse_primary(s, i);
+  if base.ok {
+    pos = u:verify_skip(s, base.pos);
+    if str_eq(u:text_char_at(s, pos), "*") * str_eq(u:text_char_at(s, pos + 1), "*") {
+      exponent = u:verify_parse_unary(s, pos + 2);
+      if exponent.ok { u:verify_step(exponent.pos, u:verify_pow(base.value, exponent.value)) } else {
+        exponent
+      }
+    } else {
+      base
+    }
+  } else {
+    base
+  }
+}
+
+def u:verify_parse_unary(s, i) {
+  "Parse an optionally signed power; a leading minus binds looser than exponentiation.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "-") {
+    inner = u:verify_parse_unary(s, pos + 1);
+    if inner.ok { u:verify_step(inner.pos, u:verify_neg(inner.value)) } else {
+      inner
+    }
+  } else {
+    if str_eq(c, "+") { u:verify_parse_unary(s, pos + 1) } else { u:verify_parse_power(s, i) }
+  }
+}
+
+def u:verify_starts_factor(c) {
+  "1 when c can begin a factor, which is what makes implicit multiplication unambiguous.";
+  u:text_is_digit(c) + u:text_is_letter(c) + str_eq(c, "(")
+}
+
+def u:verify_parse_term(s, i) {
+  "Parse a product: explicit star and slash operators plus implicit multiplication such as 2(3+4) or 3sqrt(2).";
+  left = u:verify_parse_unary(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      is_star = str_eq(c, "*") * (1 - str_eq(u:text_char_at(s, at + 1), "*"));
+      is_slash = str_eq(c, "/");
+      implicit = u:verify_starts_factor(c);
+      if is_star + is_slash + implicit {
+        start = if implicit {
+          at
+        } else {
+          at + 1
+        };
+        right = u:verify_parse_power(s, start);
+        if right.ok {
+          value = if is_slash { u:verify_div(value, right.value) } else { u:verify_mul(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_parse_expr(s, i) {
+  "Parse a sum of terms.";
+  left = u:verify_parse_term(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      if str_eq(c, "+") + str_eq(c, "-") {
+        right = u:verify_parse_term(s, at + 1);
+        if right.ok {
+          value = if str_eq(c, "+") { u:verify_add(value, right.value) } else { u:verify_sub(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_parse(text) {
+  "Evaluate a normalized answer to a numeric value: ok(value) or err({kind, message}) with kind budget, syntax, or symbolic.";
+  if gt(str_len(text), u:verify_expr_limit()) {
+    err({kind: "budget", message: "expression exceeds the character limit"})
+  } else {
+    trimmed = u:text_trim(text);
+    if str_eq(trimmed, "") {
+      err({kind: "syntax", message: "empty expression"})
+    } else {
+      parsed = u:verify_parse_expr(trimmed, 0);
+      if parsed.ok {
+        rest = u:verify_skip(trimmed, parsed.pos);
+        if rest - str_len(trimmed) {
+          err({kind: "syntax", message: "trailing characters"})
+        } else {
+          ok(parsed.value)
+        }
+      } else {
+        err({kind: parsed.kind, message: parsed.message})
+      }
+    }
+  }
+}

@@ -67,37 +67,44 @@ optional exponent. The *last* match wins.
 ## Equivalence
 
 1. If the two normalized strings are identical, they are equivalent.
-2. Otherwise both are parsed by the bounded expression evaluator. The
-   grammar covers integers, decimals, fractions, `+ - * /`, `**`, unary
-   minus, parentheses, `sqrt(...)`, `pi`, `e`, and implicit multiplication
-   between a number and a parenthesized group or identifier. Inputs longer
-   than 2,000 characters do not parse.
-3. Values are computed as exact rationals whenever every operation stays
-   rational (integer arithmetic within the f64 exact range, with
-   numerator/denominator pairs); `sqrt` of a non-square and `pi` fall back to
-   floating point. Two rational values are equivalent when equal; two
-   floating values are equivalent when their absolute difference is below
-   1e-9 relative to the larger magnitude, and never when either failed to
-   parse.
-4. Free symbols (`x`, `y`) make an expression non-numeric; two non-numeric
-   expressions are equivalent only when their normalized strings are equal.
+2. Otherwise both are parsed by the bounded expression evaluator
+   (`lib/verify/expr.mlpl`). The grammar covers integers, decimals with an
+   optional trailing point, fractions, `+ - * /`, `**`, unary signs,
+   parentheses, `sqrt(...)`, `pi`, `e`, and implicit multiplication between
+   a number and a parenthesized group or a call. Input longer than 2,000
+   characters does not parse.
+3. Values are exact rationals (`lib/verify/number.mlpl`) wherever every
+   operation stays rational, **including decimals**: `0.75` is the rational
+   three quarters, not a float. Exactness is lost only when a numerator or
+   denominator would exceed the exact-integer limit, or when the value comes
+   from `pi`, `e`, or the square root of a non-square. Two exact values are
+   equivalent when their cross-products are equal; otherwise they are
+   compared numerically within 1e-9 relative to the larger magnitude.
+4. A free symbol makes an expression non-numeric. Two non-numeric parts are
+   equivalent only when their normalized text matches once every space is
+   removed, so `x+1` matches `x + 1` but not `1+x`.
 
-## Known divergences from the reference implementation
+## Differences from the reference implementation
 
-The reference uses a general symbolic simplifier, so it also equates
-expressions such as `2x + 3x` and `5x`, and it treats a decimal against a
-fraction as exact rational comparison (so `0.3333333333` and `1/3` are *not*
-equal there). This contract:
+The reference uses a general symbolic algebra system. This implementation
+does not, and the difference is confined to one behavior:
 
-- does not simplify symbolic expressions (documented as unsupported; both
-  sides must normalize to the same string);
-- compares decimals to fractions numerically with the tolerance above,
-  which makes `0.3333333333` and `1/3` equivalent here. If a saga step needs
-  parity on this case, it must tighten the rule to exact rationals only and
-  record the change in the acceptance table.
+- **Symbolic rearrangement is not recognized.** The reference equates
+  `2x + 3x` with `5x`; this contract requires matching text. Every test in
+  `tests/test_verify_grade.mlpl` pins that choice.
 
-Every divergence must have a test that pins the behavior this repository
-chose, so a future change is visible.
+Everything else matches, including the case that motivated the original
+concern: because decimals are parsed as exact rationals rather than floats,
+`0.5` equals `1/2` and `0.3333333333` does **not** equal `1/3`, exactly as
+the reference behaves. An earlier draft of this contract predicted a
+floating-point tolerance divergence here; the implementation avoided it.
+
+## Evidence
+
+`just math500-self-grade` (opt-in, needs `just fetch-math500`) grades all
+500 MATH-500 reference answers against themselves and against a constant
+wrong answer. Measured on 2026-09-17 against interpreter build 3250cea9:
+500 of 500 self-matched, 0 false positives, 15.7 seconds.
 
 ## Acceptance cases
 

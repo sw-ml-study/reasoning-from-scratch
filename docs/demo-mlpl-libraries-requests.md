@@ -20,7 +20,22 @@ to become real, so the library agent can see what is coming.
   vendoring exercises the installer from a second consumer, which is
   evidence that repository wants.
 
-## L1. Text helpers (likely first)
+## L1. Text helpers — DELIVERED 2026-09-16, not yet consumed
+
+Shipped as `text` 0.1.0 in that repository's catalog, entry
+`lib/text/text.mlpl`, prefix `u:text_`.
+
+**Prefix collision to resolve before vendoring.** This repository's own
+`lib/text/text.mlpl` already owns `u:text_` locally with nineteen
+functions. Because `include` splices every file into one global namespace,
+vendoring the library means *replacing* the local module, not adding it. A
+future step must compare the two surfaces function by function, keep any
+local scanner the library lacks (the number-token recognizer and the
+control-token remover are specific to this work), and only then swap and
+delete the local copy. Until that comparison is done, this repository keeps
+its own module and the library stays unconsumed.
+
+### Original request
 
 - What: `trim`, `starts_with`, `ends_with`, `contains`, bounded
   `replace_all`, `pad_left`, `split_lines`, character-class tests (digit,

@@ -323,6 +323,12 @@ source. Do not create a duplicate `CLAUDE.md`.
   `probes/` with a declared expected result, the required semantics,
   acceptance cases, and the affected steps. Until it ships, use the
   documented workaround or stop with an honest "unavailable" result.
+- `include` resolves relative to the **including file**, and `--source-dir`
+  only bounds the sandbox, so a script under `demos/` cannot reach `lib/`.
+  Tests may include libraries because the test runner concatenates sources;
+  demos must run through `scripts/run-mlpl-demo`, which inlines each
+  `include` in order. Library modules therefore declare their dependencies
+  in the module comment instead of nesting includes.
 - Each `lib/<area>/` module owns a unique `u:<area>_` prefix and a matching
   `tests/test_<area>*.mlpl` suite. Update `catalog/components.toml` when a
   component changes status.

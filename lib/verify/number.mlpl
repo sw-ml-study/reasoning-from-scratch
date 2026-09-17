@@ -1,0 +1,155 @@
+# Exact-rational arithmetic with a floating fallback, so a decimal and a fraction compare exactly while roots and constants stay approximate.
+
+def u:verify_exact_limit() {
+  "Largest magnitude an exact numerator or denominator may reach before the value degrades to floating point.";
+  9007199254740992
+}
+
+def u:verify_gcd(a, b) {
+  "Greatest common divisor of two magnitudes, by Euclid.";
+  x = abs(a);
+  y = abs(b);
+  while y {
+    t = mod(x, y);
+    x = y;
+    y = t
+  };
+  x
+}
+
+def u:verify_float(v) {
+  "An inexact value carrying only its floating magnitude.";
+  {num: v, den: 1, exact: 0}
+}
+
+def u:verify_value(v) {
+  "The floating magnitude of an exact or inexact value.";
+  v.num / v.den
+}
+
+def u:verify_rational(n, d) {
+  "An exact rational reduced to lowest terms with the sign in the numerator; degrades to floating point on a zero denominator or once a part exceeds the exact-integer limit.";
+  if d {
+    sign = if lt(d, 0) {
+      0 - 1
+    } else {
+      1
+    };
+    g = u:verify_gcd(n, d);
+    if g {
+      num = sign * n / g;
+      den = sign * d / g;
+      if gt(abs(num), u:verify_exact_limit()) + gt(den, u:verify_exact_limit()) { u:verify_float(num / den) } else {
+        {num: num, den: den, exact: 1}
+      }
+    } else {
+      {num: 0, den: 1, exact: 1}
+    }
+  } else {
+    u:verify_float(n / d)
+  }
+}
+
+def u:verify_combine(a, b, n, d) {
+  "Build the result of a binary operation: exact when both operands are exact, floating otherwise.";
+  if a.exact * b.exact { u:verify_rational(n, d) } else { u:verify_float(n / d) }
+}
+
+def u:verify_add(a, b) {
+  "Sum of two values.";
+  u:verify_combine(a, b, a.num * b.den + b.num * a.den, a.den * b.den)
+}
+
+def u:verify_sub(a, b) {
+  "Difference of two values.";
+  u:verify_combine(a, b, a.num * b.den - b.num * a.den, a.den * b.den)
+}
+
+def u:verify_mul(a, b) {
+  "Product of two values.";
+  u:verify_combine(a, b, a.num * b.num, a.den * b.den)
+}
+
+def u:verify_div(a, b) {
+  "Quotient of two values; division by zero yields a floating infinity rather than an error.";
+  u:verify_combine(a, b, a.num * b.den, a.den * b.num)
+}
+
+def u:verify_neg(a) {
+  "Negation of a value.";
+  if a.exact {
+    {num: 0 - a.num, den: a.den, exact: 1}
+  } else { u:verify_float(0 - a.num) }
+}
+
+def u:verify_perfect_root(n) {
+  "Exact square root of a non-negative integer, or -1 when it is not a perfect square.";
+  if lt(n, 0) {
+    0 - 1
+  } else {
+    r = round(sqrt(n));
+    if r * r - n {
+      0 - 1
+    } else {
+      r
+    }
+  }
+}
+
+def u:verify_sqrt(a) {
+  "Square root: exact when both parts of an exact value are perfect squares, floating otherwise.";
+  if a.exact * (1 - lt(a.num, 0)) {
+    rn = u:verify_perfect_root(a.num);
+    rd = u:verify_perfect_root(a.den);
+    if gt(rn, 0 - 1) * gt(rd, 0 - 1) { u:verify_rational(rn, rd) } else { u:verify_float(sqrt(u:verify_value(a))) }
+  } else {
+    u:verify_float(sqrt(u:verify_value(a)))
+  }
+}
+
+def u:verify_pow_int(a, k) {
+  "Raise a value to a non-negative integer power by repeated multiplication.";
+  result = {num: 1, den: 1, exact: 1};
+  i = 0;
+  while i - k {
+    result = u:verify_mul(result, a);
+    i = i + 1
+  };
+  result
+}
+
+def u:verify_pow(a, b) {
+  "Exponentiation: exact for an exact base with an exact integer exponent, floating otherwise.";
+  whole = if b.exact {
+    if b.den - 1 {
+      0
+    } else {
+      1
+    }
+  } else {
+    0
+  };
+  if a.exact * whole {
+    if lt(b.num, 0) { u:verify_div({num: 1, den: 1, exact: 1}, u:verify_pow_int(a, 0 - b.num)) } else { u:verify_pow_int(a, b.num) }
+  } else {
+    u:verify_float(pow(u:verify_value(a), u:verify_value(b)))
+  }
+}
+
+def u:verify_equal_values(a, b) {
+  "1 when two values are equal: cross-multiplied exactly when both are exact and within the integer limit, else within a relative tolerance of 1e-9.";
+  both_exact = a.exact * b.exact;
+  cross_small = lt(abs(a.num * b.den), u:verify_exact_limit()) * lt(abs(b.num * a.den), u:verify_exact_limit());
+  if both_exact * cross_small {
+    if a.num * b.den - b.num * a.den {
+      0
+    } else {
+      1
+    }
+  } else {
+    x = u:verify_value(a);
+    y = u:verify_value(b);
+    scale = reduce(:max, [1, abs(x), abs(y)]);
+    1 - gt(abs(x - y), 0.000000001 * scale)
+  }
+}

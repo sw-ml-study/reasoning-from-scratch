@@ -1,0 +1,99 @@
+# Grading contract: tuple splitting, part-wise ordered equivalence, totality, and the response-grading reward function.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+
+def u:expect_grade(candidate, reference, expected, message) {
+  "Require a specific verdict from the grader.";
+  u:assert_eq(u:verify_grade(candidate, reference), expected, message)
+}
+
+@test {name: "tuples split on top-level commas only", tags: ["verify", "grade", "parts"]}
+def u:test_verify_grade_parts() {
+  "Bracketed comma lists split and trim; anything else, an empty part, or a nested comma keeps the whole string.";
+  u:assert_eq(list_len(u:verify_split_parts("(a, b)")), 2, "pair splits")?;
+  u:assert_text_eq(unwrap(list_get(u:verify_split_parts("( 1 ,  2 )"), 1)), "2", "parts are trimmed")?;
+  u:assert_eq(list_len(u:verify_split_parts("[x,y,z]")), 3, "bracketed triple")?;
+  u:assert_eq(list_len(u:verify_split_parts("hello")), 1, "plain text is one part")?;
+  u:assert_text_eq(unwrap(list_get(u:verify_split_parts("(a)"), 0)), "(a)", "no comma keeps the brackets")?;
+  u:assert_text_eq(unwrap(list_get(u:verify_split_parts("(a, )"), 0)), "(a, )", "an empty part keeps the whole string")?;
+  u:assert_eq(list_len(u:verify_split_parts("")), 0, "empty input has no parts")?;
+  u:assert_eq(list_len(u:verify_split_parts("((1,2),3)")), 2, "commas inside nested brackets do not split")
+}
+
+@test {name: "equivalent answers grade correct across notations", tags: ["verify", "grade"]}
+def u:test_verify_grade_equivalent() {
+  "Fractions, roots, products, degrees, separators, wrappers, and decimals that denote the same value.";
+  u:expect_grade("3/4", "\\frac{3}{4}", 1, "fraction notation")?;
+  u:expect_grade("(3)/(4)", "3/4", 1, "already normalized fraction")?;
+  u:expect_grade("\\frac{\\sqrt{8}}{2}", "sqrt(2)", 1, "root simplification")?;
+  u:expect_grade("\\( \\frac{1}{2} + \\frac{1}{6} \\)", "2/3", 1, "sum of fractions")?;
+  u:expect_grade("0.5", "1/2", 1, "decimal against fraction")?;
+  u:expect_grade("13/4.", "(13)/(4)", 1, "trailing decimal point")?;
+  u:expect_grade("1,234/2", "617", 1, "thousands separator")?;
+  u:expect_grade("\\text{2/3}", "2/3", 1, "text wrapper")?;
+  u:expect_grade("2\\cdot 3/4", "3/2", 1, "product notation")?;
+  u:expect_grade("90^\\circ", "90", 1, "degree marker")?;
+  u:expect_grade("\\left(\\frac{3}{4}\\right)", "3/4", 1, "sizing commands")?;
+  u:expect_grade("(1, 2)", "(1,2)", 1, "tuple spacing")?;
+  u:expect_grade("(1,2,3)", "(1,2,3)", 1, "triple")
+}
+
+@test {name: "different answers grade incorrect", tags: ["verify", "grade"]}
+def u:test_verify_grade_different() {
+  "Wrong values, reordered or mis-sized tuples, a dropped percent sign, and an approximation that is not exact.";
+  u:expect_grade("14/3", "15/3", 0, "different fractions")?;
+  u:expect_grade("(2, 1)", "(1, 2)", 0, "tuple order matters")?;
+  u:expect_grade("(1, 2, 3)", "(1, 2)", 0, "different part counts")?;
+  u:expect_grade("0.3333333333", "1/3", 0, "a truncated decimal is not one third")?;
+  u:expect_grade("50%", "1/2", 0, "the percent sign is dropped, leaving fifty")?;
+  u:expect_grade("\\boxed{123}", "2/3", 0, "unrelated answer")
+}
+
+@test {name: "symbolic answers compare by text without spaces", tags: ["verify", "grade", "symbolic"]}
+def u:test_verify_grade_symbolic() {
+  "Expressions with free symbols match only when their normalized text matches, ignoring spaces; rearrangement is not recognized.";
+  u:expect_grade("x+1", "x + 1", 1, "spacing ignored")?;
+  u:expect_grade("x+1", "1+x", 0, "rearrangement is not simplified")?;
+  u:expect_grade("2x", "2x", 1, "identical symbolic text")?;
+  u:expect_grade("x", "y", 0, "different symbols")
+}
+
+@test {name: "grading is total on empty and malformed input", tags: ["verify", "grade", "totality"]}
+def u:test_verify_grade_totality() {
+  "An empty candidate or reference, whitespace, and unparsable text grade zero instead of raising.";
+  u:expect_grade("", "1/2", 0, "empty candidate")?;
+  u:expect_grade("1/2", "", 0, "empty reference")?;
+  u:expect_grade("   ", "1/2", 0, "whitespace candidate")?;
+  u:expect_grade("((((", "1/2", 0, "unparsable candidate")?;
+  u:expect_grade("1/2", "((((", 0, "unparsable reference")
+}
+
+@test {name: "response grading applies the fallback mode", tags: ["verify", "grade", "reward"]}
+def u:test_verify_grade_response() {
+  "The reward function extracts then grades; boxed_only is the strict reinforcement-learning rule.";
+  u:assert_eq(u:verify_grade_response("so the answer is \\boxed{2/3}", "2/3", "boxed_only"), 1, "boxed and correct")?;
+  u:assert_eq(u:verify_grade_response("the answer is 2/3", "2/3", "boxed_only"), 0, "correct but unboxed earns nothing")?;
+  u:assert_eq(u:verify_grade_response("the answer is 2/3", "2/3", "number_then_full"), 1, "numeric fallback accepts it")?;
+  u:assert_eq(u:verify_grade_response("\\boxed{1/3}", "2/3", "boxed_only"), 0, "boxed and wrong")?;
+  u:assert_eq(u:verify_grade_response("", "2/3", "number_then_full"), 0, "empty response")
+}
+
+@test {name: "reference answers grade against themselves", tags: ["verify", "grade", "fixture"]}
+def u:test_verify_grade_self_consistency() {
+  "Every answer in the committed fixture grades correct against itself and wrong against a constant.";
+  answers = ["25", "\\frac{3}{4}", "6", "9\\pi", "6"];
+  i = 0;
+  while i - list_len(answers) {
+    answer = unwrap(list_get(answers, i));
+    u:assert_eq(u:verify_grade(answer, answer), 1, "self-consistent")?;
+    u:assert_eq(u:verify_grade("123456789", answer), 0, "constant wrong answer")?;
+    i = i + 1
+  };
+  ok(1)
+}
+
+u:run_registered_tests()

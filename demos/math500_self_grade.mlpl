@@ -1,0 +1,54 @@
+# Grade every MATH-500 reference answer against itself and against a constant wrong answer, as an independent check on the verifier over real data.
+include "lib/eval/data.mlpl";
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+
+def u:self_grade_report(dataset) {
+  "Count self-matches and false positives over every record, reporting the first few failures by index.";
+  total = u:eval_count(dataset);
+  matched = 0;
+  false_positive = 0;
+  reported = 0;
+  i = 0;
+  while lt(i, total) {
+    record = unwrap(u:eval_record(dataset, i));
+    answer = record.answer;
+    same = u:verify_grade(answer, answer);
+    matched = matched + same;
+    false_positive = false_positive + u:verify_grade("123456789", answer);
+    if same {
+      0
+    } else {
+      if lt(reported, 10) {
+        print("  self-grade failed at", i, ":", answer, "=>", u:verify_normalize(answer));
+        reported = reported + 1
+      } else {
+        0
+      }
+    };
+    i = i + 1
+  };
+  {total: total, matched: matched, false_positive: false_positive}
+}
+
+dataset = unwrap(u:eval_load_jsonl("data/math500/test.jsonl", {max_bytes: 4194304}))
+print("MATH-500 verifier self-consistency")
+print("  records:", u:eval_count(dataset))
+started = clock_ms()
+report = u:self_grade_report(dataset)
+print("  self-matched:", report.matched, "of", report.total)
+print("  false positives against a constant answer:", report.false_positive)
+print("  elapsed ms:", clock_ms() - started)
+if report.matched - report.total {
+  err("not every reference answer grades against itself")
+} else {
+  if report.false_positive {
+    err("a constant wrong answer graded correct")
+  } else {
+    ok(report.total)
+  }
+}

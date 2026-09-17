@@ -17,9 +17,10 @@ ledger, and removes the workaround where the plan allows.
 ## R1. Differentiable `sqrt`, `pow`, `rsqrt`
 
 - Probes: `grad-sqrt`, `grad-pow`.
-- Status: `sqrt` (and `sin`, `cos`, R5) shipped in upstream commit
-  0dfa3eae on 2026-09-16 and the probes flipped to pass; `pow` and
-  `rsqrt` remain open.
+- Status: `sqrt` (and `sin`, `cos`, R5) shipped in commit 0dfa3eae and
+  `pow` with a constant integer exponent in commit 8a1fe24a, both on
+  2026-09-16; both probes pass. Remaining: `rsqrt`, and `pow` with a
+  variable exponent (no probe yet, no consumer in the plan).
 - Before the fix: "function 'sqrt' not supported inside grad()".
 - Requested: backward rules `d sqrt(x) = 0.5 / sqrt(x)`, `d pow(x, n)` for
   a constant exponent, and an `rsqrt` builtin with `d rsqrt(x) = -0.5 *

@@ -1,0 +1,124 @@
+# Exact-rational arithmetic and the bounded expression evaluator: values, exactness, precedence, and classified failures.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+
+def u:expect_value(text, expected, message) {
+  "Parse text and require its magnitude to equal expected within 1e-12.";
+  parsed = u:verify_parse(text)?;
+  u:assert_approx(u:verify_value(parsed), expected, 0.000000000001, message)
+}
+
+@test {name: "rationals reduce carry sign and degrade past the integer limit", tags: ["verify", "number"]}
+def u:test_verify_number_rationals() {
+  "Construction reduces to lowest terms, moves the sign to the numerator, and falls back to floating point when a part grows too large.";
+  half = u:verify_rational(2, 4);
+  u:assert_eq(half.num, 1, "reduced numerator")?;
+  u:assert_eq(half.den, 2, "reduced denominator")?;
+  u:assert_eq(half.exact, 1, "exact")?;
+  negative = u:verify_rational(1, 0 - 2);
+  u:assert_eq(negative.num, 0 - 1, "sign moves to the numerator")?;
+  u:assert_eq(negative.den, 2, "denominator stays positive")?;
+  zero = u:verify_rational(0, 5);
+  u:assert_eq(zero.num, 0, "zero numerator")?;
+  u:assert_eq(zero.den, 1, "zero denominator normalized")?;
+  big = u:verify_rational(u:verify_exact_limit() * 4, 3);
+  u:assert_eq(big.exact, 0, "oversized parts degrade to floating point")
+}
+
+@test {name: "arithmetic stays exact and square roots degrade only when irrational", tags: ["verify", "number"]}
+def u:test_verify_number_arithmetic() {
+  "Sum, difference, product, quotient, power, and root over exact values.";
+  third = u:verify_rational(1, 3);
+  sixth = u:verify_rational(1, 6);
+  total = u:verify_add(third, sixth);
+  u:assert_eq(total.num, 1, "one third plus one sixth numerator")?;
+  u:assert_eq(total.den, 2, "one third plus one sixth denominator")?;
+  u:assert_eq(u:verify_sub(third, third).num, 0, "difference to zero")?;
+  u:assert_eq(u:verify_mul(third, u:verify_rational(3, 1)).num, 1, "product to one")?;
+  u:assert_eq(u:verify_div(third, third).num, 1, "quotient to one")?;
+  u:assert_eq(u:verify_pow(u:verify_rational(2, 1), u:verify_rational(10, 1)).num, 1024, "integer power")?;
+  u:assert_eq(u:verify_pow(u:verify_rational(2, 1), u:verify_rational(0 - 1, 1)).den, 2, "negative power inverts")?;
+  root = u:verify_sqrt(u:verify_rational(9, 4));
+  u:assert_eq(root.exact, 1, "perfect square stays exact")?;
+  u:assert_eq(root.num, 3, "perfect square numerator")?;
+  u:assert_eq(u:verify_sqrt(u:verify_rational(2, 1)).exact, 0, "irrational root degrades")?;
+  u:assert_eq(u:verify_neg(third).num, 0 - 1, "negation")
+}
+
+@test {name: "equality is exact for rationals and tolerant for approximations", tags: ["verify", "number"]}
+def u:test_verify_number_equality() {
+  "Exact values compare by cross-multiplication; approximate values compare within a relative tolerance.";
+  u:assert_eq(u:verify_equal_values(u:verify_rational(1, 2), u:verify_rational(2, 4)), 1, "equal rationals")?;
+  u:assert_eq(u:verify_equal_values(u:verify_rational(14, 3), u:verify_rational(15, 3)), 0, "unequal rationals")?;
+  u:assert_eq(u:verify_equal_values(u:verify_float(0.5), u:verify_rational(1, 2)), 1, "float against rational")?;
+  u:assert_eq(u:verify_equal_values(u:verify_float(2), u:verify_float(2.0000000000001)), 1, "within tolerance")?;
+  u:assert_eq(u:verify_equal_values(u:verify_float(2), u:verify_float(2.01)), 0, "outside tolerance")
+}
+
+@test {name: "numbers parse with fractions decimals and exponents", tags: ["verify", "expr", "numbers"]}
+def u:test_verify_expr_numbers() {
+  "Integers, decimals including a bare trailing point, and signed exponents; decimals stay exact rationals.";
+  u:expect_value("42", 42, "integer")?;
+  u:expect_value("0.75", 0.75, "decimal")?;
+  u:expect_value("4.", 4, "trailing point")?;
+  u:expect_value("2.5e+3", 2500, "positive exponent")?;
+  u:expect_value("25e-1", 2.5, "negative exponent")?;
+  decimal = u:verify_parse("0.75")?;
+  u:assert_eq(decimal.exact, 1, "a decimal is an exact rational")?;
+  u:assert_eq(decimal.num, 3, "three quarters numerator")?;
+  u:assert_eq(decimal.den, 4, "three quarters denominator")
+}
+
+@test {name: "operators respect precedence associativity and grouping", tags: ["verify", "expr", "grammar"]}
+def u:test_verify_expr_grammar() {
+  "Sums, products, exponents, unary signs, parentheses, and implicit multiplication.";
+  u:expect_value("2+3", 5, "sum")?;
+  u:expect_value("2+3*4", 14, "product binds tighter")?;
+  u:expect_value("(2+3)*4", 20, "parentheses override")?;
+  u:expect_value("14/3", 14 / 3, "quotient")?;
+  u:expect_value("1/2/2", 0.25, "division is left-associative")?;
+  u:expect_value("2**10", 1024, "exponent")?;
+  u:expect_value("2**3**2", 512, "exponent is right-associative")?;
+  u:expect_value("-2**2", 0 - 4, "unary minus binds looser than the exponent")?;
+  u:expect_value("2**-1", 0.5, "signed exponent")?;
+  u:expect_value("-(3-5)", 2, "unary minus over a group")?;
+  u:expect_value("2(3+4)", 14, "implicit multiplication before a group")?;
+  u:expect_value("3sqrt(4)", 6, "implicit multiplication before a call")?;
+  u:expect_value("2* 3/4", 1.5, "spaces around operators")
+}
+
+@test {name: "roots and constants evaluate", tags: ["verify", "expr", "functions"]}
+def u:test_verify_expr_functions() {
+  "Square roots, nested roots, and the two named constants.";
+  u:expect_value("sqrt(9)", 3, "perfect square")?;
+  u:expect_value("sqrt(8)/2", sqrt(2), "irrational root")?;
+  u:expect_value("(sqrt(8))/(2)", sqrt(2), "grouped root")?;
+  u:expect_value("sqrt(sqrt(16))", 2, "nested root")?;
+  u:expect_value("pi", pi(), "pi")?;
+  u:expect_value("e", e(), "e")?;
+  u:assert_eq(u:verify_parse("sqrt(9)")?.exact, 1, "a perfect square stays exact")?;
+  u:assert_eq(u:verify_parse("pi")?.exact, 0, "pi is approximate")
+}
+
+@test {name: "failures are classified and never raise", tags: ["verify", "expr", "errors"]}
+def u:test_verify_expr_failures() {
+  "Symbolic input, syntax errors, trailing characters, empty input, and the length budget.";
+  u:assert_text_eq(err_message(u:verify_parse("x+1")).kind, "symbolic", "free symbol")?;
+  u:assert_text_eq(err_message(u:verify_parse("sqrt(")).kind, "syntax", "unclosed call")?;
+  u:assert_text_eq(err_message(u:verify_parse("(1+2")).kind, "syntax", "unclosed group")?;
+  u:assert_text_eq(err_message(u:verify_parse("2+")).kind, "syntax", "dangling operator")?;
+  u:assert_text_eq(err_message(u:verify_parse("1,2")).kind, "syntax", "trailing characters")?;
+  u:assert_text_eq(err_message(u:verify_parse("")).kind, "syntax", "empty input")?;
+  u:assert_text_eq(err_message(u:verify_parse("   ")).kind, "syntax", "whitespace input")?;
+  long = str_join([str_slice("1", 0, 1)], "");
+  padded = "";
+  i = 0;
+  while i - 700 {
+    padded = str_concat(padded, "1+1+");
+    i = i + 1
+  };
+  u:assert_text_eq(err_message(u:verify_parse(str_concat(padded, "1"))).kind, "budget", "over the length budget")
+}
+
+u:run_registered_tests()

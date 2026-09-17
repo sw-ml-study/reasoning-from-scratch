@@ -1,0 +1,44 @@
+#!/bin/sh
+# Run a demo that includes repository libraries.
+#
+# `include` resolves relative to the INCLUDING file, and `--source-dir` only
+# bounds the sandbox, so a script under demos/ cannot reach lib/. The test
+# runner solves this by concatenating sources into one file; this script does
+# the same: every `include "path"` line in the demo is replaced, in order, by
+# the contents of that path, and the combined program runs from a temp file.
+set -eu
+
+[ "$#" -ge 1 ] || { echo "usage: run-mlpl-demo <demo.mlpl> [interpreter args...]" >&2; exit 2; }
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mlpl=$("$repo_root/scripts/select-mlpl")
+demo=$1
+shift
+
+tmp_dir=$(mktemp -d)
+cleanup() { rm -rf -- "$tmp_dir"; }
+trap cleanup EXIT HUP INT TERM
+combined="$tmp_dir/combined.mlpl"
+
+: > "$combined"
+seen=""
+while IFS= read -r line; do
+    case "$line" in
+        include\ \"*\"*)
+            path=$(printf '%s' "$line" | sed 's/^include *"\([^"]*\)".*$/\1/')
+            case " $seen " in
+                *" $path "*) continue ;;
+            esac
+            [ -f "$repo_root/$path" ] || { echo "included source missing: $path" >&2; exit 1; }
+            seen="$seen $path"
+            printf '# --- included: %s\n' "$path" >> "$combined"
+            cat "$repo_root/$path" >> "$combined"
+            printf '\n' >> "$combined"
+            ;;
+        *)
+            printf '%s\n' "$line" >> "$combined"
+            ;;
+    esac
+done < "$repo_root/$demo"
+
+exec "$mlpl" --source-dir "$repo_root" --data-dir "$repo_root" "$@" -f "$combined"

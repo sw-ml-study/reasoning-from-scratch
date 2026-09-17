@@ -21,6 +21,10 @@ tools:
     ./scripts/select-mlpl
     ./scripts/select-mlplunit
 
+# Grade every MATH-500 reference answer against itself (needs fetch-math500).
+math500-self-grade:
+    ./scripts/run-math500-self-grade
+
 # Download the MATH-500 evaluation set into ignored data/ (opt-in, not in check).
 fetch-math500:
     ./scripts/fetch-math500

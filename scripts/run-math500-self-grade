@@ -1,0 +1,15 @@
+#!/bin/sh
+# Opt-in: grade every MATH-500 reference answer against itself (expect all
+# correct) and against a constant wrong answer (expect none correct).
+# Requires `just fetch-math500` first; never part of `just check`.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+dataset="$repo_root/data/math500/test.jsonl"
+
+if [ ! -f "$dataset" ]; then
+    echo "dataset absent: run 'just fetch-math500' first" >&2
+    exit 77
+fi
+
+exec "$repo_root/scripts/run-mlpl-demo" demos/math500_self_grade.mlpl
