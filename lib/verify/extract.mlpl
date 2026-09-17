@@ -1,0 +1,53 @@
+# Final-answer extraction: the last boxed group with brace matching, then the numeric or full-text fallbacks. Requires lib/text/text.mlpl included first (nested includes cannot climb directories).
+
+def u:verify_last_boxed(text) {
+  "ok(content) of the last \\boxed{...} group with balanced braces, or err({kind}) when there is no box, no brace, or an unbalanced brace.";
+  at_box = u:text_find_last(text, "\\boxed");
+  if lt(at_box, 0) {
+    err({kind: "no_boxed", message: "no \\boxed command"})
+  } else {
+    i = at_box + 6;
+    n = str_len(text);
+    while lt(i, n) * u:text_is_space(u:text_char_at(text, i)) {
+      i = i + 1
+    };
+    if str_eq(u:text_char_at(text, i), "{") {
+      close = u:text_match_brace(text, i);
+      if lt(close, 0) {
+        err({kind: "unbalanced", message: "unbalanced braces after \\boxed"})
+      } else {
+        ok(str_slice(text, i + 1, close - i - 1))
+      }
+    } else {
+      err({kind: "no_brace", message: "\\boxed not followed by a brace"})
+    }
+  }
+}
+
+def u:verify_final_candidate(text, mode) {
+  "Candidate answer string: the last boxed group stripped of spaces and dollar signs; else, by mode, the last number (number_only, number_then_full), the whole trimmed text (number_then_full), or the empty string (boxed_only).";
+  trimmed = u:text_trim(text);
+  if str_eq(trimmed, "") {
+    ""
+  } else {
+    boxed = u:verify_last_boxed(trimmed);
+    if is_ok(boxed) {
+      u:text_strip_chars(u:text_trim(unwrap(boxed)), "$ ")
+    } else {
+      if str_eq(mode, "boxed_only") {
+        ""
+      } else {
+        number = u:text_last_number(trimmed);
+        if str_eq(number, "") {
+          if str_eq(mode, "number_then_full") {
+            trimmed
+          } else {
+            ""
+          }
+        } else {
+          number
+        }
+      }
+    }
+  }
+}

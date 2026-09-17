@@ -71,8 +71,10 @@ ledger, and removes the workaround where the plan allows.
 ## R6. Scientific-notation literals
 
 - Probe: `scientific-literal`.
-- Today: `1e-4` lexes as `1`, `e`, `- 4` and fails with "undefined variable:
-  e".
+- Status: shipped in upstream commit 2a774891 on 2026-09-16; the probe
+  passes.
+- Before the fix: `1e-4` lexed as `1`, `e`, `- 4` and failed with
+  "undefined variable: e".
 - Requested: `1e-4`, `2.5E+3`, `1e6` as numeric literals.
 - Acceptance: `1e-4 == 0.0001` and `1e6 == 1000000`.
 - Used by: every epsilon and learning rate in the plan.

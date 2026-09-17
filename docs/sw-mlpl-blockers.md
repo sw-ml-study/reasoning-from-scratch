@@ -11,10 +11,10 @@ Measured against:
 
 ```text
 mlpl-repl 0.22.0
-Commit: 0dfa3eae
-Timestamp: 2026-09-16T20:00:01-0700
+Commit: 2a774891
 MLX feature: not compiled into this binary
-Previous pin: 1b4d29e5 (2026-09-16T11:08); sqrt, sin, cos backward rules shipped between the two
+Previous pins: 1b4d29e5 (2026-09-16T11:08), 0dfa3eae (2026-09-16T20:00, shipped
+sqrt/sin/cos backward rules); 2a774891 shipped scientific-notation literals
 Machine: Apple M1 Max, 10 cores, 64 GB
 ```
 
@@ -70,7 +70,7 @@ workaround), **missing** (a step is blocked or must stop with an honest
 | JSONL line parsing | supported | `jsonl-lines`: two records with escaped LaTeX parse through `str_split` and `parse_json` | library |
 | string helpers | missing | `str-helpers`: `str_replace` is an unknown function | library: `lib/text/` over `str_find`, `str_slice`, `str_len` |
 | iterate a string list with `for` | missing | `for-string-list`: rejected | library idiom: `while` with `list_get` |
-| scientific-notation literals | missing | `scientific-literal`: `1e-4` lexes as `1`, `e`, `- 4` and fails with "undefined variable: e" | core; write `0.0001` |
+| scientific-notation literals | supported since 2a774891 | `scientific-literal`: `1e-4` evaluates to `0.0001` | shipped upstream (RS5); earlier builds lexed it as `1`, `e`, `- 4` |
 | regular expressions | not needed | no probe | scanners in `lib/text/`; pre-tokenization lives in the tokenizer extension |
 | `tokenizer.json` import | missing | no builtin (documentation) | extension in `../demo-extensions`; MLPL reference on fixtures |
 

@@ -6,6 +6,19 @@ and array operations only. It replaces a Python symbolic-algebra dependency
 with a bounded expression evaluator, so its behavior is specified here and
 its divergences from the reference implementation are listed explicitly.
 
+## Implementation map
+
+| Stage | Module | Prefix |
+|---|---|---|
+| character scanning (classes, search, trim, replace, braces, numbers) | `lib/text/text.mlpl` | `u:text_` |
+| last boxed group and candidate selection | `lib/verify/extract.mlpl` | `u:verify_` |
+| the thirteen ordered rules | `lib/verify/normalize.mlpl` | `u:verify_` |
+| expression equivalence and grading | `lib/verify/grade.mlpl` (pending) | `u:verify_` |
+
+The language has no regular expressions and none is requested; the scanners
+are the replacement. `lib/verify/` files need `lib/text/text.mlpl` included
+first, because a nested `include` cannot climb out of its own directory.
+
 ## Pipeline
 
 ```text
@@ -33,7 +46,10 @@ optional exponent. The *last* match wins.
 2. A leading single-letter multiple-choice label followed by `.` or `:` is
    dropped.
 3. Degree markers (`^{\circ}`, `^\circ`, the degree sign) are removed.
-4. If the entire string is a `\text{...}` wrapper, unwrap it.
+4. If the entire string is a `\text{...}` wrapper, unwrap it. A `\text{}`
+   that covers only part of the string is left in place; rule 13 then
+   removes its braces, so `a\text{b}c` normalizes to `a\textbc`. This
+   matches the reference implementation.
 5. Display and inline math delimiters `\(`, `\)`, `\[`, `\]` are removed.
 6. `\left` and `\right` are removed; thin-space commands are removed;
    `\cdot` and the Unicode middle dot and times sign become `*`;

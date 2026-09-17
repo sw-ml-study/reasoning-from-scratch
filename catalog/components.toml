@@ -2,11 +2,38 @@ schema = "sw-ml-study.reasoning-components"
 version = 1
 
 [[component]]
-id = "VER"
-slug = "verifier"
+id = "TEXT"
+slug = "text-scanners"
 chapter = 3
-source = "lib/verify/verify.mlpl"
-test = "tests/test_verify.mlpl"
+source = "lib/text/text.mlpl"
+test = "tests/test_text.mlpl"
+documentation = "docs/verifier-contract.md"
+status = "accepted"
+
+[[component]]
+id = "VEXT"
+slug = "boxed-extraction"
+chapter = 3
+source = "lib/verify/extract.mlpl"
+test = "tests/test_verify_extract.mlpl"
+documentation = "docs/verifier-contract.md"
+status = "accepted"
+
+[[component]]
+id = "VNORM"
+slug = "answer-normalization"
+chapter = 3
+source = "lib/verify/normalize.mlpl"
+test = "tests/test_verify_normalize.mlpl"
+documentation = "docs/verifier-contract.md"
+status = "accepted"
+
+[[component]]
+id = "VER"
+slug = "expression-equivalence"
+chapter = 3
+source = "lib/verify/grade.mlpl"
+test = "tests/test_verify_grade.mlpl"
 documentation = "docs/verifier-contract.md"
 status = "planned"
 

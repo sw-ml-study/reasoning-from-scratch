@@ -73,9 +73,14 @@ Upstream has already shipped differentiable `sqrt`, `sin`, and `cos`
 (build 0dfa3eae); the probe suite caught the change and the ledger was
 reconciled.
 
+Boxed-answer extraction and the thirteen-rule normalization pipeline are
+in as well, over hand-written character scanners that stand in for regular
+expressions: 23 tests cover every rule in isolation plus composed cases.
+Upstream has since shipped scientific-notation literals (build 2a774891),
+which the probe suite caught and the ledger records.
+
 Saga 1 (verifier and evaluation harness, no model needed) is active; its
-next step is `boxed-extraction-and-normalization`. Nothing yet generates
-text.
+next step is `expression-equivalence`. Nothing yet generates text.
 
 ## Build and check
 

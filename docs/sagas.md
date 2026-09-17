@@ -15,7 +15,7 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 | 3 | `capability-probes` | done: 21 probes under `probes/`, declared in `catalog/probes.tsv`, run by `just capabilities` and the gate |
 | 4 | `request-documents` | done: per-repository ask documents |
 | 5 | `math-data-loader` | done: `lib/eval/data.mlpl`, fixtures, `just fetch-math500`; ledger reconciled to build 0dfa3eae |
-| 6 | `boxed-extraction-and-normalization` | pending |
+| 6 | `boxed-extraction-and-normalization` | done: `lib/text/`, `lib/verify/extract.mlpl`, `lib/verify/normalize.mlpl`, 23 tests |
 | 7 | `expression-equivalence` | pending |
 | 8 | `evaluation-harness` | pending |
 

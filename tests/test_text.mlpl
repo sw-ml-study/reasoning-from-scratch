@@ -1,0 +1,87 @@
+# Character-indexed scanner contract: classes, search, trim, replace, brace matching, number recognition, control tokens.
+include "lib/text/text.mlpl";
+
+@test {name: "character classes and total accessor", tags: ["text", "classes"]}
+def u:test_text_classes() {
+  "Digit, letter, alphanumeric, and space tests over ASCII and non-ASCII; the accessor is total at both ends.";
+  u:assert_eq(u:text_is_digit("7"), 1, "digit")?;
+  u:assert_eq(u:text_is_digit("x"), 0, "letter is not a digit")?;
+  u:assert_eq(u:text_is_digit("²"), 0, "superscript is not an ASCII digit")?;
+  u:assert_eq(u:text_is_letter("Z"), 1, "upper letter")?;
+  u:assert_eq(u:text_is_letter("é"), 0, "non-ASCII letter excluded")?;
+  u:assert_eq(u:text_is_alnum("9"), 1, "alnum digit")?;
+  u:assert_eq(u:text_is_space("\n"), 1, "newline is space")?;
+  u:assert_eq(u:text_is_space("a"), 0, "letter is not space")?;
+  u:assert_text_eq(u:text_char_at("abc", 1), "b", "character at index")?;
+  u:assert_text_eq(u:text_char_at("abc", 9), "", "past the end is empty")?;
+  u:assert_text_eq(u:text_char_at("abc", 0 - 1), "", "negative index is empty")
+}
+
+@test {name: "search finds first last and reports absence", tags: ["text", "search"]}
+def u:test_text_search() {
+  "find_from, find_last, contains, starts_with, ends_with over present, absent, and empty needles.";
+  u:assert_eq(u:text_find_from("abcabc", "bc", 0), 1, "first occurrence")?;
+  u:assert_eq(u:text_find_from("abcabc", "bc", 2), 4, "occurrence after start")?;
+  u:assert_eq(u:text_find_from("abc", "z", 0), 0 - 1, "absent needle")?;
+  u:assert_eq(u:text_find_from("abc", "a", 9), 0 - 1, "start past the end")?;
+  u:assert_eq(u:text_find_last("\\boxed{a} x \\boxed{b}", "\\boxed"), 12, "last occurrence")?;
+  u:assert_eq(u:text_find_last("abc", "z"), 0 - 1, "absent last")?;
+  u:assert_eq(u:text_find_last("abc", ""), 0 - 1, "empty needle is never found")?;
+  u:assert_eq(u:text_contains("semigroup", "group"), 1, "contains")?;
+  u:assert_eq(u:text_starts_with("\\text{x}", "\\text{"), 1, "starts_with")?;
+  u:assert_eq(u:text_starts_with("ab", "abc"), 0, "prefix longer than string")?;
+  u:assert_eq(u:text_ends_with("\\text{x}", "}"), 1, "ends_with")?;
+  u:assert_eq(u:text_ends_with("ab", "abc"), 0, "suffix longer than string")
+}
+
+@test {name: "trim strip replace and lower", tags: ["text", "rewrite"]}
+def u:test_text_rewrite() {
+  "Whitespace trimming, character-set stripping, replace-all, and ASCII lower-casing including no-op and empty cases.";
+  u:assert_text_eq(u:text_trim("  \n a b \t"), "a b", "trim both ends")?;
+  u:assert_text_eq(u:text_trim("   "), "", "all whitespace trims to empty")?;
+  u:assert_text_eq(u:text_trim(""), "", "empty trims to empty")?;
+  u:assert_text_eq(u:text_strip_chars("$ 14/3 $", "$ "), "14/3", "strip dollars and spaces")?;
+  u:assert_text_eq(u:text_replace_all("a\\dfrac b\\dfrac", "\\dfrac", "\\frac"), "a\\frac b\\frac", "replace every occurrence")?;
+  u:assert_text_eq(u:text_replace_all("abc", "z", "y"), "abc", "absent needle is a no-op")?;
+  u:assert_text_eq(u:text_replace_all("abc", "", "y"), "abc", "empty needle is a no-op")?;
+  u:assert_text_eq(u:text_replace_all("aaa", "a", ""), "", "delete every occurrence")?;
+  u:assert_text_eq(u:text_lower("AbC²"), "abc²", "ASCII lower keeps non-ASCII")?;
+  u:assert_text_eq(u:text_lower(""), "", "empty lower")
+}
+
+@test {name: "brace matching handles nesting and imbalance", tags: ["text", "braces"]}
+def u:test_text_braces() {
+  "The matching close brace is found across nesting; a non-brace or unbalanced input is -1.";
+  u:assert_eq(u:text_match_brace("{a}", 0), 2, "simple pair")?;
+  u:assert_eq(u:text_match_brace("{outer {inner} ok} x", 0), 17, "nested pair")?;
+  u:assert_eq(u:text_match_brace("{unbalanced", 0), 0 - 1, "unbalanced")?;
+  u:assert_eq(u:text_match_brace("x{a}", 0), 0 - 1, "not a brace at the index")?;
+  u:assert_eq(u:text_match_brace("{}", 0), 1, "empty group")
+}
+
+@test {name: "number recognition matches the documented token shapes", tags: ["text", "numbers"]}
+def u:test_text_numbers() {
+  "Integers, decimals, exponents, fractions, and a leading minus; the last match wins; absence yields the empty string.";
+  u:assert_text_eq(u:text_last_number("abc < > 14/3 abc"), "14/3", "fraction")?;
+  u:assert_text_eq(u:text_last_number("All done. 1 \nFinal 2 answer: "), "2", "last of several")?;
+  u:assert_text_eq(u:text_last_number("x = -2.5e+3 then 7"), "7", "last wins over the exponent form")?;
+  u:assert_text_eq(u:text_last_number("value -2.5e+3"), "-2.5e+3", "signed decimal exponent")?;
+  u:assert_text_eq(u:text_last_number("only 0.75"), "0.75", "decimal")?;
+  u:assert_text_eq(u:text_last_number("none here"), "", "no number")?;
+  u:assert_text_eq(u:text_last_number(""), "", "empty input")?;
+  u:assert_eq(u:text_number_end("12x", 0), 2, "digits stop at a letter")?;
+  u:assert_eq(u:text_number_end("x12", 0), 0 - 1, "no number at the index")?;
+  u:assert_eq(u:text_number_end("1.", 0), 1, "trailing dot is not part of the number")?;
+  u:assert_eq(u:text_number_end("1/", 0), 1, "trailing slash is not part of the number")?;
+  u:assert_eq(u:text_number_end("2e", 0), 1, "exponent marker without digits is excluded")
+}
+
+@test {name: "control token spans are removed", tags: ["text", "control-tokens"]}
+def u:test_text_control_tokens() {
+  "Chat control tokens are deleted; an unterminated marker is left alone.";
+  u:assert_text_eq(u:text_remove_control_tokens("a<|im_end|>b<|x|>"), "ab", "two spans")?;
+  u:assert_text_eq(u:text_remove_control_tokens("plain"), "plain", "no spans")?;
+  u:assert_text_eq(u:text_remove_control_tokens("a<|unterminated"), "a<|unterminated", "unterminated marker kept")
+}
+
+u:run_registered_tests()

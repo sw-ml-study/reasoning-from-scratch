@@ -1,0 +1,39 @@
+# Boxed-answer extraction contract: brace-matched last box and the three candidate fallback modes.
+include "lib/text/text.mlpl";
+include "lib/verify/extract.mlpl";
+
+@test {name: "last boxed group is found with balanced braces", tags: ["verify", "extract"]}
+def u:test_verify_last_boxed_found() {
+  "A single box, the last of several, whitespace before the brace, and a nested group.";
+  u:assert_text_eq(u:verify_last_boxed("foo \\boxed{42}")?, "42", "single box")?;
+  u:assert_text_eq(u:verify_last_boxed("\\boxed{a} bla \\boxed{b+c}")?, "b+c", "last box wins")?;
+  u:assert_text_eq(u:verify_last_boxed("noise \\boxed   {  x^2 } end")?, "  x^2 ", "whitespace before the brace, content kept verbatim")?;
+  u:assert_text_eq(u:verify_last_boxed("\\boxed{outer {inner} ok}")?, "outer {inner} ok", "nested braces")?;
+  u:assert_text_eq(u:verify_last_boxed("\\boxed{}")?, "", "empty box")
+}
+
+@test {name: "malformed boxes are classified errors", tags: ["verify", "extract", "errors"]}
+def u:test_verify_last_boxed_errors() {
+  "No box, no brace after the command, and an unbalanced brace each name their kind.";
+  u:assert_text_eq(err_message(u:verify_last_boxed("nothing here")).kind, "no_boxed", "absent command")?;
+  u:assert_text_eq(err_message(u:verify_last_boxed("\\boxed  not_brace")).kind, "no_brace", "command without a brace")?;
+  u:assert_text_eq(err_message(u:verify_last_boxed("\\boxed{unbalanced")).kind, "unbalanced", "unbalanced brace")
+}
+
+@test {name: "candidate selection strips wrappers and honors each mode", tags: ["verify", "extract", "modes"]}
+def u:test_verify_final_candidate() {
+  "A boxed answer wins in every mode; without one, the modes differ on the numeric and full-text fallbacks.";
+  u:assert_text_eq(u:verify_final_candidate("\\boxed{3/4}", "number_then_full"), "3/4", "plain box")?;
+  u:assert_text_eq(u:verify_final_candidate("\\boxed{\\frac{3}{4}}", "number_then_full"), "\\frac{3}{4}", "latex kept for normalization")?;
+  u:assert_text_eq(u:verify_final_candidate("\\boxed{(1,2)}", "number_then_full"), "(1,2)", "tuple kept whole")?;
+  u:assert_text_eq(u:verify_final_candidate("$ \\boxed{ \\dfrac{14}{3} } $", "number_then_full"), "\\dfrac{14}{3}", "spaces and dollars stripped")?;
+  u:assert_text_eq(u:verify_final_candidate("Final Answer: 14/3", "number_then_full"), "14/3", "numeric fallback")?;
+  u:assert_text_eq(u:verify_final_candidate("All done. 1 \nFinal 2 answer: ", "number_only"), "2", "last number")?;
+  u:assert_text_eq(u:verify_final_candidate("no digits at all", "number_then_full"), "no digits at all", "full-text fallback")?;
+  u:assert_text_eq(u:verify_final_candidate("no digits at all", "number_only"), "", "number_only yields nothing")?;
+  u:assert_text_eq(u:verify_final_candidate("Answer is 2", "boxed_only"), "", "boxed_only ignores a bare number")?;
+  u:assert_text_eq(u:verify_final_candidate("", "number_then_full"), "", "empty input")?;
+  u:assert_text_eq(u:verify_final_candidate("   ", "number_then_full"), "", "whitespace input")
+}
+
+u:run_registered_tests()

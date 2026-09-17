@@ -1,0 +1,76 @@
+# Normalization contract: each ordered rule in isolation plus composed cases (docs/verifier-contract.md).
+include "lib/text/text.mlpl";
+include "lib/verify/normalize.mlpl";
+
+@test {name: "whitespace control tokens and choice labels", tags: ["verify", "normalize"]}
+def u:test_verify_normalize_prefix_rules() {
+  "Rules 1 and 2: trimming, control-token removal, and a leading multiple-choice label.";
+  u:assert_text_eq(u:verify_normalize("  3/4  "), "3/4", "trim")?;
+  u:assert_text_eq(u:verify_normalize("\n\t  (1, 2)  \t"), "(1, 2)", "trim around a tuple")?;
+  u:assert_text_eq(u:verify_normalize("<|im_end|>ABC"), "abc", "control token removed and lower-cased")?;
+  u:assert_text_eq(u:verify_normalize("c. 3"), "3", "choice label with a period")?;
+  u:assert_text_eq(u:verify_normalize("b: 2"), "2", "choice label with a colon")?;
+  u:assert_text_eq(u:verify_normalize("x + 1"), "x + 1", "an expression is not a choice label")?;
+  u:assert_text_eq(u:verify_normalize(""), "", "empty input")
+}
+
+@test {name: "degree markers text wrappers and math delimiters", tags: ["verify", "normalize"]}
+def u:test_verify_normalize_wrappers() {
+  "Rules 3 to 5: degree markers, a whole-string text wrapper, and display or inline math delimiters.";
+  u:assert_text_eq(u:verify_normalize("90^\\circ"), "90", "circ marker")?;
+  u:assert_text_eq(u:verify_normalize("90^{\\circ}"), "90", "braced circ marker")?;
+  u:assert_text_eq(u:verify_normalize("90°"), "90", "degree sign")?;
+  u:assert_text_eq(u:verify_normalize("\\text{2/3}"), "2/3", "text wrapper unwrapped")?;
+  u:assert_text_eq(u:verify_normalize("a\\text{b}c"), "a\\textbc", "a partial text wrapper is not unwrapped; only the braces go")?;
+  u:assert_text_eq(u:verify_normalize("\\( 2/3 \\)"), "2/3", "inline delimiters")?;
+  u:assert_text_eq(u:verify_normalize("\\[2/3\\]"), "2/3", "display delimiters")
+}
+
+@test {name: "spacing commands products and fraction aliases", tags: ["verify", "normalize"]}
+def u:test_verify_normalize_commands() {
+  "Rule 6: left and right sizing, thin spaces, product symbols, and the fraction aliases.";
+  u:assert_text_eq(u:verify_normalize("\\left(1,\\,2\\right)"), "(1,2)", "sizing and thin space")?;
+  u:assert_text_eq(u:verify_normalize("\\left(\\frac{3}{4}\\right)"), "((3)/(4))", "sizing around a fraction")?;
+  u:assert_text_eq(u:verify_normalize("2\\cdot 3"), "2* 3", "cdot becomes a product")?;
+  u:assert_text_eq(u:verify_normalize("2·3"), "2*3", "middle dot")?;
+  u:assert_text_eq(u:verify_normalize("2×3"), "2*3", "times sign")?;
+  u:assert_text_eq(u:verify_normalize("\\dfrac{14}{3}"), "(14)/(3)", "display fraction alias")?;
+  u:assert_text_eq(u:verify_normalize("\\tfrac{1}{2}"), "(1)/(2)", "text fraction alias")
+}
+
+@test {name: "superscripts percents roots and fractions", tags: ["verify", "normalize"]}
+def u:test_verify_normalize_math() {
+  "Rules 7 to 10: Unicode superscripts, percent and currency removal, roots, and both fraction spellings.";
+  u:assert_text_eq(u:verify_normalize("2²"), "2**2", "attached superscript becomes an exponent")?;
+  u:assert_text_eq(u:verify_normalize("²"), "2", "unattached superscript is a plain digit")?;
+  u:assert_text_eq(u:verify_normalize("$2/3$"), "2/3", "dollars removed")?;
+  u:assert_text_eq(u:verify_normalize("50\\%"), "50", "percent removed")?;
+  u:assert_text_eq(u:verify_normalize("\\sqrt{2}"), "sqrt(2)", "braced root")?;
+  u:assert_text_eq(u:verify_normalize("\\sqrt 2"), "sqrt(2)", "spaced root")?;
+  u:assert_text_eq(u:verify_normalize("\\frac{3}{4}"), "(3)/(4)", "braced fraction")?;
+  u:assert_text_eq(u:verify_normalize("\\frac 1 2"), "(1)/(2)", "spaced fraction")?;
+  u:assert_text_eq(u:verify_normalize("\\frac{\\sqrt{8}}{2}"), "(sqrt(8))/(2)", "root inside a fraction")
+}
+
+@test {name: "exponents mixed numbers thousands separators and braces", tags: ["verify", "normalize"]}
+def u:test_verify_normalize_suffix_rules() {
+  "Rules 11 to 13: caret exponents, mixed numbers, thousands separators, brace removal, and lower-casing.";
+  u:assert_text_eq(u:verify_normalize("x^{2}"), "x**2", "braced exponent")?;
+  u:assert_text_eq(u:verify_normalize("x^2"), "x**2", "bare exponent")?;
+  u:assert_text_eq(u:verify_normalize("3 1/2"), "3+1/2", "mixed number")?;
+  u:assert_text_eq(u:verify_normalize("3 4"), "3 4", "two integers are not a mixed number")?;
+  u:assert_text_eq(u:verify_normalize("1,234/2"), "1234/2", "thousands separator")?;
+  u:assert_text_eq(u:verify_normalize("(1, 2)"), "(1, 2)", "tuple comma kept")?;
+  u:assert_text_eq(u:verify_normalize("{x}"), "x", "braces removed")?;
+  u:assert_text_eq(u:verify_normalize("{ (1, 2) }"), "(1, 2)", "braces around a tuple")?;
+  u:assert_text_eq(u:verify_normalize("ABC"), "abc", "lower-cased")
+}
+
+@test {name: "composed cases from the contract", tags: ["verify", "normalize", "composed"]}
+def u:test_verify_normalize_composed() {
+  "Several rules applying to one input, as the contract requires.";
+  u:assert_text_eq(u:verify_normalize("\\text{\\[\\frac{14}{3}\\]}"), "(14)/(3)", "text wrapper, delimiters, and fraction")?;
+  u:assert_text_eq(u:verify_normalize("$\\left(\\dfrac{1,234}{2}\\right)$"), "((1234)/(2))", "dollars, sizing, alias, and separator")
+}
+
+u:run_registered_tests()

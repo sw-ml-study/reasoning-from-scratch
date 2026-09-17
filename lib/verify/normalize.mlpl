@@ -1,0 +1,326 @@
+# Ordered normalization of a candidate or reference answer into a comparable form (docs/verifier-contract.md). Requires lib/text/text.mlpl included first.
+
+def u:verify_strip_choice_label(s) {
+  "Drop a leading single-letter multiple-choice label followed by a period or colon and optional spaces.";
+  if u:text_is_letter(u:text_char_at(s, 0)) {
+    i = 1;
+    n = str_len(s);
+    while lt(i, n) * u:text_is_space(u:text_char_at(s, i)) {
+      i = i + 1
+    };
+    mark = u:text_char_at(s, i);
+    if str_eq(mark, ".") + str_eq(mark, ":") {
+      i = i + 1;
+      while lt(i, n) * u:text_is_space(u:text_char_at(s, i)) {
+        i = i + 1
+      };
+      str_slice(s, i, n - i)
+    } else {
+      s
+    }
+  } else {
+    s
+  }
+}
+
+def u:verify_unwrap_text(s) {
+  "Unwrap a \\text{...} that spans the whole string.";
+  if u:text_starts_with(s, "\\text{") {
+    close = u:text_match_brace(s, 5);
+    if close - (str_len(s) - 1) {
+      s
+    } else {
+      str_slice(s, 6, close - 6)
+    }
+  } else {
+    s
+  }
+}
+
+def u:verify_remove_command_spaces(s, command) {
+  "Delete every occurrence of a LaTeX command together with the spaces that follow it.";
+  out = "";
+  pos = 0;
+  k = str_len(command);
+  n = str_len(s);
+  found = u:text_find_from(s, command, 0);
+  while gt(found, 0 - 1) {
+    out = str_concat(out, str_slice(s, pos, found - pos));
+    pos = found + k;
+    while lt(pos, n) * str_eq(u:text_char_at(s, pos), " ") {
+      pos = pos + 1
+    };
+    found = u:text_find_from(s, command, pos)
+  };
+  str_concat(out, str_slice(s, pos, n - pos))
+}
+
+def u:verify_superscript_digit(c) {
+  "ASCII form of one Unicode superscript character, or the empty string when c is not one.";
+  if str_eq(c, "⁰") {
+    "0"
+  } else {
+    if str_eq(c, "¹") {
+      "1"
+    } else {
+      if str_eq(c, "²") {
+        "2"
+      } else {
+        if str_eq(c, "³") {
+          "3"
+        } else {
+          if str_eq(c, "⁴") {
+            "4"
+          } else {
+            if str_eq(c, "⁵") {
+              "5"
+            } else {
+              if str_eq(c, "⁶") {
+                "6"
+              } else {
+                if str_eq(c, "⁷") {
+                  "7"
+                } else {
+                  if str_eq(c, "⁸") {
+                    "8"
+                  } else {
+                    if str_eq(c, "⁹") {
+                      "9"
+                    } else {
+                      if str_eq(c, "⁺") {
+                        "+"
+                      } else {
+                        if str_eq(c, "⁻") {
+                          "-"
+                        } else {
+                          if str_eq(c, "⁽") {
+                            "("
+                          } else {
+                            if str_eq(c, "⁾") {
+                              ")"
+                            } else {
+                              ""
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:verify_rewrite_superscripts(s) {
+  "Turn runs of Unicode superscripts into ASCII, prefixed by ** when attached to a preceding operand.";
+  out = "";
+  i = 0;
+  n = str_len(s);
+  while lt(i, n) {
+    c = u:text_char_at(s, i);
+    mapped = u:verify_superscript_digit(c);
+    if str_eq(mapped, "") {
+      out = str_concat(out, c);
+      i = i + 1
+    } else {
+      run = "";
+      while lt(i, n) * (1 - str_eq(u:verify_superscript_digit(u:text_char_at(s, i)), "")) {
+        run = str_concat(run, u:verify_superscript_digit(u:text_char_at(s, i)));
+        i = i + 1
+      };
+      prev = u:text_char_at(out, str_len(out) - 1);
+      attached = u:text_is_alnum(prev) + str_eq(prev, ")") + str_eq(prev, "]") + str_eq(prev, "}");
+      out = str_concat(out, if attached {
+          str_concat("**", run)
+        } else {
+          run
+        })
+    }
+  };
+  out
+}
+
+def u:verify_rewrite_group_command(s, command, prefix, suffix) {
+  "Rewrite every command{a} as prefix a suffix and every command<space>c (single character) the same way.";
+  out = "";
+  pos = 0;
+  k = str_len(command);
+  n = str_len(s);
+  found = u:text_find_from(s, command, 0);
+  while gt(found, 0 - 1) {
+    out = str_concat(out, str_slice(s, pos, found - pos));
+    i = found + k;
+    while lt(i, n) * str_eq(u:text_char_at(s, i), " ") {
+      i = i + 1
+    };
+    if str_eq(u:text_char_at(s, i), "{") {
+      close = u:text_match_brace(s, i);
+      if lt(close, 0) {
+        out = str_concat(out, str_slice(s, found, k));
+        pos = found + k
+      } else {
+        out = str_concat(out, str_concat(prefix, str_concat(str_slice(s, i + 1, close - i - 1), suffix)));
+        pos = close + 1
+      }
+    } else {
+      if u:text_is_alnum(u:text_char_at(s, i)) {
+        out = str_concat(out, str_concat(prefix, str_concat(u:text_char_at(s, i), suffix)));
+        pos = i + 1
+      } else {
+        out = str_concat(out, str_slice(s, found, k));
+        pos = found + k
+      }
+    };
+    found = u:text_find_from(s, command, pos)
+  };
+  str_concat(out, str_slice(s, pos, n - pos))
+}
+
+def u:verify_group_after(s, i) {
+  "Record {text, next} for the group at i: a brace-matched group or one alphanumeric character after optional spaces; next is -1 when neither.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * str_eq(u:text_char_at(s, j), " ") {
+    j = j + 1
+  };
+  if str_eq(u:text_char_at(s, j), "{") {
+    close = u:text_match_brace(s, j);
+    if lt(close, 0) {
+      {text: "", next: 0 - 1}
+    } else {
+      {text: str_slice(s, j + 1, close - j - 1), next: close + 1}
+    }
+  } else {
+    if u:text_is_alnum(u:text_char_at(s, j)) {
+      {text: u:text_char_at(s, j), next: j + 1}
+    } else {
+      {text: "", next: 0 - 1}
+    }
+  }
+}
+
+def u:verify_rewrite_frac(s) {
+  "Rewrite every \\frac{a}{b} or \\frac a b as (a)/(b).";
+  out = "";
+  pos = 0;
+  n = str_len(s);
+  found = u:text_find_from(s, "\\frac", 0);
+  while gt(found, 0 - 1) {
+    out = str_concat(out, str_slice(s, pos, found - pos));
+    first = u:verify_group_after(s, found + 5);
+    second = if lt(first.next, 0) {
+      {text: "", next: 0 - 1}
+    } else { u:verify_group_after(s, first.next) };
+    if lt(second.next, 0) {
+      out = str_concat(out, "\\frac");
+      pos = found + 5
+    } else {
+      out = str_concat(out, str_concat("(", str_concat(first.text, str_concat(")/(", str_concat(second.text, ")")))));
+      pos = second.next
+    };
+    found = u:text_find_from(s, "\\frac", pos)
+  };
+  str_concat(out, str_slice(s, pos, n - pos))
+}
+
+def u:verify_rewrite_mixed_numbers(s) {
+  "Turn a whole number followed by one space and a fraction (n a/b) into n+a/b.";
+  out = "";
+  i = 0;
+  n = str_len(s);
+  while lt(i, n) {
+    c = u:text_char_at(s, i);
+    is_gap = u:text_is_digit(u:text_char_at(s, i - 1)) * str_eq(c, " ") * gt(i, 0);
+    if is_gap {
+      stop = u:text_number_end(s, i + 1);
+      frac = if gt(stop, 0 - 1) {
+        str_slice(s, i + 1, stop - i - 1)
+      } else {
+        ""
+      };
+      if u:text_contains(frac, "/") * (1 - u:text_starts_with(frac, "-")) {
+        out = str_concat(out, "+")
+      } else {
+        out = str_concat(out, c)
+      }
+    } else {
+      out = str_concat(out, c)
+    };
+    i = i + 1
+  };
+  out
+}
+
+def u:verify_remove_thousands_commas(s) {
+  "Delete a comma that sits between a digit and exactly three digits followed by a non-digit or the end.";
+  out = "";
+  i = 0;
+  n = str_len(s);
+  while lt(i, n) {
+    c = u:text_char_at(s, i);
+    drop = 0;
+    if str_eq(c, ",") * u:text_is_digit(u:text_char_at(s, i - 1)) * gt(i, 0) {
+      stop = u:text_digits_end(s, i + 1);
+      if stop - (i + 4) {
+        0
+      } else {
+        drop = 1
+      }
+    } else {
+      0
+    };
+    if drop {
+      0
+    } else {
+      out = str_concat(out, c)
+    };
+    i = i + 1
+  };
+  out
+}
+
+def u:verify_normalize(text) {
+  "Apply the thirteen ordered normalization rules of the verifier contract and return the comparable lower-case form.";
+  if str_eq(text, "") {
+    ""
+  } else {
+    s = u:text_trim(u:text_remove_control_tokens(text));
+    s = u:verify_strip_choice_label(s);
+    s = u:text_replace_all(s, "^{\\circ}", "");
+    s = u:text_replace_all(s, "^\\circ", "");
+    s = u:text_replace_all(s, "°", "");
+    s = u:verify_unwrap_text(s);
+    s = u:text_replace_all(s, "\\(", "");
+    s = u:text_replace_all(s, "\\)", "");
+    s = u:text_replace_all(s, "\\[", "");
+    s = u:text_replace_all(s, "\\]", "");
+    s = u:verify_remove_command_spaces(s, "\\left");
+    s = u:verify_remove_command_spaces(s, "\\right");
+    s = u:text_replace_all(s, "\\,", "");
+    s = u:text_replace_all(s, "\\!", "");
+    s = u:text_replace_all(s, str_concat("\\", ";"), "");
+    s = u:text_replace_all(s, "\\:", "");
+    s = u:text_replace_all(s, "\\cdot", "*");
+    s = u:text_replace_all(s, "·", "*");
+    s = u:text_replace_all(s, "×", "*");
+    s = u:text_replace_all(s, "\\dfrac", "\\frac");
+    s = u:text_replace_all(s, "\\tfrac", "\\frac");
+    s = u:verify_rewrite_superscripts(s);
+    s = u:text_replace_all(s, "\\%", "%");
+    s = u:text_replace_all(s, "$", "");
+    s = u:text_replace_all(s, "%", "");
+    s = u:verify_rewrite_group_command(s, "\\sqrt", "sqrt(", ")");
+    s = u:verify_rewrite_frac(s);
+    s = u:text_replace_all(s, "^", "**");
+    s = u:verify_rewrite_mixed_numbers(s);
+    s = u:verify_remove_thousands_commas(s);
+    s = u:text_replace_all(s, "{", "");
+    s = u:text_replace_all(s, "}", "");
+    u:text_lower(u:text_trim(s))
+  }
+}
