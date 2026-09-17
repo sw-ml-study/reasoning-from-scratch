@@ -18,6 +18,7 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 | 6 | `boxed-extraction-and-normalization` | done: `lib/text/`, `lib/verify/extract.mlpl`, `lib/verify/normalize.mlpl`, 23 tests |
 | 7 | `expression-equivalence` | done: exact rationals, bounded evaluator, grading; 500 of 500 MATH-500 answers self-grade |
 | 8 | `evaluation-harness` | pending |
+| 9 | `literate-org-document` | pending: `docs/reasoning.org` via `ob-mlpl`, tangle-verified |
 
 Acceptance: `just check` runs a complete, tested verifier and evaluation
 harness without any model, and the capability ledger contains only measured

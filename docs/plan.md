@@ -99,8 +99,15 @@ Details: [`architecture.md`](architecture.md). Chapter mapping:
    accuracy and timing report, CSV metrics helper; tested with a stub
    responder; README status update and saga closeout.
 
+7. `literate-org-document`: an Emacs org-mode literate and reproducible
+   document (`docs/reasoning.org`) built with `ob-mlpl`, following the
+   `../demo-coding-agent/docs/mlplcode.org` model: prose before every
+   block, `:tangle` targets that regenerate the committed sources byte for
+   byte, a tangle check in the gate, and runnable self-contained examples.
+
 Exit: `just check` proves a complete, tested verifier and harness with no
-model; the ledger lists measured, not assumed, gaps.
+model, the literate document tangles back to the committed sources, and the
+ledger lists measured, not assumed, gaps.
 
 ## Saga 2: tokenizer
 
@@ -239,7 +246,10 @@ expression evaluator, safetensors reader) as a handoff to
   first-body docstring, and canonical formatting is checked before commit.
 - Fixtures are tiny, synthetic, and authored here; downloads are opt-in.
 - Documentation, catalog, ledger, and results change with the behavior they
-  describe, in the same step.
+  describe, in the same step. Once `docs/reasoning.org` exists, every saga
+  that adds a library extends it and keeps `just check`'s tangle comparison
+  passing, so the literate document can never describe code that no longer
+  exists.
 - Sibling repositories remain read-only; their work is a handoff.
 
 ## Risks and how the plan absorbs them
