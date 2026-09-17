@@ -1,9 +1,10 @@
 number = 7
 slug = "expression-equivalence"
-status = "pending"
+status = "completed"
 description = "Implement lib/verify/expr.mlpl and lib/verify/grade.mlpl (prefix u:verify_): ..."
 role = "production"
 context_files = []
 created_at = "2026-09-16T17:19:34"
+completed_at = "2026-09-17T10:07:35"
 task_type = "mlpl-library"
-commits = []
+commits = ["f8782153cc0c1f70592c1b23b4b783af83686ccd"]
