@@ -1,0 +1,9 @@
+number = 4
+slug = "boxed-extraction-and-normalization"
+status = "pending"
+description = "Implement lib/text/text.mlpl (prefix u:text_) with character-indexed scanning..."
+role = "production"
+context_files = []
+created_at = "2026-09-16T17:19:34"
+task_type = "mlpl-library"
+commits = []

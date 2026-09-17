@@ -1,0 +1,9 @@
+number = 3
+slug = "math-data-loader"
+status = "pending"
+description = "Implement lib/eval/data.mlpl (prefix u:eval_): bounded loading of MATH-style ..."
+role = "production"
+context_files = []
+created_at = "2026-09-16T17:19:34"
+task_type = "mlpl-library"
+commits = []

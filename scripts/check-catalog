@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+# Every component listed in catalog/components.toml must point at files that
+# exist once its status is beyond "planned".
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+catalog="$repo_dir/catalog/components.toml"
+
+grep -q '^schema = "sw-ml-study.reasoning-components"$' "$catalog"
+
+status=0
+current=""
+while IFS= read -r line; do
+    case "$line" in
+        id\ =\ *) current=$(printf '%s' "$line" | sed 's/^id = "\(.*\)"$/\1/') ;;
+        source\ =\ *|test\ =\ *|documentation\ =\ *)
+            path=$(printf '%s' "$line" | sed 's/^[a-z]* = "\(.*\)"$/\1/')
+            if [ -n "$path" ] && [ ! -e "$repo_dir/$path" ]; then
+                if grep -A12 "^id = \"$current\"" "$catalog" | grep -q '^status = "planned"'; then
+                    continue
+                fi
+                echo "catalog $current references missing path: $path" >&2
+                status=1
+            fi ;;
+    esac
+done < "$catalog"
+
+[ "$status" -eq 0 ] && echo "catalog: ok"
+exit "$status"

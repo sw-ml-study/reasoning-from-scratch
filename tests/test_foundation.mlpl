@@ -1,0 +1,9 @@
+# Foundation smoke test proving the mlplunit toolchain runs in this repository.
+
+@test {name: "toolchain executes a trivial assertion", tags: ["foundation"]}
+def u:test_foundation_toolchain() {
+  "Prove the selected interpreter and runner execute one registered test.";
+  u:assert_eq(reduce_add([1, 2, 3]), 6, "reduce_add sums a vector")
+}
+
+u:run_registered_tests()

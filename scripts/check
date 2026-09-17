@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+sh -n "$repo_dir"/scripts/*
+"$repo_dir/scripts/check-structure"
+"$repo_dir/scripts/check-sources"
+"$repo_dir/scripts/check-doc-links"
+"$repo_dir/scripts/check-catalog"
+"$repo_dir/scripts/check-mlpl-style"
+"$repo_dir/scripts/run-tests"
+git -C "$repo_dir" diff --check
+
+echo "PASS pre-commit"

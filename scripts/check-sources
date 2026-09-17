@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+# Enforce the provenance policy in docs/licensing.md:
+#   1. no tracked Python sources or notebooks;
+#   2. no tracked file byte-identical to a file in the reference clone.
+
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+reference=${REASONING_REFERENCE:-$HOME/github/rasbt/reasoning-from-scratch}
+status=0
+
+tracked=$(git -C "$repo_dir" ls-files)
+
+for file in $tracked; do
+    case "$file" in
+        *.py|*.ipynb)
+            echo "python source is not allowed: $file" >&2
+            status=1 ;;
+    esac
+done
+
+if [ -d "$reference" ]; then
+    ref_hashes=$(find "$reference" -type f -not -path '*/.git/*' \
+        -not -name '*.json' -not -name '*.csv' -not -name '*.png' \
+        -not -name '*.jpg' -not -name '*.webp' -exec shasum -a 256 {} + \
+        | awk '{print $1}' | sort -u)
+    for file in $tracked; do
+        [ -f "$repo_dir/$file" ] || continue
+        case "$file" in
+            COPYRIGHT|LICENSE|.gitignore|.gitattributes) continue ;;
+        esac
+        hash=$(shasum -a 256 "$repo_dir/$file" | awk '{print $1}')
+        if printf '%s\n' "$ref_hashes" | grep -q "^$hash$"; then
+            echo "tracked file is byte-identical to a reference file: $file" >&2
+            status=1
+        fi
+    done
+else
+    echo "sources: reference clone not present at $reference; identity check skipped"
+fi
+
+[ "$status" -eq 0 ] && echo "sources: ok"
+exit "$status"

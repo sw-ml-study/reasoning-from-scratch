@@ -1,0 +1,17 @@
+# Book PDF and other local reference material stay out of version control.
+/work/
+
+# Downloaded model weights, tokenizers, datasets, and generated outputs.
+/models/
+/data/
+/out/
+/artifacts/
+/target/
+*.tmp
+*.log
+
+# Platform/editor metadata.
+.DS_Store
+*.swp
+*.swo
+*~

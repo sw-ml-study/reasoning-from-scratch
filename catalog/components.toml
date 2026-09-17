@@ -1,0 +1,83 @@
+schema = "sw-ml-study.reasoning-components"
+version = 1
+
+[[component]]
+id = "VER"
+slug = "verifier"
+chapter = 3
+source = "lib/verify/verify.mlpl"
+test = "tests/test_verify.mlpl"
+documentation = "docs/verifier-contract.md"
+status = "planned"
+
+[[component]]
+id = "EVAL"
+slug = "evaluation-harness"
+chapter = 3
+source = "lib/eval/eval.mlpl"
+test = "tests/test_eval.mlpl"
+documentation = "docs/book-map.md"
+status = "planned"
+
+[[component]]
+id = "TOK"
+slug = "tokenizer"
+chapter = 2
+source = "lib/tokenizer/tokenizer.mlpl"
+test = "tests/test_tokenizer.mlpl"
+documentation = "docs/book-map.md"
+status = "planned"
+
+[[component]]
+id = "ST"
+slug = "safetensors"
+chapter = 2
+source = "lib/safetensors/safetensors.mlpl"
+test = "tests/test_safetensors.mlpl"
+documentation = "docs/data-and-models.md"
+status = "planned"
+
+[[component]]
+id = "QWEN"
+slug = "qwen3-forward"
+chapter = 2
+source = "lib/qwen3/qwen3.mlpl"
+test = "tests/test_qwen3.mlpl"
+documentation = "docs/architecture.md"
+status = "planned"
+
+[[component]]
+id = "GEN"
+slug = "generation"
+chapter = 2
+source = "lib/generate/generate.mlpl"
+test = "tests/test_generate.mlpl"
+documentation = "docs/book-map.md"
+status = "planned"
+
+[[component]]
+id = "SCALE"
+slug = "inference-time-scaling"
+chapter = 4
+source = "lib/scaling/scaling.mlpl"
+test = "tests/test_scaling.mlpl"
+documentation = "docs/book-map.md"
+status = "planned"
+
+[[component]]
+id = "RL"
+slug = "grpo"
+chapter = 6
+source = "lib/rl/grpo.mlpl"
+test = "tests/test_grpo.mlpl"
+documentation = "docs/book-map.md"
+status = "planned"
+
+[[component]]
+id = "DIST"
+slug = "distillation"
+chapter = 8
+source = "lib/distill/distill.mlpl"
+test = "tests/test_distill.mlpl"
+documentation = "docs/book-map.md"
+status = "planned"
