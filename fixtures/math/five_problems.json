@@ -1,0 +1,7 @@
+[
+  {"problem": "What is the sum of the first five positive odd integers?", "solution": "The odd integers are 1, 3, 5, 7, 9, whose sum is $\\boxed{25}$.", "answer": "25", "subject": "Prealgebra", "level": 1, "unique_id": "local/five/1"},
+  {"problem": "Simplify $\\frac{18}{24}$.", "solution": "Divide numerator and denominator by 6 to get $\\boxed{\\frac{3}{4}}$.", "answer": "\\frac{3}{4}", "subject": "Prealgebra", "level": 2, "unique_id": "local/five/2"},
+  {"problem": "If $3x - 7 = 11$, what is $x$?", "solution": "Add 7 and divide by 3: $x = \\boxed{6}$.", "answer": "6", "subject": "Algebra", "level": 1, "unique_id": "local/five/3"},
+  {"problem": "What is the area of a circle with radius 3? Express your answer in terms of $\\pi$.", "solution": "The area is $\\pi r^2 = \\boxed{9\\pi}$.", "answer": "9\\pi", "subject": "Geometry", "level": 2, "unique_id": "local/five/4"},
+  {"problem": "A rectangle has perimeter 20 and width 4. What is its length?", "solution": "Half the perimeter is 10, so the length is $10 - 4 = \\boxed{6}$.", "answer": "6", "subject": "Prealgebra", "level": 1, "unique_id": "local/five/5"}
+]

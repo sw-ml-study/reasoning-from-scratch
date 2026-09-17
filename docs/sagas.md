@@ -14,7 +14,7 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 | 2 | `feature-home-triage` | done: core versus library versus extension rule and handoffs |
 | 3 | `capability-probes` | done: 21 probes under `probes/`, declared in `catalog/probes.tsv`, run by `just capabilities` and the gate |
 | 4 | `request-documents` | done: per-repository ask documents |
-| 5 | `math-data-loader` | pending |
+| 5 | `math-data-loader` | done: `lib/eval/data.mlpl`, fixtures, `just fetch-math500`; ledger reconciled to build 0dfa3eae |
 | 6 | `boxed-extraction-and-normalization` | pending |
 | 7 | `expression-equivalence` | pending |
 | 8 | `evaluation-harness` | pending |

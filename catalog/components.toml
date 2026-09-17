@@ -11,11 +11,20 @@ documentation = "docs/verifier-contract.md"
 status = "planned"
 
 [[component]]
+id = "DATA"
+slug = "math-data-loader"
+chapter = 3
+source = "lib/eval/data.mlpl"
+test = "tests/test_eval_data.mlpl"
+documentation = "docs/data-and-models.md"
+status = "accepted"
+
+[[component]]
 id = "EVAL"
 slug = "evaluation-harness"
 chapter = 3
-source = "lib/eval/eval.mlpl"
-test = "tests/test_eval.mlpl"
+source = "lib/eval/harness.mlpl"
+test = "tests/test_eval_harness.mlpl"
 documentation = "docs/book-map.md"
 status = "planned"
 

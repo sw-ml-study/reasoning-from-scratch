@@ -59,15 +59,42 @@ matrix costs another 1.2 GB. Saga 3 measures load time, resident memory, and
 tokens per second before any evaluation is attempted; those numbers decide
 whether the MLX path or a compiled path must be requested upstream.
 
+## Loading datasets in MLPL
+
+`lib/eval/data.mlpl` (prefix `u:eval_`) is the only dataset entry point.
+It validates JSONL text line by line under explicit budgets (`max_bytes`,
+`max_records`, `max_line_bytes`), checks the record schema (`problem` and
+`answer` strings required; `solution`, `subject`, `unique_id` optional
+strings; `level` an optional number or string), and returns a dataset record
+`{source, lines, count}` or a classified error `{kind, line, field, message}`
+with kinds `io`, `budget`, `parse`, `type`, `missing_field`, and `index`.
+
+Records are kept as validated JSONL lines and parsed on access with
+`u:eval_record(dataset, i)`, because the language has string lists and
+numeric arrays but no incremental list of records. `u:eval_slice` returns a
+contiguous, clamped sub-dataset in the original order for bounded runs.
+
+`parse_json` rejects arrays of objects by design, so JSON-array files (the
+12,000-problem training split is published that way) go through
+`u:eval_split_json_array`, an interpreted character scanner bounded by a
+1 MiB default budget. For the full training split, the fetch recipe will
+convert the array to JSONL outside MLPL or raise the budget deliberately;
+that decision is measured in the step that adds the recipe.
+
+The committed fixtures under `fixtures/math/` are five hand-authored
+problems in both forms plus four adversarial files (missing field, duplicate
+key, wrong type, non-object line).
+
 ## Getting the artifacts
 
 ```sh
-just fetch-model       # Qwen3-0.6B-Base safetensors + tokenizer (Apache-2.0)
-just fetch-math500     # evaluation set
-just fetch-math-train  # 12,000-problem training split
+just fetch-math500     # evaluation set, 446,564 bytes of JSONL
+just fetch-model       # Qwen3-0.6B-Base safetensors + tokenizer (later step)
+just fetch-math-train  # 12,000-problem training split (later step)
 ```
 
-Each recipe delegates to `scripts/fetch-*`, uses `curl`, prints the license
-of what it downloads, checks the byte size against the published size, and
-refuses to overwrite an existing file. The recipes are introduced by the saga
-step that first needs the artifact.
+Each recipe delegates to `scripts/fetch-*`, uses `curl`, prints the source
+and license of what it downloads, checks the byte size against the
+published size, and refuses to overwrite an existing file. None runs inside
+`just check`. `fetch-math500` exists today; the others are introduced by
+the saga step that first needs the artifact.

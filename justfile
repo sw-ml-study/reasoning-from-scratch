@@ -21,6 +21,14 @@ tools:
     ./scripts/select-mlpl
     ./scripts/select-mlplunit
 
+# Download the MATH-500 evaluation set into ignored data/ (opt-in, not in check).
+fetch-math500:
+    ./scripts/fetch-math500
+
+# Print the upstream commits, interpreter build, and extension/library signals.
+upstream:
+    ./scripts/check-upstream
+
 # Run the capability probes and compare with the declared expectations.
 capabilities:
     ./scripts/run-capability-probes

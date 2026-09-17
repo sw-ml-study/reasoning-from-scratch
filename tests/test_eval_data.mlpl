@@ -1,0 +1,99 @@
+# MATH-style dataset loader contract: JSONL and JSON-array loading, schema errors, budgets, slicing, and totality.
+include "lib/eval/data.mlpl";
+
+@test {name: "jsonl fixture loads with five validated records", tags: ["eval", "data"]}
+def u:test_eval_data_loads_jsonl() {
+  "Load the hand-authored five-problem JSONL fixture and read fields back.";
+  dataset = u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {})?;
+  u:assert_eq(u:eval_count(dataset), 5, "record count")?;
+  second = u:eval_record(dataset, 1)?;
+  u:assert_text_eq(second.answer, "\\frac{3}{4}", "latex answer survives JSON escaping")?;
+  u:assert_eq(second.level, 2, "numeric level")?;
+  last = u:eval_record(dataset, 4)?;
+  u:assert_text_eq(last.unique_id, "local/five/5", "last record id")
+}
+
+@test {name: "json array fixture loads identically to the jsonl fixture", tags: ["eval", "data", "json-array"]}
+def u:test_eval_data_loads_json_array() {
+  "The array form is split into JSONL by the MLPL scanner and yields equal records.";
+  from_lines = u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {})?;
+  from_array = u:eval_load_json_array("fixtures/math/five_problems.json", {})?;
+  u:assert_eq(u:eval_count(from_array), 5, "array record count")?;
+  i = 0;
+  while i - 5 {
+    u:assert_true(equal(u:eval_record(from_array, i)?, u:eval_record(from_lines, i)?), "record equality")?;
+    i = i + 1
+  };
+  ok(1)
+}
+
+@test {name: "json array scanner respects strings escapes and budgets", tags: ["eval", "data", "json-array"]}
+def u:test_eval_data_json_array_scanner() {
+  "Braces inside strings and escaped quotes do not split objects; unbalanced input and oversized input are errors.";
+  text = "[{\"problem\": \"a } b \\\" c\", \"answer\": \"{x}\"}, {\"problem\": \"d\", \"answer\": \"1\"}]";
+  lines = u:eval_split_json_array(text, 4096)?;
+  dataset = u:eval_load_jsonl_text(lines, "mem", {})?;
+  u:assert_eq(u:eval_count(dataset), 2, "two objects")?;
+  first = u:eval_record(dataset, 0)?;
+  u:assert_text_eq(first.answer, "{x}", "braces inside a string are kept")?;
+  u:assert_err(u:eval_split_json_array("[{\"a\": 1}", 4096), "unbalanced braces rejected")?;
+  u:assert_err(u:eval_split_json_array("{\"a\": 1}", 4096), "non-array rejected")?;
+  u:assert_err(u:eval_split_json_array(text, 10), "budget rejected")
+}
+
+@test {name: "schema errors name the field and line", tags: ["eval", "data", "errors"]}
+def u:test_eval_data_schema_errors() {
+  "Missing required fields, duplicate keys, wrong types, and non-object lines are field-level errors.";
+  missing = u:eval_load_jsonl("fixtures/math/missing_answer.jsonl", {});
+  u:assert_err(missing, "missing answer rejected")?;
+  payload = err_message(missing);
+  u:assert_text_eq(payload.kind, "missing_field", "missing kind")?;
+  u:assert_text_eq(payload.field, "answer", "missing field name")?;
+  u:assert_eq(payload.line, 2, "missing field line")?;
+  duplicate = u:eval_load_jsonl("fixtures/math/duplicate_key.jsonl", {});
+  u:assert_text_eq(err_message(duplicate).kind, "parse", "duplicate key is a parse error")?;
+  wrong = u:eval_load_jsonl("fixtures/math/wrong_type.jsonl", {});
+  u:assert_text_eq(err_message(wrong).kind, "type", "numeric answer is a type error")?;
+  u:assert_text_eq(err_message(wrong).field, "answer", "type error names the field")?;
+  not_object = u:eval_load_jsonl("fixtures/math/not_an_object.jsonl", {});
+  u:assert_text_eq(err_message(not_object).kind, "type", "array line is a type error")
+}
+
+@test {name: "budgets and missing files are errors not crashes", tags: ["eval", "data", "budget"]}
+def u:test_eval_data_budgets() {
+  "max_bytes, max_records, max_line_bytes, and an absent path each return a classified error.";
+  u:assert_text_eq(err_message(u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {max_bytes: 100})).kind, "budget", "max_bytes")?;
+  u:assert_text_eq(err_message(u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {max_records: 2})).kind, "budget", "max_records")?;
+  u:assert_text_eq(err_message(u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {max_line_bytes: 50})).kind, "budget", "max_line_bytes")?;
+  u:assert_text_eq(err_message(u:eval_load_jsonl("fixtures/math/absent.jsonl", {})).kind, "io", "missing file")
+}
+
+@test {name: "slices are deterministic contiguous and clamped", tags: ["eval", "data", "slice"]}
+def u:test_eval_data_slice() {
+  "A slice keeps order, clamps at the end, yields an empty dataset past the end, and rejects a negative start.";
+  dataset = u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {})?;
+  middle = u:eval_slice(dataset, 1, 2)?;
+  u:assert_eq(u:eval_count(middle), 2, "slice count")?;
+  u:assert_true(equal(u:eval_record(middle, 0)?, u:eval_record(dataset, 1)?), "slice starts at index 1")?;
+  u:assert_true(equal(u:eval_record(middle, 1)?, u:eval_record(dataset, 2)?), "slice keeps order")?;
+  tail = u:eval_slice(dataset, 3, 10)?;
+  u:assert_eq(u:eval_count(tail), 2, "clamped slice")?;
+  past = u:eval_slice(dataset, 7, 2)?;
+  u:assert_eq(u:eval_count(past), 0, "empty slice past the end")?;
+  u:assert_err(u:eval_slice(dataset, -1, 2), "negative start rejected")?;
+  u:assert_err(u:eval_record(dataset, 5), "index past the end rejected")?;
+  u:assert_err(u:eval_record(dataset, -1), "negative index rejected")
+}
+
+@test {name: "empty text and trailing newline are handled", tags: ["eval", "data", "boundary"]}
+def u:test_eval_data_boundaries() {
+  "Empty input yields zero records; a final newline does not create a phantom record.";
+  empty = u:eval_load_jsonl_text("", "mem", {})?;
+  u:assert_eq(u:eval_count(empty), 0, "empty count")?;
+  one = u:eval_load_jsonl_text("{\"problem\": \"p\", \"answer\": \"1\"}\n", "mem", {})?;
+  u:assert_eq(u:eval_count(one), 1, "trailing newline ignored")?;
+  record = u:eval_record(one, 0)?;
+  u:assert_text_eq(record.problem, "p", "record readable")
+}
+
+u:run_registered_tests()

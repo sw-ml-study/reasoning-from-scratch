@@ -1,0 +1,297 @@
+# Bounded loading and validation of MATH-style problem records from JSONL text, files, and small JSON arrays.
+
+def u:eval_data_defaults() {
+  "Default budgets: whole-input characters, record count, and characters per line.";
+  {max_bytes: 4194304, max_records: 100000, max_line_bytes: 65536}
+}
+
+def u:eval_data_opt(opts, name, fallback) {
+  "Read one budget from an options record, falling back to the default when absent.";
+  if has_field(opts, name) {
+    unwrap(record_get(opts, name))
+  } else {
+    fallback
+  }
+}
+
+def u:eval_data_error(kind, line_no, field, message) {
+  "Build the uniform error payload every loader failure carries.";
+  err({kind: kind, line: line_no, field: field, message: message})
+}
+
+def u:eval_field_string(record, name, line_no, required) {
+  "Require or permit one string-valued field; report a missing or wrongly typed field by name and line.";
+  if has_field(record, name) {
+    if str_eq(type_of(unwrap(record_get(record, name))), "string") {
+      ok(1)
+    } else {
+      u:eval_data_error("type", line_no, name, str_concat(name, " must be a string"))
+    }
+  } else {
+    if required {
+      u:eval_data_error("missing_field", line_no, name, str_concat("required field absent: ", name))
+    } else {
+      ok(1)
+    }
+  }
+}
+
+def u:eval_validate_record(record, line_no) {
+  "Validate the MATH record schema: problem and answer strings, optional solution, subject, unique_id strings, optional numeric or string level.";
+  u:eval_field_string(record, "problem", line_no, 1)?;
+  u:eval_field_string(record, "answer", line_no, 1)?;
+  u:eval_field_string(record, "solution", line_no, 0)?;
+  u:eval_field_string(record, "subject", line_no, 0)?;
+  u:eval_field_string(record, "unique_id", line_no, 0)?;
+  if has_field(record, "level") {
+    kind = type_of(record.level);
+    if str_eq(kind, "array") {
+      if rank(record.level) { u:eval_data_error("type", line_no, "level", "level must be a scalar or a string") } else {
+        ok(record)
+      }
+    } else {
+      if str_eq(kind, "string") {
+        ok(record)
+      } else { u:eval_data_error("type", line_no, "level", "level must be a scalar or a string") }
+    }
+  } else {
+    ok(record)
+  }
+}
+
+def u:eval_parse_line(line, line_no, max_line_bytes) {
+  "Parse one JSONL line within its character budget and validate its schema.";
+  if gt(str_len(line), max_line_bytes) {
+    u:eval_data_error("budget", line_no, "", "line exceeds max_line_bytes")
+  } else {
+    parsed = parse_json(line, {max_depth: 4, max_bytes: max_line_bytes * 4});
+    if is_err(parsed) {
+      u:eval_data_error("parse", line_no, "", err_message(parsed))
+    } else {
+      value = unwrap(parsed);
+      if str_eq(type_of(value), "record") {
+        u:eval_validate_record(value, line_no)
+      } else {
+        u:eval_data_error("type", line_no, "", "line is not a JSON object")
+      }
+    }
+  }
+}
+
+def u:eval_line_count(lines) {
+  "Count lines while ignoring one trailing empty line left by a final newline.";
+  n = list_len(lines);
+  if n {
+    if str_eq(unwrap(list_get(lines, n - 1)), "") {
+      n - 1
+    } else {
+      n
+    }
+  } else {
+    0
+  }
+}
+
+def u:eval_load_jsonl_text(text, source, opts) {
+  "Validate every line of JSONL text under the budgets and return a dataset record {source, lines, count}.";
+  max_bytes = u:eval_data_opt(opts, "max_bytes", 4194304);
+  max_records = u:eval_data_opt(opts, "max_records", 100000);
+  max_line_bytes = u:eval_data_opt(opts, "max_line_bytes", 65536);
+  if gt(str_len(text), max_bytes) {
+    u:eval_data_error("budget", 0, "", "input exceeds max_bytes")
+  } else {
+    lines = str_split(text, "\n");
+    count = u:eval_line_count(lines);
+    if gt(count, max_records) {
+      u:eval_data_error("budget", 0, "", "record count exceeds max_records")
+    } else {
+      i = 0;
+      failure = ok(1);
+      while i - count {
+        checked = u:eval_parse_line(unwrap(list_get(lines, i)), i + 1, max_line_bytes);
+        if is_err(checked) {
+          failure = checked;
+          i = count
+        } else {
+          i = i + 1
+        }
+      };
+      if is_err(failure) {
+        failure
+      } else {
+        ok({source: source, lines: lines, count: count})
+      }
+    }
+  }
+}
+
+def u:eval_load_jsonl(path, opts) {
+  "Read a sandboxed JSONL file and validate it into a dataset record.";
+  text = read_text(path);
+  if is_err(text) {
+    u:eval_data_error("io", 0, "", err_message(text))
+  } else {
+    u:eval_load_jsonl_text(unwrap(text), path, opts)
+  }
+}
+
+def u:eval_count(dataset) {
+  "Number of validated records in a dataset.";
+  dataset.count
+}
+
+def u:eval_record(dataset, index) {
+  "Return record index (0-based) as a parsed record; out-of-range indexes are an error, not a crash.";
+  if lt(index, 0) {
+    u:eval_data_error("index", 0, "", "index below zero")
+  } else {
+    if lt(index, dataset.count) {
+      ok(unwrap(parse_json(unwrap(list_get(dataset.lines, index)))))
+    } else {
+      u:eval_data_error("index", 0, "", "index beyond the last record")
+    }
+  }
+}
+
+def u:eval_slice(dataset, start, count) {
+  "Deterministic contiguous slice [start, start + count) clamped to the dataset, as a new dataset record.";
+  if lt(start, 0) {
+    u:eval_data_error("index", 0, "", "slice start below zero")
+  } else {
+    stop = start + count;
+    if gt(stop, dataset.count) {
+      stop = dataset.count
+    } else {
+      0
+    };
+    text = "";
+    i = start;
+    while lt(i, stop) {
+      line = unwrap(list_get(dataset.lines, i));
+      text = if str_eq(text, "") {
+        line
+      } else {
+        str_concat(text, str_concat("\n", line))
+      };
+      i = i + 1
+    };
+    if str_eq(text, "") {
+      ok({source: dataset.source, lines: [], count: 0})
+    } else {
+      ok({source: dataset.source, lines: str_split(text, "\n"), count: stop - start})
+    }
+  }
+}
+
+def u:eval_scan_step(state, c) {
+  "Advance the JSON array scanner state {depth, in_string, escaped, seen_open, seen_close, start, pieces} by one character at index state.i over state.text.";
+  if state.in_string {
+    if state.escaped {
+      state = {depth: state.depth, in_string: 1, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+    } else {
+      if str_eq(c, "\\") {
+        state = {depth: state.depth, in_string: 1, escaped: 1, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+      } else {
+        if str_eq(c, "\"") {
+          state = {depth: state.depth, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+        } else {
+          0
+        }
+      }
+    }
+  } else {
+    if str_eq(c, "\"") {
+      state = {depth: state.depth, in_string: 1, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+    } else {
+      if str_eq(c, "[") {
+        if state.depth {
+          0
+        } else {
+          state = {depth: 0, in_string: 0, escaped: 0, seen_open: 1, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+        }
+      } else {
+        if str_eq(c, "]") {
+          if state.depth {
+            0
+          } else {
+            state = {depth: 0, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: 1, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+          }
+        } else {
+          if str_eq(c, "{") {
+            begin = if state.depth {
+              state.start
+            } else {
+              state.i
+            };
+            state = {depth: state.depth + 1, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: begin, pieces: state.pieces, text: state.text, i: state.i}
+          } else {
+            if str_eq(c, "}") {
+              depth = state.depth - 1;
+              pieces = if depth {
+                state.pieces
+              } else { u:eval_append_line(state.pieces, str_slice(state.text, state.start, state.i - state.start + 1)) };
+              state = {depth: depth, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: pieces, text: state.text, i: state.i}
+            } else {
+              0
+            }
+          }
+        }
+      }
+    }
+  };
+  state
+}
+
+def u:eval_append_line(text, line) {
+  "Append one line to accumulated JSONL text, without a leading newline on the first line.";
+  if str_eq(text, "") {
+    line
+  } else {
+    str_concat(text, str_concat("\n", line))
+  }
+}
+
+def u:eval_split_json_array(text, max_bytes) {
+  "Rewrite a JSON array of objects as JSONL by scanning brace depth and string state; bounded by max_bytes characters because the scan is interpreted.";
+  if gt(str_len(text), max_bytes) {
+    u:eval_data_error("budget", 0, "", "array text exceeds max_bytes")
+  } else {
+    chars = str_split(text, "");
+    n = list_len(chars);
+    state = {depth: 0, in_string: 0, escaped: 0, seen_open: 0, seen_close: 0, start: 0, pieces: "", text: text, i: 0};
+    i = 0;
+    while i - n {
+      state = {depth: state.depth, in_string: state.in_string, escaped: state.escaped, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: text, i: i};
+      state = u:eval_scan_step(state, unwrap(list_get(chars, i)));
+      i = i + 1
+    };
+    if state.seen_open {
+      if state.depth {
+        u:eval_data_error("parse", 0, "", "unbalanced braces in JSON array")
+      } else {
+        if state.in_string {
+          u:eval_data_error("parse", 0, "", "unterminated string in JSON array")
+        } else {
+          if state.seen_close {
+            ok(state.pieces)
+          } else { u:eval_data_error("parse", 0, "", "unterminated JSON array") }
+        }
+      }
+    } else {
+      u:eval_data_error("parse", 0, "", "text is not a JSON array")
+    }
+  }
+}
+
+def u:eval_load_json_array(path, opts) {
+  "Read a sandboxed JSON array file, rewrite it as JSONL, and validate it into a dataset record.";
+  text = read_text(path);
+  if is_err(text) {
+    u:eval_data_error("io", 0, "", err_message(text))
+  } else {
+    jsonl = u:eval_split_json_array(unwrap(text), u:eval_data_opt(opts, "max_bytes", 1048576));
+    if is_err(jsonl) {
+      jsonl
+    } else { u:eval_load_jsonl_text(unwrap(jsonl), path, opts) }
+  }
+}

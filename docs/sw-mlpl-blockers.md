@@ -11,9 +11,10 @@ Measured against:
 
 ```text
 mlpl-repl 0.22.0
-Commit: 1b4d29e5
-Timestamp: 2026-09-16T11:08:06-0700
+Commit: 0dfa3eae
+Timestamp: 2026-09-16T20:00:01-0700
 MLX feature: not compiled into this binary
+Previous pin: 1b4d29e5 (2026-09-16T11:08); sqrt, sin, cos backward rules shipped between the two
 Machine: Apple M1 Max, 10 cores, 64 GB
 ```
 
@@ -31,9 +32,9 @@ workaround), **missing** (a step is blocked or must stop with an honest
 
 | Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| `sqrt` inside `grad` | missing | `grad-sqrt`: "function 'sqrt' not supported inside grad()" | core (upstream in progress); `exp(0.5 * log(x))` |
-| `pow` inside `grad` | missing | `grad-pow`: same error class | core; multiply explicitly |
-| `sin`, `cos` inside `grad` | missing | `grad-sin-cos`: same error class | core, low priority; RoPE tables are parameter-free constants computed eagerly |
+| `sqrt` inside `grad` | supported since 0dfa3eae | `grad-sqrt`: gradient of `reduce_add(sqrt(w))` at `[1, 4, 9]` is `[0.5, 0.25, 0.1667]` | shipped upstream (RS1); the `exp(0.5 * log(x))` spelling remains as a cross-check |
+| `pow` inside `grad` | missing | `grad-pow`: "function 'pow' not supported inside grad()" | core (upstream in progress); multiply explicitly |
+| `sin`, `cos` inside `grad` | supported since 0dfa3eae | `grad-sin-cos`: gradient of `sin(w) + cos(w)` matches `cos(w) - sin(w)` | shipped upstream (RS1) |
 | `softmax(a, axis)` inside `grad` | missing | `grad-softmax-axis`: eager axis form works (row sums 1), tape form "softmax expects 1 arguments, got 2" | core; `softmax-rowwise` proves the 1-argument form is row-wise on rank-2, which per-head `[T, T]` scores need |
 | rank-3 `matmul` | missing | `matmul-rank3`: "index has 3 components but array has rank 2" (message names the wrong problem) | core; loop over heads with rank-2 `matmul` |
 | `transpose_axes` inside `grad` | missing | `grad-transpose-axes`: "function 'transpose_axes' not supported inside grad()" | core; keep per-head slices rank-2 and use `transpose` |

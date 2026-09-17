@@ -1,0 +1,21 @@
+#!/bin/sh
+# Print one line per upstream signal this repository waits on. Read-only.
+# Used by hand (`just upstream`) and by a watch loop that diffs its output.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+parent=$(CDPATH= cd -- "$repo_root/.." && pwd)
+
+head_of() { git -C "$1" log -1 --format='%h' 2>/dev/null || echo "absent"; }
+
+mlpl=$("$repo_root/scripts/select-mlpl" 2>/dev/null || echo "")
+if [ -n "$mlpl" ]; then
+    binary=$("$mlpl" --version | awk '/^ *Commit:/ { print $2 }')
+else
+    binary="absent"
+fi
+
+echo "sw-mlpl head=$(head_of "$parent/sw-mlpl") binary=${binary:-unknown}"
+echo "demo-extensions head=$(head_of "$parent/demo-extensions") hftok=$([ -d "$parent/demo-extensions/extensions/hftok" ] && echo present || echo absent)"
+echo "demo-mlpl-libraries head=$(head_of "$parent/demo-mlpl-libraries") libraries=$(grep '^name = ' "$parent/demo-mlpl-libraries/catalog/libraries.toml" 2>/dev/null | sed 's/name = //; s/"//g' | tr '\n' ',' | sed 's/,$//')"
+echo "demo-ml-utils head=$(head_of "$parent/demo-ml-utils")"

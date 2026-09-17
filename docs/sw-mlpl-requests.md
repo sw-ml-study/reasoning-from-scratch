@@ -17,7 +17,10 @@ ledger, and removes the workaround where the plan allows.
 ## R1. Differentiable `sqrt`, `pow`, `rsqrt`
 
 - Probes: `grad-sqrt`, `grad-pow`.
-- Today: "function 'sqrt' not supported inside grad()".
+- Status: `sqrt` (and `sin`, `cos`, R5) shipped in upstream commit
+  0dfa3eae on 2026-09-16 and the probes flipped to pass; `pow` and
+  `rsqrt` remain open.
+- Before the fix: "function 'sqrt' not supported inside grad()".
 - Requested: backward rules `d sqrt(x) = 0.5 / sqrt(x)`, `d pow(x, n)` for
   a constant exponent, and an `rsqrt` builtin with `d rsqrt(x) = -0.5 *
   x^(-1.5)`, all elementwise with broadcasting.
@@ -60,11 +63,10 @@ ledger, and removes the workaround where the plan allows.
   equals the transposed weights.
 - Used by: head splitting and merging in attention.
 
-## R5. Differentiable `sin` and `cos` (low priority)
+## R5. Differentiable `sin` and `cos`
 
 - Probe: `grad-sin-cos`.
-- Requested only for completeness; RoPE tables are parameter-free and
-  computed eagerly, so nothing here blocks on it.
+- Status: shipped in upstream commit 0dfa3eae; the probe passes.
 
 ## R6. Scientific-notation literals
 

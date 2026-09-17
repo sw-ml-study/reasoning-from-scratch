@@ -62,8 +62,17 @@ The capability ledger is now executable: twenty-one probes under
 parses in 83 ms, a 10 MB array round-trips through native serialization in
 134 ms, and the output-head product alone costs 252 ms per token.
 
+The first library is in: `lib/eval/data.mlpl` loads and validates
+MATH-style records from JSONL (and small JSON arrays) under explicit
+budgets, with eight mlplunit tests over hand-authored fixtures, and
+`just fetch-math500` downloads the evaluation set with a size check.
+Upstream has already shipped differentiable `sqrt`, `sin`, and `cos`
+(build 0dfa3eae); the probe suite caught the change and the ledger was
+reconciled.
+
 Saga 1 (verifier and evaluation harness, no model needed) is active; its
-next step is `math-data-loader`. Nothing yet generates text.
+next step is `boxed-extraction-and-normalization`. Nothing yet generates
+text.
 
 ## Build and check
 
@@ -79,6 +88,8 @@ just tests      # native mlplunit suites under tests/
 just mlpl-style # module comments, docstrings, canonical formatting
 just sources    # no Python, nothing byte-identical to the reference clone
 just capabilities  # run the probes and compare with catalog/probes.tsv
+just upstream   # print upstream commits, interpreter build, extension and library signals
+just fetch-math500  # opt-in download of the evaluation set into ignored data/
 just check      # the complete precommit gate
 ```
 
