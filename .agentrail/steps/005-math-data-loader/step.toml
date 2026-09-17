@@ -1,9 +1,10 @@
 number = 5
 slug = "math-data-loader"
-status = "pending"
+status = "completed"
 description = "Implement lib/eval/data.mlpl (prefix u:eval_): bounded loading of MATH-style ..."
 role = "production"
 context_files = []
 created_at = "2026-09-16T17:19:34"
+completed_at = "2026-09-16T20:12:16"
 task_type = "mlpl-library"
-commits = []
+commits = ["59f326e2ac4e4801da00e85aa792e5c14c93a803"]
