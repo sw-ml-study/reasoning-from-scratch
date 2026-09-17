@@ -1,0 +1,10 @@
+# Probe: str_replace, str_trim, str_starts_with, str_contains exist as builtins (exit 0) or not (exit 1).
+missing = ""
+outcome = try {
+  str_replace("abc", "b", "x");
+  ok(1)
+} catch e {
+  err(e.message)
+}
+print("str-helpers:", outcome)
+outcome

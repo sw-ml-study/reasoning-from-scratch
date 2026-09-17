@@ -1,0 +1,22 @@
+id	path	home	expectation	meaning	state
+grad-sqrt	probes/grad-sqrt.mlpl	core	fail	sqrt has a backward rule on the tape	open
+grad-pow	probes/grad-pow.mlpl	core	fail	pow has a backward rule on the tape	open
+grad-sin-cos	probes/grad-sin-cos.mlpl	core	fail	sin and cos have backward rules on the tape	open
+grad-softmax-axis	probes/grad-softmax-axis.mlpl	core	fail	softmax(a, axis) is differentiable	open
+grad-transpose-axes	probes/grad-transpose-axes.mlpl	core	fail	transpose_axes is differentiable	open
+matmul-rank3	probes/matmul-rank3.mlpl	core	fail	matmul accepts batched rank-3 operands	open
+scientific-literal	probes/scientific-literal.mlpl	core	fail	scientific-notation literals parse	open
+reinterpret-bf16	probes/reinterpret-bf16.mlpl	core	fail	reinterpret accepts bf16 or f16	open
+grad-clip-builtin	probes/grad-clip-builtin.mlpl	library	fail	a gradient-norm clipping builtin exists (a library replaces it)	workaround
+str-helpers	probes/str-helpers.mlpl	library	fail	str_replace exists as a builtin (a library replaces it)	workaround
+for-string-list	probes/for-string-list.mlpl	library	fail	for iterates a string list (while plus list_get replaces it)	workaround
+json-array-of-objects	probes/json-array-of-objects.mlpl	none	fail	parse_json accepts arrays of objects (JSONL is the input by design)	by-design
+grad-sqrt-workaround	probes/grad-sqrt-workaround.mlpl	library	pass	exp(0.5 * log(x)) differentiates as sqrt	available
+param-data-gradient	probes/param-data-gradient.mlpl	core	pass	a param leaf reassigned to data still receives gradients	available
+grad-core-ops	probes/grad-core-ops.mlpl	core	pass	mean, axis reduce, gather_rows, take, concat, transpose, sigmoid, log-softmax gather differentiate	available
+bf16-vectorized-decode	probes/bf16-vectorized-decode.mlpl	library	pass	bf16 byte pairs decode with vectorized bit arithmetic	available
+jsonl-lines	probes/jsonl-lines.mlpl	library	pass	JSONL records parse line by line	available
+softmax-rowwise	probes/softmax-rowwise.mlpl	core	pass	one-argument softmax on rank-2 input is row-wise	available
+parse-json-150k	probes/parse-json-150k.mlpl	core	pass	a 150,000-key 7 MB JSON object parses within 60 s	available
+native-roundtrip-10mb	probes/native-roundtrip-10mb.mlpl	core	pass	a 10 MB array round-trips through to_native and parse_native	available
+matmul-throughput	probes/matmul-throughput.mlpl	core	pass	informational matmul timings for the 0.6B feasibility estimate	available

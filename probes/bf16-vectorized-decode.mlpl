@@ -1,0 +1,23 @@
+# Probe: bf16 values decode from byte pairs with vectorized bit arithmetic (the workaround for the missing dtype).
+def u:probe_bf16_decode(bytes) {
+  "Decode little-endian bf16 byte pairs to f64 for normal and zero values (no subnormal, inf, or nan handling).";
+  pairs = reshape(bytes, [tally(bytes) / 2, 2]);
+  lo = take(pairs, 1, 0);
+  hi = take(pairs, 1, 1);
+  u = lo + 256 * hi;
+  sign = 1 - 2 * shr(u, 15);
+  exponent = band(shr(u, 7), 255);
+  mantissa = band(u, 127);
+  normal = sign * pow(2, exponent - 127) * (1 + mantissa / 128);
+  normal * gt(exponent, 0)
+}
+
+bytes = [128, 63, 128, 191, 0, 64, 0, 63, 0, 0, 72, 66]
+observed = u:probe_bf16_decode(bytes)
+expected = [1, -1, 2, 0.5, 0, 50]
+print("bf16-vectorized-decode observed:", observed)
+if equal(observed, expected) {
+  ok(observed)
+} else {
+  err("bf16 decode mismatch")
+}

@@ -1,0 +1,12 @@
+# Probe: exp(0.5 * log(x)) differentiates as a square root; the gradient must match 0.5 / sqrt(x).
+w = param[3]
+w = [1, 4, 9]
+observed = grad(reduce_add(exp(0.5 * log(w))), w)
+expected = 0.5 / sqrt([1, 4, 9])
+gap = reduce(:max, abs(observed - expected))
+print("grad-sqrt-workaround observed:", observed, "expected:", expected, "gap:", gap)
+if gt(gap, 0.000000001) {
+  err("workaround gradient diverges")
+} else {
+  ok(observed)
+}

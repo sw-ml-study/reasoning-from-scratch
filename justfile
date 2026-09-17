@@ -21,6 +21,10 @@ tools:
     ./scripts/select-mlpl
     ./scripts/select-mlplunit
 
+# Run the capability probes and compare with the declared expectations.
+capabilities:
+    ./scripts/run-capability-probes
+
 # Run the complete precommit gate.
 check:
     ./scripts/check

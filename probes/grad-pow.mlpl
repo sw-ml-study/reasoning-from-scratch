@@ -1,0 +1,10 @@
+# Probe: pow is differentiable inside grad() (exit 0) or rejected (exit 1).
+w = param[3]
+w = [1, 2, 3]
+outcome = try {
+  grad(reduce_add(pow(w, 2)), w)
+} catch e {
+  err(e.message)
+}
+print("grad-pow:", outcome)
+outcome

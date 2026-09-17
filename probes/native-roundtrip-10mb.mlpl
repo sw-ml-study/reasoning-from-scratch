@@ -1,0 +1,13 @@
+# Probe: a 10 MB f64 array round-trips through to_native, write_bytes, read_bytes, parse_native; prints elapsed ms.
+x = randn(7, [1250000])
+t0 = clock_ms()
+encoded = to_native(x)?
+write_bytes("out/probes/roundtrip.mlpb", encoded)?
+decoded = parse_native(read_bytes("out/probes/roundtrip.mlpb")?)?
+elapsed = clock_ms() - t0
+print("native-roundtrip-10mb bytes:", tally(encoded), "ms:", elapsed)
+if equal(decoded, x) {
+  ok(elapsed)
+} else {
+  err("native round-trip mismatch")
+}

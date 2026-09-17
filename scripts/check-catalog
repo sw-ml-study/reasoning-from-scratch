@@ -26,5 +26,18 @@ while IFS= read -r line; do
     esac
 done < "$catalog"
 
-[ "$status" -eq 0 ] && echo "catalog: ok"
-exit "$status"
+[ "$status" -eq 0 ] || exit "$status"
+echo "catalog: ok"
+
+# Every probe in catalog/probes.tsv must exist and declare pass or fail.
+probes="$repo_dir/catalog/probes.tsv"
+while IFS='	' read -r id path home expectation meaning state; do
+    [ "$id" = "id" ] && continue
+    [ -n "$id" ] || continue
+    [ -f "$repo_dir/$path" ] || { echo "probe catalog references missing path: $path" >&2; exit 1; }
+    case "$expectation" in
+        pass|fail) ;;
+        *) echo "probe $id has invalid expectation: $expectation" >&2; exit 1 ;;
+    esac
+done < "$probes"
+echo "probe catalog: ok"

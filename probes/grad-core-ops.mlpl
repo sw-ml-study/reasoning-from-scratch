@@ -1,0 +1,51 @@
+# Probe: the array ops the Qwen3 forward pass relies on differentiate with analytic gradients.
+def u:probe_close(name, observed, expected) {
+  "Return ok when observed matches expected within 1e-9, else err naming the op.";
+  gap = reduce(:max, abs(observed - expected));
+  print(name, "gap:", gap);
+  if gt(gap, 0.000000001) {
+    err(str_concat("gradient mismatch: ", name))
+  } else {
+    ok(1)
+  }
+}
+
+def u:probe_rms(x) {
+  "RMS-normalize a vector using the exp-log square-root spelling.";
+  x / exp(0.5 * log(mean(x * x) + 0.000001))
+}
+
+def u:probe_rms_loss(x) {
+  "Weighted sum of the RMS-normalized vector, the scalar under test.";
+  reduce_add(u:probe_rms(x) * [1, -2, 3, -4, 5, -6])
+}
+
+def u:probe_fd(x) {
+  "Central finite-difference gradient of u:probe_rms_loss at x, one coordinate at a time.";
+  n = tally(x);
+  h = 0.00001;
+  i = 0;
+  g = zeros([n]);
+  while i - n {
+    bump = one_hot([i], n);
+    bump = take(bump, 0, 0) * h;
+    g = scatter(g, i, (u:probe_rms_loss(x + bump) - u:probe_rms_loss(x - bump)) / (2 * h));
+    i = i + 1
+  };
+  g
+}
+
+w = param[6]
+w = [1, 2, 3, 4, 5, 6]
+u:probe_close("mean", grad(mean(w * w), w), 2 * [1, 2, 3, 4, 5, 6] / 6)?
+u:probe_close("reduce axis", grad(reduce_add(reduce(:add, reshape(w * w, [2, 3]), 1) * [1, 2]), w), 2 * [1, 2, 3, 4, 5, 6] * [1, 1, 1, 2, 2, 2])?
+u:probe_close("gather_rows", grad(reduce_add(gather_rows(reshape(w, [3, 2]), [0, 0, 2]) * 2), w), [4, 4, 0, 0, 2, 2])?
+u:probe_close("take", grad(reduce_add(take(reshape(w, [2, 3]), 0, 1)), w), [0, 0, 0, 1, 1, 1])?
+u:probe_close("concat axis", grad(reduce_add(concat(reshape(w, [2, 3]), reshape(w, [2, 3]), 1) * 2), w), [4, 4, 4, 4, 4, 4])?
+u:probe_close("transpose rank2", grad(reduce_add(transpose(reshape(w, [2, 3])) * [[1, 2], [3, 4], [5, 6]]), w), [1, 3, 5, 2, 4, 6])?
+u:probe_close("silu", grad(reduce_add(w * sigmoid(w)), w), sigmoid([1, 2, 3, 4, 5, 6]) * (1 + [1, 2, 3, 4, 5, 6] * (1 - sigmoid([1, 2, 3, 4, 5, 6]))))?
+p = softmax([1, 2, 3])
+u:probe_close("log softmax gather", grad(reduce_add(log(softmax(take(reshape(w, [2, 3]), 0, 0))) * take(one_hot([2], 3), 0, 0)), w), concat(take(one_hot([2], 3), 0, 0) - p, [0, 0, 0]))?
+u:probe_close("rmsnorm via exp-log", grad(reduce_add(u:probe_rms(w) * [1, -2, 3, -4, 5, -6]), w), u:probe_fd([1, 2, 3, 4, 5, 6]))?
+print("grad-core-ops: all differentiable")
+ok(1)

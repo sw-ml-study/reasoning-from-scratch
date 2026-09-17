@@ -1,0 +1,79 @@
+#!/bin/sh
+# Run every probe in catalog/probes.tsv against the selected interpreter and
+# compare the observed pass/fail with the declared expectation. A probe that
+# disagrees means upstream capability changed; the ledger must be reconciled
+# in the same step. Per-probe output, wall time, and peak memory land in
+# out/probes/<id>.log and out/probes/report.tsv.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mlpl=$("$repo_root/scripts/select-mlpl")
+catalog="$repo_root/catalog/probes.tsv"
+out="$repo_root/out/probes"
+
+[ -f "$catalog" ] || { echo "probe catalog missing: $catalog" >&2; exit 1; }
+"$repo_root/scripts/generate-probe-fixtures" >/dev/null
+mkdir -p "$out"
+
+version=$("$mlpl" --version | head -1)
+commit=$("$mlpl" --version | awk '/^ *Commit:/ { print $2 }')
+echo "Capability probes against $version commit ${commit:-unknown}"
+printf 'id\thome\texpectation\tobserved\twall_ms\tmax_rss_kb\n' > "$out/report.tsv"
+
+timer=""
+if [ -x /usr/bin/time ] && /usr/bin/time -l true 2>/dev/null; then
+    timer="/usr/bin/time -l"
+fi
+
+drift=0
+while IFS='	' read -r id path home expectation meaning state; do
+    [ "$id" = "id" ] && continue
+    [ -n "$id" ] || continue
+    [ -f "$repo_root/$path" ] || {
+        echo "  MISSING  $id -> $path" >&2
+        drift=1
+        continue
+    }
+
+    log="$out/$id.log"
+    start=$(date +%s)
+    if [ -n "$timer" ]; then
+        if $timer "$mlpl" --source-dir "$repo_root" "$repo_root/$path" >"$log" 2>"$log.time"; then
+            observed=pass
+        else
+            observed=fail
+        fi
+        rss=$(awk '/maximum resident set size/ { print int($1 / 1024) }' "$log.time")
+        grep -v "maximum resident\|real\|user\|sys\|page\|faults\|swaps\|block\|messages\|signals\|context\|instructions\|cycles\|peak\|footprint" "$log.time" >> "$log" || true
+    else
+        if "$mlpl" --source-dir "$repo_root" "$repo_root/$path" >"$log" 2>&1; then
+            observed=pass
+        else
+            observed=fail
+        fi
+        rss=""
+    fi
+    end=$(date +%s)
+    wall=$(( (end - start) * 1000 ))
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$home" "$expectation" "$observed" "$wall" "${rss:-}" >> "$out/report.tsv"
+
+    if [ "$observed" = "$expectation" ]; then
+        case "$observed" in
+            pass) echo "  available  [$home] $id" ;;
+            *) echo "  open       [$home] $id" ;;
+        esac
+    else
+        echo "  DRIFT      [$home] $id: expected $expectation, observed $observed" >&2
+        echo "             $meaning (see $log)" >&2
+        drift=1
+    fi
+done < "$catalog"
+
+if [ "$drift" -ne 0 ]; then
+    echo "Probe state disagrees with catalog/probes.tsv." >&2
+    echo "Upstream capability changed: reconcile docs/sw-mlpl-blockers.md," >&2
+    echo "re-pin the observed build commit, and update the expectation." >&2
+    exit 1
+fi
+
+echo "PASS capability probes (report: out/probes/report.tsv)"

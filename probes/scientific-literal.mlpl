@@ -1,0 +1,4 @@
+# Probe: a scientific-notation literal parses (exit 0) or fails to parse (exit 1).
+x = 1e-4
+print("scientific-literal:", x)
+ok(x)

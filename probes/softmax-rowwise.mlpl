@@ -1,0 +1,9 @@
+# Probe: one-argument softmax on a rank-2 array normalizes each row (the differentiable form attention needs).
+rows = softmax(reshape([1, 2, 3, 4, 5, 6], [2, 3]))
+sums = reduce(:add, rows, 1)
+print("softmax-rowwise sums:", sums)
+if lt(reduce(:max, abs(sums - 1)), 0.000000001) {
+  ok(sums)
+} else {
+  err("softmax is not row-wise")
+}

@@ -1,0 +1,25 @@
+# Probe: reinterpret(bytes, dtype) accepts bf16 or f16 (exit 0) or rejects them (exit 1); prints the accepted dtype list.
+b = pack([0, 0, 128, 63, 0, 0, 0, 0], "u8")
+accepted = ""
+i = 0
+candidates = ["u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "f32", "f64", "f16", "bf16"]
+while i - list_len(candidates) {
+  name = unwrap(list_get(candidates, i));
+  verdict = try {
+    reinterpret(b, name);
+    "yes"
+  } catch e {
+    "no"
+  };
+  accepted = str_concat(accepted, str_concat(name, str_concat("=", str_concat(verdict, " "))));
+  i = i + 1
+}
+print("reinterpret dtypes:", accepted)
+half = try {
+  reinterpret(b, "bf16");
+  ok(1)
+} catch e {
+  err(e.message)
+}
+print("reinterpret-bf16:", half)
+half

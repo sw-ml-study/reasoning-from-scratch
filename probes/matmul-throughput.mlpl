@@ -1,0 +1,16 @@
+# Probe: single-operation timings that bound 0.6B-model decoding on this interpreter; informational, always exits 0.
+h = randn(1, [1, 1024])
+ffn = randn(2, [1024, 3072])
+t0 = clock_ms()
+repeat 10 {
+  matmul(h, ffn)
+}
+ffn_ms = (clock_ms() - t0) / 10
+head = randn(3, [1024, 151936])
+t1 = clock_ms()
+repeat 3 {
+  matmul(h, head)
+}
+head_ms = (clock_ms() - t1) / 3
+print("matmul-throughput ffn [1,1024]x[1024,3072] ms:", ffn_ms, "head [1,1024]x[1024,151936] ms:", head_ms)
+ok([ffn_ms, head_ms])

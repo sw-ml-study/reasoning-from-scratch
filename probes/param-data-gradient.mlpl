@@ -1,0 +1,11 @@
+# Probe: a param leaf reassigned to a data array still receives a gradient (pretrained weights as leaves).
+w = param[2, 2]
+w = [[1, 2], [3, 4]]
+observed = grad(reduce_add(matmul(w, [[1, 0], [0, 1]]) * [[1, 2], [3, 4]]), w)
+expected = [[1, 2], [3, 4]]
+print("param-data-gradient observed:", observed)
+if equal(observed, expected) {
+  ok(observed)
+} else {
+  err("gradient does not reach the reassigned leaf")
+}

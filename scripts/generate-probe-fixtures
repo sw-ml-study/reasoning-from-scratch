@@ -1,0 +1,22 @@
+#!/bin/sh
+# Generate the large synthetic inputs the capability probes read. Nothing here
+# is committed; out/ is ignored. Deterministic: the same bytes every run.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+out="$repo_root/out/probes"
+mkdir -p "$out"
+
+target="$out/vocab-150k.json"
+if [ ! -f "$target" ]; then
+    awk 'BEGIN {
+        printf "{";
+        for (i = 0; i < 150000; i++) {
+            if (i > 0) printf ",";
+            printf "\"token_entry_%09d\": \"value_%09d\"", i, i;
+        }
+        printf "}\n";
+    }' > "$target.tmp"
+    mv "$target.tmp" "$target"
+fi
+printf '%s\n' "$target"

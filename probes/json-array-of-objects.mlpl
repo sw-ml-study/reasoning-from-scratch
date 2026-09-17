@@ -1,0 +1,4 @@
+# Probe: parse_json accepts a JSON array of objects (exit 0) or rejects it (exit 1).
+outcome = parse_json("[{\"problem\": \"p\", \"answer\": \"1\"}, {\"problem\": \"q\", \"answer\": \"2\"}]")
+print("json-array-of-objects:", outcome)
+outcome

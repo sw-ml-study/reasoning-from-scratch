@@ -1,0 +1,11 @@
+# Probe: JSONL records parse line by line with str_split and parse_json (the dataset input path).
+text = "{\"problem\": \"p\", \"answer\": \"\\\\boxed{2}\"}\n{\"problem\": \"q\", \"answer\": \"1/2\"}"
+lines = str_split(text, "\n")
+first = parse_json(unwrap(list_get(lines, 0)))?
+second = parse_json(unwrap(list_get(lines, 1)))?
+print("jsonl-lines:", first.answer, second.answer)
+if str_eq(second.answer, "1/2") {
+  ok(list_len(lines))
+} else {
+  err("jsonl parse mismatch")
+}

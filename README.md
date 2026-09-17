@@ -53,8 +53,15 @@ downloads are Rust extensions requested from `../demo-extensions`
 ([`docs/cross-repo-handoffs.md`](docs/cross-repo-handoffs.md)), with MLPL
 reference implementations kept as parity oracles.
 
+The capability ledger is now executable: twenty-one probes under
+`probes/` pin each measured fact against the interpreter build, and
+`just capabilities` fails when an observation drifts from
+`catalog/probes.tsv`. Measured on this machine: a 150,000-key JSON object
+parses in 83 ms, a 10 MB array round-trips through native serialization in
+134 ms, and the output-head product alone costs 252 ms per token.
+
 Saga 1 (verifier and evaluation harness, no model needed) is active; its
-next step is `capability-probes`. Nothing yet generates text.
+next step is `math-data-loader`. Nothing yet generates text.
 
 ## Build and check
 
@@ -69,6 +76,7 @@ just tools      # print the selected interpreter and runner
 just tests      # native mlplunit suites under tests/
 just mlpl-style # module comments, docstrings, canonical formatting
 just sources    # no Python, nothing byte-identical to the reference clone
+just capabilities  # run the probes and compare with catalog/probes.tsv
 just check      # the complete precommit gate
 ```
 

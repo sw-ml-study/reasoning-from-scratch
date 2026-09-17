@@ -48,7 +48,7 @@ lib/safetensors/ header parsing, bf16 decoding, name mapping, checkpoints
 lib/verify/     boxed extraction, normalization, expression equivalence
 lib/text/       string scanning helpers that stand in for regular expressions
    |
-probes/         executable capability probes with declared expected results
+probes/         executable capability probes; expectations in catalog/probes.tsv
 tests/          native mlplunit suites, one per library module
 fixtures/       tiny synthetic tokenizer, safetensors, problem sets
 ```

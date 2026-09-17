@@ -1,20 +1,25 @@
 # sw-MLPL capability ledger
 
-Measured against the adjacent development build on 2026-09-16:
+Every row below cites an executable probe under `probes/` and the result it
+observed. `catalog/probes.tsv` declares the expected pass/fail of each probe;
+`just capabilities` (also run by `just check`) fails when an observation
+drifts from the declaration, so an upstream change surfaces as a gate
+failure that must be reconciled here in the same step. Per-run output,
+wall time, and peak resident memory land in `out/probes/`.
+
+Measured against:
 
 ```text
 mlpl-repl 0.22.0
 Commit: 1b4d29e5
 Timestamp: 2026-09-16T11:08:06-0700
 MLX feature: not compiled into this binary
+Machine: Apple M1 Max, 10 cores, 64 GB
 ```
 
-Claims pin the build commit, never the version string (peer repositories
-observed identical version strings with different behavior). Probe scripts
-under `probes/` become the authority in Saga 1 step 2; until then the rows
-cite throwaway probes run during planning plus source and documentation
-inspection of `../sw-mlpl` (paths are relative to that repository). Nothing
-here is an authorized upstream change; it is a request queue with evidence.
+Claims pin the build commit, never the version string. The home of each gap
+(core, library, extension, none) follows [`feature-homes.md`](feature-homes.md);
+extension work orders are in [`cross-repo-handoffs.md`](cross-repo-handoffs.md).
 
 Classification: **supported**, **awkward** (expressible with a documented
 workaround), **missing** (a step is blocked or must stop with an honest
@@ -22,117 +27,120 @@ workaround), **missing** (a step is blocked or must stop with an honest
 
 ## Autograd coverage for the transformer forward pass
 
-| Need | Status | Evidence | Workaround or request |
+| Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| `sqrt` inside `grad` (RMSNorm, attention scale) | missing | `grad(reduce_add(sqrt(w * w + 1)), w)` fails: function 'sqrt' not supported inside grad() | `exp(0.5 * log(x))` differentiates correctly (probed); request differentiable `sqrt`, `pow`, `rsqrt` |
-| `pow`, `cos`, `sin` inside `grad` | missing | same error class | multiply explicitly; RoPE tables are parameter-free constants computed eagerly, so `cos`/`sin` never need the tape |
-| `softmax(a, axis)` inside `grad` | missing | "softmax expects 1 arguments, got 2" inside `grad`; the 2-argument form works eagerly | 1-argument `softmax` on a rank-2 array is row-wise and differentiable, sufficient for per-head `[T, T]` scores |
-| rank-3 `matmul` (batched over heads) | missing | `matmul` on `[2,3,4] x [2,4,3]` errors with "index has 3 components but array has rank 2" (message names the wrong problem); `matmul` is documented and implemented as 2-D only | loop over heads with rank-2 `matmul`; request batched matmul over leading axes and a clearer error |
-| `transpose_axes` inside `grad` | missing | "function 'transpose_axes' not supported inside grad()" | keep per-head slices rank-2 and use `transpose`; request tape support |
-| rank-3 `transpose` | awkward | reverses all axes (`[2,3,4]` becomes `[4,3,2]`) | acceptable only with per-head loops |
-| `reduce(:add, a, axis)`, `mean`, `log`, `exp`, `sigmoid`, `gather_rows`, `take`, `concat(a, b, axis)`, `reshape`, rank-2 `transpose`, masks via `gt`/`eq` as constants | supported | all differentiated correctly in probes; tape op list in `components/autograd/crates/mlpl-autograd-tape/src/ops.rs` | RMSNorm, SiLU (`x * sigmoid(x)`), embedding lookup, KV concatenation, causal masking are expressible |
-| `param` leaf reassigned to a data array (pretrained weights) | supported | `w = param[6]; w = [1, ...]` still receives a gradient | load decoded tensors into `param` leaves |
-| user functions and `repeat` inside `grad` | supported | documented inlining and unrolling | a 28-block forward unrolls onto one tape; tape memory is unmeasured at this size (see performance) |
-| `grad(expr, wrt)` takes one parameter name; `adam(loss, [p1, p2, ...], ...)` takes a list | supported | probed | per-parameter gradients need one `grad` call each |
-| Model DSL `causal_attention` | supported but not this architecture | multi-head on tape (`docs/language-status.md`), no grouped-query, RoPE, QK-norm, gain RMSNorm, bias-free linear, or tied head (`docs/gaps-to-be-addressed.md`) | write the block as array functions; keep the DSL out of the model path |
+| `sqrt` inside `grad` | missing | `grad-sqrt`: "function 'sqrt' not supported inside grad()" | core (upstream in progress); `exp(0.5 * log(x))` |
+| `pow` inside `grad` | missing | `grad-pow`: same error class | core; multiply explicitly |
+| `sin`, `cos` inside `grad` | missing | `grad-sin-cos`: same error class | core, low priority; RoPE tables are parameter-free constants computed eagerly |
+| `softmax(a, axis)` inside `grad` | missing | `grad-softmax-axis`: eager axis form works (row sums 1), tape form "softmax expects 1 arguments, got 2" | core; `softmax-rowwise` proves the 1-argument form is row-wise on rank-2, which per-head `[T, T]` scores need |
+| rank-3 `matmul` | missing | `matmul-rank3`: "index has 3 components but array has rank 2" (message names the wrong problem) | core; loop over heads with rank-2 `matmul` |
+| `transpose_axes` inside `grad` | missing | `grad-transpose-axes`: "function 'transpose_axes' not supported inside grad()" | core; keep per-head slices rank-2 and use `transpose` |
+| square-root workaround | supported | `grad-sqrt-workaround`: gradient of `exp(0.5 * log(x))` matches `0.5 / sqrt(x)` to 1e-9 | library |
+| `mean`, axis `reduce`, `gather_rows`, `take`, axis `concat`, rank-2 `transpose`, SiLU as `x * sigmoid(x)`, log-softmax gather, RMSNorm via the exp-log spelling | supported | `grad-core-ops`: every gradient matches its analytic form (RMSNorm against central finite differences) within 1e-7 | none needed |
+| `param` leaf reassigned to a data array | supported | `param-data-gradient`: the reassigned leaf receives the expected gradient | core behaviour; pretrained weights load into `param` leaves |
 
 ## Optimizer and training control
 
-| Need | Status | Evidence | Workaround or request |
+| Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| gradient-norm clipping before the Adam step | missing | `adam` computes and applies gradients internally; clipping listed as a gap in `docs/gaps-to-be-addressed.md` | hand-written Adam over `param` leaves using explicit `grad` calls (moments as ordinary arrays); request `clip_grad_norm` or an explicit-gradient `adam_step` |
-| weight decay (AdamW) | missing | `adam` signature has no decay term | the hand-written Adam adds decoupled decay trivially |
-| frozen reference copy of a model for KL | awkward | `clone_model` is Model-DSL only; arrays are values | keep reference weights as plain arrays and compute their log-probabilities eagerly (constants) |
-| learning-rate schedules | supported | `cosine_schedule`, `linear_warmup`, lr may be an expression | not needed by the book's runs |
+| gradient-norm clipping | missing | `grad-clip-builtin`: `clip_grad_norm` is an unknown function; `adam` takes the loss and hides gradients | library: hand-written Adam over per-parameter `grad` results (Saga 5) |
+| weight decay | missing | no probe; `adam` signature has no decay term (documentation) | library: the hand-written Adam adds decoupled decay |
+| frozen reference copy of a model for KL | awkward | no probe; `clone_model` is Model-DSL only (documentation) | keep reference weights as plain arrays and compute their log-probabilities eagerly |
 
 ## Bytes, weights, and checkpoints
 
-| Need | Status | Evidence | Workaround or request |
+| Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| bounded byte reads, header parsing, JSON budgets | supported | `read_bytes(path, offset, length)`, `file_size`, `parse_json` budgets, duplicate-key rejection; proven in `../demo-ml-utils/src/formats/safetensors_header.mlpl` | vendor by pinned revision or re-derive |
-| packed byte buffers and typed views | supported | `read_bytes_packed`, `size_bytes`, `reinterpret(bytes, dtype)`, scalar `read_f32_le` etc. | bulk `unpack(bytes, dtype)` to an array is a queued upstream item, not shipped |
-| `bf16` / `f16` dtype | missing | dtype vocabulary is `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64` (`components/eval-types/crates/mlpl-bytes/src/dtype.rs`); `reinterpret(b, "bf16")` is an unknown dtype | vectorized decode on the f64 byte array: pair bytes into `u16`, then sign/exponent/mantissa via `shr`, `band`, `pow` (probed on two values); subnormal, infinity, and NaN masks required; costs 8x transient memory per tensor; request `bf16`/`f16` dtypes and bulk unpack |
-| f64-only array storage | awkward | 4.8 GB for the weights alone | acceptable on 64 GB; request narrower storage or device residency if activations exceed budget |
-| checkpoint save and load for plain arrays | supported | `to_native` / `parse_native` with `write_atomic` and `read_bytes` (f64, 2x on disk) | one file per tensor; `save_model` is JSON, Model-DSL only, and writes unsandboxed relative to the working directory, so it is not used |
-| filesystem sandbox | supported, must plan for | all fs builtins resolve under `--source-dir`; absolute paths and escaping symlinks return `err` | keep `models/` and `data/` physically inside the repository tree |
+| `bf16` / `f16` dtype | missing | `reinterpret-bf16`: accepted dtypes are `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64`; `bf16` and `f16` are "unknown dtype" | core (upstream in progress) |
+| vectorized bf16 decode | supported | `bf16-vectorized-decode`: byte pairs for 1, -1, 2, 0.5, 0, 50 decode exactly with `shr`, `band`, `pow` on f64 byte arrays | library; subnormal, infinity, and NaN masks still to add; 8x transient memory per tensor |
+| large-array checkpoint round-trip | supported | `native-roundtrip-10mb`: 1,250,000 f64 values (10,000,019 bytes) through `to_native`, `write_bytes`, `read_bytes`, `parse_native` in 134 ms, peak 381 MB | library: one `MLPB` file per tensor with `write_atomic` |
+| f64-only array storage | awkward | `matmul-throughput` peak resident memory 3.7 GB while holding one `[1024, 151936]` array and its products | acceptable on 64 GB; narrower storage is an upstream choice tied to MLX |
+| bounded byte reads, header parsing, JSON budgets | supported | proven in `../demo-ml-utils` (documentation, not re-probed here) | vendor by pinned revision or re-derive |
+| filesystem sandbox | supported, must plan for | all probes run with `--source-dir` at the repository root and read or write only under `out/` | keep `models/` and `data/` inside the tree |
 
-## Tokenizer and text
+## Tokenizer, text, and data
 
-| Need | Status | Evidence | Workaround or request |
+| Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| load a Hugging Face `tokenizer.json` | missing (extension) | `train_bpe` is the only constructor; merges cannot be injected; `load_tokenizer` is a plan-only name in `docs/SmolLM2-demo-plan.md` | MLPL reference BPE on fixtures as the oracle; production encoder is a `../demo-extensions` extension (work order in `cross-repo-handoffs.md`) |
-| string-keyed lookup tables | awkward | records come only from `parse_json`; no `record_set`; `for` does not iterate string lists | pre-serialize merge ranks as a JSON object (one-time generator written in MLPL), parse once, look up with `record_get`; iterate with `while` and `list_get` |
-| regular expressions | not needed | no regex builtin; the number fallback is a scanner and pre-tokenization lives in the tokenizer extension | hand-written scanners in `lib/text/`; never requested for core |
-| string primitives | supported | `str_slice`, `str_find`, `str_split` (empty separator yields characters), `str_join`, `str_concat`, `str_len`, `str_eq`, `tokenize_bytes`, `decode_bytes`, `to_number` | no `str_replace`, `starts_with`, `trim`, `lower`, `contains`, or character-code access; each is a few lines over the primitives; request the common ones |
-| literal syntax | awkward | no hexadecimal literals, no scientific notation (`1e-8` fails), no index or slice syntax | write `0.00000001`; use `at`, `take`, `gather_rows`, `list_get` |
-| JSON arrays of objects | missing | `parse_json("[{...}]")` returns `err("mixed or nested array")` | consume datasets as JSONL: `read_text`, split on newline, `parse_json` per line; MATH-500 is published as `test.jsonl` |
-| 7 MB JSON parse (`tokenizer.json`) | to measure | budgets documented; time and memory unknown at this size | Saga 2 step 1 measures; fallback is a one-time conversion to `MLPB` |
+| large JSON object parse | supported | `parse-json-150k`: a 6,450,002-byte object with 150,000 keys parses in 83 ms, peak 239 MB | a real `tokenizer.json` (7.0 MB, vocabulary plus merges) is within reach of the reference encoder's one-time load |
+| JSON arrays of objects | missing by design | `json-array-of-objects`: "mixed or nested array" | none; datasets are JSONL |
+| JSONL line parsing | supported | `jsonl-lines`: two records with escaped LaTeX parse through `str_split` and `parse_json` | library |
+| string helpers | missing | `str-helpers`: `str_replace` is an unknown function | library: `lib/text/` over `str_find`, `str_slice`, `str_len` |
+| iterate a string list with `for` | missing | `for-string-list`: rejected | library idiom: `while` with `list_get` |
+| scientific-notation literals | missing | `scientific-literal`: `1e-4` lexes as `1`, `e`, `- 4` and fails with "undefined variable: e" | core; write `0.0001` |
+| regular expressions | not needed | no probe | scanners in `lib/text/`; pre-tokenization lives in the tokenizer extension |
+| `tokenizer.json` import | missing | no builtin (documentation) | extension in `../demo-extensions`; MLPL reference on fixtures |
 
 ## Generation and sampling
 
-| Need | Status | Evidence | Workaround or request |
+| Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| seeded categorical sampling with temperature | supported | `sample(logits, temperature, seed)`; `top_k(logits, k)` | top-p is not a builtin: `grade_down`, `running_sum`, mask to `-inf` (`0 - 1/0`), then `sample` (primitives probed) |
-| KV cache for a user-array model | awkward | `gen_state` family is Model-DSL only and needs bound names | MLPL record of per-layer `[kv_heads, T, d]` arrays grown with `concat` (quadratic copying in the interpreter) |
-| log-softmax gather of chosen tokens | supported | `log(softmax(...)) * one_hot(...)` differentiates; `cross_entropy` is fused and differentiable | `log_softmax` exists only on the MLX dispatch path |
-| stop tokens, token budgets | supported | `while`, `break` | none |
+| seeded categorical sampling | supported | documentation: `sample(logits, temperature, seed)`, `top_k` | top-p is a library over `grade_down`, `running_sum`, `random` |
+| KV cache for a user-array model | awkward | documentation: `gen_state` is Model-DSL only | library: record of per-layer arrays grown with `concat` |
+| row-wise softmax for attention scores | supported | `softmax-rowwise`: each row sums to 1 within 1e-9 | none needed |
 
-## Networking
-
-| Need | Status | Evidence | Workaround or request |
-|---|---|---|---|
-| download weights and datasets | extension exists, bounded | `../demo-extensions` `http-client` V1 (1 MiB response limit, 10 s timeout); its bounded large-artifact download is designed but not built | `curl` in `scripts/fetch-*` recipes until the large-download path ships |
-| call a local LLM server | supported | `llm_call(url, prompt, model[, system])` against Ollama, CLI only, 120 s timeout, text only | usable as a distillation teacher for text, not for token-level targets |
-
-## Performance (single-operation timings, this machine, f64 interpreter)
+## Performance (measured by `matmul-throughput`)
 
 | Operation | Time |
 |---|---|
-| `[1,1024] x [1024,3072]` | 11.7 ms |
-| `[32,1024] x [1024,1024]` | 51 ms |
-| `[1,1024] x [1024,8192]` | 34.5 ms |
-| `[1,1024] x [1024,151936]` with an in-loop `transpose` | 633 ms (the transpose dominates; pre-transpose once) |
-| `randn([151936, 1024])` | 2.8 s |
+| `[1,1024] x [1024,3072]` | 6.9 ms (mean of 10) |
+| `[1,1024] x [1024,151936]` (weights already oriented, no transpose) | 252 ms (mean of 3) |
 
-Extrapolation, to be replaced by a measurement in Saga 3 step 4: one
-decode step of the 0.6B model is about 1.2 GFLOP, which at the measured
-0.5 to 1.3 GFLOP/s is roughly 2 to 3 seconds per token before attention,
-RoPE, and per-head loop overhead. A 512-token response would take on the
-order of 20 to 30 minutes; a full MATH-500 pass at 2,048 tokens is out of
-reach on the CPU interpreter. The MLX backend (`device("mlx")`, resident
-tape, f32 on device) is the plausible path but requires a build with the
-`mlx` feature (not compiled in today), dispatches only nineteen ops (no
-`gather_rows`, `take`, `concat`, `rotate`), and has no published evidence
-beyond tiny models. Backward through 28 unrolled layers at width 1,024 on
-the CPU tape has no evidence anywhere in the repository.
+Extrapolation, to be replaced by a measurement in Saga 3: per decoded
+token the 0.6B model performs 28 layers of roughly seven such projections
+plus attention, so on the order of 1.5 to 2.5 seconds per token on the f64
+CPU interpreter, before the per-head attention loop. A 512-token response
+is on the order of 15 to 20 minutes; a full MATH-500 pass at 2,048 tokens
+is out of reach on the CPU interpreter. Bounded slices, opt-in recipes, and
+tiny configurations carry every saga; the MLX build is the upstream lever.
 
-Consequences for the plan: every algorithm is delivered and tested on tiny
-configurations; real-model runs are bounded, opt-in, and measured; the
-throughput numbers, not assumptions, decide which upstream requests are
-filed.
+## Not yet measured
+
+These matter for later sagas and have no probe yet. Each is measured by
+the step that first needs it, never assumed.
+
+- `parse_json` on the real 7.0 MB `tokenizer.json` (nested objects for
+  vocabulary, a string list of about 150,000 merges) and the resident
+  memory of the resulting records (Saga 2 step 1).
+- Encode throughput of the MLPL reference tokenizer and of the extension
+  on the 12,000-prompt corpus (Saga 2 step 4).
+- Load time and resident memory for all 0.6B tensors as f64 arrays, and
+  the transient cost of the vectorized bf16 decode on the 155.6 M-value
+  embedding (Saga 3 step 1).
+- A full forward pass at width 1,024 with 28 layers: tokens per second with
+  and without the KV cache (Saga 3 step 4).
+- Tape memory and time for `grad` through the 28-layer forward over a
+  512-token rollout, with and without low-rank adapters (Saga 5 step 3).
+- Whether the MLX backend (`device("mlx")`) can run the user-array forward
+  at all, which requires a build with the `mlx` feature and dispatch for
+  `gather_rows`, `take`, `concat`, and `rotate` (blocked until upstream
+  ships such a build; Saga 3 step 4 records the attempt).
 
 ## Request queue, split by home
 
-The rule for deciding a home is in [`feature-homes.md`](feature-homes.md).
-
 ### Core (upstream, in progress as of 2026-09-16)
 
-1. `bf16` and `f16` dtypes plus a bulk `unpack(bytes, dtype)` to an array.
-2. Batched `matmul` over leading axes, and a correct error message for the
-   current rank-3 rejection.
-3. Differentiable `sqrt`, `pow`, `rsqrt` (and `cos`/`sin`, lower priority).
-4. Differentiable `softmax(a, axis)` and `transpose_axes`.
-5. Scientific-notation literals.
+1. `bf16` and `f16` dtypes plus a bulk unpack to an array
+   (`reinterpret-bf16`).
+2. Batched `matmul` over leading axes and a correct error message
+   (`matmul-rank3`).
+3. Differentiable `sqrt`, `pow`, `rsqrt` (`grad-sqrt`, `grad-pow`); `sin`
+   and `cos` lower priority (`grad-sin-cos`).
+4. Differentiable `softmax(a, axis)` and `transpose_axes`
+   (`grad-softmax-axis`, `grad-transpose-axes`).
+5. Scientific-notation literals (`scientific-literal`).
 6. Optional: a weight-decay flag on `adam`.
 7. Distribution, not a feature: an MLX-featured `mlpl-repl` build on this
    host and device dispatch for the gather/concat/take family.
 
 ### Library (this repository, MLPL)
 
-Gradient-norm clipping and decoupled weight decay in a hand-written Adam,
-string helpers, text scanners, the expression evaluator, top-p sampling,
-JSONL reading, the user-array KV cache, and per-tensor checkpoints. None of
-these is requested upstream.
+Gradient clipping and decoupled decay in a hand-written Adam
+(`grad-clip-builtin`), string helpers (`str-helpers`), string-list
+iteration idiom (`for-string-list`), text scanners, the expression
+evaluator, top-p sampling, JSONL reading (`jsonl-lines`), bf16 decoding
+(`bf16-vectorized-decode`), the user-array KV cache, and per-tensor
+checkpoints (`native-roundtrip-10mb`). None of these is requested upstream.
 
 ### Extension (`../demo-extensions`, Rust, work orders in `cross-repo-handoffs.md`)
 
@@ -143,8 +151,6 @@ the existing `http-client` extension.
 
 ### Not requested anywhere
 
-Regular expressions (no remaining user once scanners and the tokenizer
-extension exist), a pretrained-decoder surface in the Model DSL (this
-repository's array implementation is the deliverable; a native surface is a
-later upstream choice with this code as its oracle), and `parse_json` for
-arrays of objects (JSONL is the idiomatic input by design).
+Regular expressions, a pretrained-decoder surface in the Model DSL, and
+`parse_json` for arrays of objects (`json-array-of-objects`, JSONL by
+design).

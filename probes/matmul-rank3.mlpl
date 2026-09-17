@@ -1,0 +1,10 @@
+# Probe: matmul accepts rank-3 (batched) operands (exit 0) or rejects them (exit 1).
+a = reshape(range(24), [2, 3, 4])
+b = reshape(range(24), [2, 4, 3])
+outcome = try {
+  ok(shape(matmul(a, b)))
+} catch e {
+  err(e.message)
+}
+print("matmul-rank3:", outcome)
+outcome

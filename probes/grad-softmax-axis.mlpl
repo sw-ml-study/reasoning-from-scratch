@@ -1,0 +1,12 @@
+# Probe: the two-argument softmax(a, axis) is differentiable inside grad() (exit 0) or rejected (exit 1).
+w = param[6]
+w = [1, 2, 3, 4, 5, 6]
+eager = softmax(reshape(w, [2, 3]), 1)
+print("eager axis softmax row sums:", reduce(:add, eager, 1))
+outcome = try {
+  grad(reduce_add(softmax(reshape(w, [2, 3]), 1) * one_hot([2, 0], 3)), w)
+} catch e {
+  err(e.message)
+}
+print("grad-softmax-axis:", outcome)
+outcome

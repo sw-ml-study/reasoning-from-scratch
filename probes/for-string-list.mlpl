@@ -1,0 +1,11 @@
+# Probe: for iterates a string list (exit 0) or rejects it (exit 1).
+outcome = try {
+  for s in ["a", "b"] {
+    s
+  };
+  ok(1)
+} catch e {
+  err(e.message)
+}
+print("for-string-list:", outcome)
+outcome

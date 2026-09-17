@@ -1,0 +1,10 @@
+# Probe: sqrt is differentiable inside grad() (exit 0) or rejected (exit 1).
+w = param[3]
+w = [1, 4, 9]
+outcome = try {
+  grad(reduce_add(sqrt(w)), w)
+} catch e {
+  err(e.message)
+}
+print("grad-sqrt:", outcome)
+outcome

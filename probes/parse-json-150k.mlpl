@@ -1,0 +1,16 @@
+# Probe: parse_json handles a generated 150,000-key object of about 7 MB within a 60 s budget; prints elapsed ms.
+text = read_text("out/probes/vocab-150k.json")?
+t0 = clock_ms()
+parsed = parse_json(text, {max_bytes: 16777216, max_depth: 8, max_elements: 400000})?
+elapsed = clock_ms() - t0
+keys = record_keys(parsed)
+print("parse-json-150k bytes:", str_len(text), "keys:", list_len(keys), "ms:", elapsed)
+if list_len(keys) - 150000 {
+  err("unexpected key count")
+} else {
+  if gt(elapsed, 60000) {
+    err("parse exceeded 60 s budget")
+  } else {
+    ok(elapsed)
+  }
+}
