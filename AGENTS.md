@@ -350,8 +350,9 @@ source. Do not create a duplicate `CLAUDE.md`.
 
 Planning references: `docs/plan.md`, `docs/sagas.md`, `docs/architecture.md`,
 `docs/book-map.md`, `docs/verifier-contract.md`, `docs/data-and-models.md`,
-`docs/licensing.md`, `docs/sw-mlpl-blockers.md`, `docs/feature-homes.md`, and
-`docs/cross-repo-handoffs.md`. When a capability is missing, apply the home
+`docs/licensing.md`, `docs/sw-mlpl-blockers.md` (measurements),
+`docs/sw-mlpl-requests.md` (core asks), `docs/demo-extensions-requests.md`
+(extension asks), `docs/demo-mlpl-libraries-requests.md` (library asks), `docs/feature-homes.md`, and `docs/cross-repo-handoffs.md`. When a capability is missing, apply the home
 rule in `docs/feature-homes.md` before writing anything: core only for tape,
 device, dtype, or syntax; MLPL library when expressible; Rust extension via a
 work order to `../demo-extensions` otherwise.

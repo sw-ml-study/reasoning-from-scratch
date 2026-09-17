@@ -106,7 +106,7 @@ model; the ledger lists measured, not assumed, gaps.
 
 Home decision (see [`feature-homes.md`](feature-homes.md)): the production
 encoder is a Rust extension built in `../demo-extensions` from the work
-order in [`cross-repo-handoffs.md`](cross-repo-handoffs.md); this repository
+order in [`demo-extensions-requests.md`](demo-extensions-requests.md); this repository
 owns an MLPL reference implementation on a synthetic fixture, the chat
 templates, and the parity tests.
 

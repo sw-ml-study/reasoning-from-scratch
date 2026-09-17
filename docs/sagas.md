@@ -13,10 +13,11 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 | 1 | `foundation` | done in the planning session |
 | 2 | `feature-home-triage` | done: core versus library versus extension rule and handoffs |
 | 3 | `capability-probes` | done: 21 probes under `probes/`, declared in `catalog/probes.tsv`, run by `just capabilities` and the gate |
-| 4 | `math-data-loader` | pending |
-| 5 | `boxed-extraction-and-normalization` | pending |
-| 6 | `expression-equivalence` | pending |
-| 7 | `evaluation-harness` | pending |
+| 4 | `request-documents` | done: per-repository ask documents |
+| 5 | `math-data-loader` | pending |
+| 6 | `boxed-extraction-and-normalization` | pending |
+| 7 | `expression-equivalence` | pending |
+| 8 | `evaluation-harness` | pending |
 
 Acceptance: `just check` runs a complete, tested verifier and evaluation
 harness without any model, and the capability ledger contains only measured

@@ -49,9 +49,11 @@ A second planning step settled where each missing capability lives
 ([`docs/feature-homes.md`](docs/feature-homes.md)): autograd, dtype, and
 lexer gaps go to sw-MLPL core (in progress upstream); array-math and
 string helpers are MLPL libraries here; the production tokenizer and large
-downloads are Rust extensions requested from `../demo-extensions`
-([`docs/cross-repo-handoffs.md`](docs/cross-repo-handoffs.md)), with MLPL
-reference implementations kept as parity oracles.
+downloads are Rust extensions requested from `../demo-extensions`, with MLPL
+reference implementations kept as parity oracles. The asks themselves are
+in [`docs/sw-mlpl-requests.md`](docs/sw-mlpl-requests.md) and
+[`docs/demo-extensions-requests.md`](docs/demo-extensions-requests.md), and
+[`docs/demo-mlpl-libraries-requests.md`](docs/demo-mlpl-libraries-requests.md).
 
 The capability ledger is now executable: twenty-one probes under
 `probes/` pin each measured fact against the interpreter build, and

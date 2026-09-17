@@ -1,7 +1,7 @@
 number = 6
-slug = "expression-equivalence"
+slug = "boxed-extraction-and-normalization"
 status = "pending"
-description = "Implement lib/verify/expr.mlpl and lib/verify/grade.mlpl (prefix u:verify_): ..."
+description = "Implement lib/text/text.mlpl (prefix u:text_) with character-indexed scanning..."
 role = "production"
 context_files = []
 created_at = "2026-09-16T17:19:34"

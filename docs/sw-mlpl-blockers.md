@@ -19,7 +19,9 @@ Machine: Apple M1 Max, 10 cores, 64 GB
 
 Claims pin the build commit, never the version string. The home of each gap
 (core, library, extension, none) follows [`feature-homes.md`](feature-homes.md);
-extension work orders are in [`cross-repo-handoffs.md`](cross-repo-handoffs.md).
+the asks are in [`sw-mlpl-requests.md`](sw-mlpl-requests.md),
+[`demo-extensions-requests.md`](demo-extensions-requests.md), and
+[`demo-mlpl-libraries-requests.md`](demo-mlpl-libraries-requests.md).
 
 Classification: **supported**, **awkward** (expressible with a documented
 workaround), **missing** (a step is blocked or must stop with an honest
@@ -116,41 +118,11 @@ the step that first needs it, never assumed.
   `gather_rows`, `take`, `concat`, and `rotate` (blocked until upstream
   ships such a build; Saga 3 step 4 records the attempt).
 
-## Request queue, split by home
+## Requests
 
-### Core (upstream, in progress as of 2026-09-16)
-
-1. `bf16` and `f16` dtypes plus a bulk unpack to an array
-   (`reinterpret-bf16`).
-2. Batched `matmul` over leading axes and a correct error message
-   (`matmul-rank3`).
-3. Differentiable `sqrt`, `pow`, `rsqrt` (`grad-sqrt`, `grad-pow`); `sin`
-   and `cos` lower priority (`grad-sin-cos`).
-4. Differentiable `softmax(a, axis)` and `transpose_axes`
-   (`grad-softmax-axis`, `grad-transpose-axes`).
-5. Scientific-notation literals (`scientific-literal`).
-6. Optional: a weight-decay flag on `adam`.
-7. Distribution, not a feature: an MLX-featured `mlpl-repl` build on this
-   host and device dispatch for the gather/concat/take family.
-
-### Library (this repository, MLPL)
-
-Gradient clipping and decoupled decay in a hand-written Adam
-(`grad-clip-builtin`), string helpers (`str-helpers`), string-list
-iteration idiom (`for-string-list`), text scanners, the expression
-evaluator, top-p sampling, JSONL reading (`jsonl-lines`), bf16 decoding
-(`bf16-vectorized-decode`), the user-array KV cache, and per-tensor
-checkpoints (`native-roundtrip-10mb`). None of these is requested upstream.
-
-### Extension (`../demo-extensions`, Rust, work orders in `cross-repo-handoffs.md`)
-
-Hugging Face `tokenizer.json` import with byte-level BPE encode/decode
-(this repository keeps an MLPL reference implementation as the parity
-oracle), and the already designed bounded large-artifact download on top of
-the existing `http-client` extension.
-
-### Not requested anywhere
-
-Regular expressions, a pretrained-decoder surface in the Model DSL, and
-`parse_json` for arrays of objects (`json-array-of-objects`, JSONL by
-design).
+The asks derived from these measurements live in one document per
+repository: [`sw-mlpl-requests.md`](sw-mlpl-requests.md) for core and
+[`demo-extensions-requests.md`](demo-extensions-requests.md) for Rust
+extensions. Libraries built here (gradient clipping, string helpers, text
+scanners, the expression evaluator, top-p sampling, JSONL reading, bf16
+decoding, the KV cache, checkpoints) are not requested anywhere.
