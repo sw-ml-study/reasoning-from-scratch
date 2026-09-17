@@ -349,6 +349,7 @@ source. Do not create a duplicate `CLAUDE.md`.
   there are none).
 
 Planning references: `docs/plan.md`, `docs/sagas.md`, `docs/architecture.md`,
+`docs/how-base-becomes-reasoning.md`,
 `docs/book-map.md`, `docs/verifier-contract.md`, `docs/data-and-models.md`,
 `docs/licensing.md`, `docs/sw-mlpl-blockers.md` (measurements),
 `docs/sw-mlpl-requests.md` (core asks), `docs/demo-extensions-requests.md`

@@ -25,6 +25,9 @@ services from `../demo-extensions` with MLPL reference or fallback paths.
 | scaling | temperature, top-p, self-consistency, scoring, self-refinement | `lib/scaling/` |
 | training | GRPO rewards, advantages, clipped and KL objectives, distillation loss and loops | `lib/rl/`, `lib/distill/` |
 
+Read [`docs/how-base-becomes-reasoning.md`](docs/how-base-becomes-reasoning.md)
+for what is trained, on what data, and through which mechanisms.
+
 The book and its Apache-2.0 companion code are references only: no code or
 prose is copied, and the project is independently implemented under the MIT
 license. See [`docs/licensing.md`](docs/licensing.md) for the policy and
