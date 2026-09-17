@@ -1,0 +1,11 @@
+{
+  "task_type": "capability-probes",
+  "state": {
+    "number": 3,
+    "step": "capability-probes"
+  },
+  "action": "Wrote probe scripts, canonical-formatted them, built the runner with /usr/bin/time -l, iterated one failing analytic check into a finite-difference oracle, rewrote docs.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-16T19:31:30"
+}
