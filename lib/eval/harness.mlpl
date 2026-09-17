@@ -1,0 +1,137 @@
+# Evaluation harness: prompt rendering, a responder-driven loop over a dataset, per-problem JSONL records, CSV metrics, and provenance. Requires lib/eval/data.mlpl, lib/text/text.mlpl, lib/verify/number.mlpl, lib/verify/expr.mlpl, lib/verify/extract.mlpl, lib/verify/normalize.mlpl, and lib/verify/grade.mlpl included first.
+
+def u:eval_template_id() {
+  "Identifier of the prompt template, recorded with every result so a wording change is visible in the data.";
+  "boxed-v1"
+}
+
+def u:eval_render_prompt(problem) {
+  "Wrap one problem in the boxed-answer template. The wording is this project's own; only the boxed final line is required by the verifier.";
+  str_concat("Solve the mathematics problem below.\nPut the final result on its own line, written exactly as \\boxed{RESULT}.\n\nProblem:\n", str_concat(problem, "\n\nSolution:\n"))
+}
+
+def u:eval_provenance(options) {
+  "Record describing how a run was produced: interpreter build, template, extraction mode, and whatever decoding settings the caller passed.";
+  {build: u:eval_data_opt(options, "build", "unknown"), template: u:eval_template_id(), mode: u:eval_data_opt(options, "mode", "number_then_full"), decoding: u:eval_data_opt(options, "decoding", "greedy")}
+}
+
+def u:eval_write_line(path, text, first) {
+  "Write the first line of a file atomically, then append the rest.";
+  if first {
+    write_atomic(path, text)
+  } else {
+    append_bytes(path, tokenize_bytes(text))
+  }
+}
+
+def u:eval_record_line(index, problem, reference, response, extracted, correct, elapsed) {
+  "One result as a JSON object, ending in a newline, ready to append to a JSONL file.";
+  encoded = to_json({index: index, problem: problem, reference: reference, response: response, extracted: extracted, correct: correct, elapsed_ms: elapsed});
+  if is_err(encoded) {
+    encoded
+  } else {
+    ok(str_concat(unwrap(encoded), "\n"))
+  }
+}
+
+def u:eval_csv_row(values) {
+  "Join already-stringified values into one comma-separated line ending in a newline.";
+  str_concat(str_join(values, ","), "\n")
+}
+
+def u:eval_append_csv(path, header, values) {
+  "Append one metrics row, writing the header first when the file does not exist yet.";
+  existing = read_text(path);
+  if is_err(existing) {
+    write_atomic(path, str_concat(u:eval_csv_row(header), u:eval_csv_row(values)))
+  } else {
+    append_bytes(path, tokenize_bytes(u:eval_csv_row(values)))
+  }
+}
+
+def u:eval_grade_one(dataset, index, responder, mode) {
+  "Render, respond, extract, and grade one problem; returns the record fields plus its elapsed milliseconds.";
+  record = u:eval_record(dataset, index)?;
+  prompt = u:eval_render_prompt(record.problem);
+  started = clock_ms();
+  response = call(responder, prompt);
+  elapsed = clock_ms() - started;
+  if str_eq(type_of(response), "string") {
+    extracted = u:verify_final_candidate(response, mode);
+    ok({index: index, problem: record.problem, reference: record.answer, response: response, extracted: extracted, correct: u:verify_grade(extracted, record.answer), elapsed_ms: elapsed})
+  } else {
+    err({kind: "responder", index: index, message: "the responder did not return a string"})
+  }
+}
+
+def u:eval_run(dataset, responder, options) {
+  "Evaluate a responder over a dataset: grade every problem, optionally write one JSONL record each, and return {total, correct, accuracy, elapsed_ms, provenance}. A responder failure stops the run and is returned as an error.";
+  mode = u:eval_data_opt(options, "mode", "number_then_full");
+  out_path = u:eval_data_opt(options, "out_path", "");
+  verbose = u:eval_data_opt(options, "verbose", 0);
+  limit = u:eval_data_opt(options, "limit", 0 - 1);
+  total = u:eval_count(dataset);
+  if gt(limit, 0 - 1) {
+    if lt(limit, total) {
+      total = limit
+    } else {
+      0
+    }
+  } else {
+    0
+  };
+  correct = 0;
+  index = 0;
+  failure = ok(1);
+  started = clock_ms();
+  while lt(index, total) {
+    graded = u:eval_grade_one(dataset, index, responder, mode);
+    if is_err(graded) {
+      failure = graded;
+      index = total
+    } else {
+      result = unwrap(graded);
+      correct = correct + result.correct;
+      if str_eq(out_path, "") {
+        0
+      } else {
+        line = u:eval_record_line(result.index, result.problem, result.reference, result.response, result.extracted, result.correct, result.elapsed_ms);
+        if is_err(line) {
+          failure = line;
+          index = total
+        } else { u:eval_write_line(out_path, unwrap(line), 1 - gt(index, 0)) }
+      };
+      if verbose {
+        print("  ", result.index, if result.correct {
+            "correct"
+          } else {
+            "wrong"
+          }, "extracted:", result.extracted, "reference:", result.reference)
+      } else {
+        0
+      };
+      index = index + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    elapsed = clock_ms() - started;
+    ok({total: total, correct: correct, accuracy: if total {
+          correct / total
+        } else {
+          0
+        }, elapsed_ms: elapsed, provenance: u:eval_provenance(options)})
+  }
+}
+
+def u:eval_report(report) {
+  "Print a run summary with its provenance; returns the report unchanged so it composes.";
+  print("  problems:", report.total);
+  print("  correct: ", report.correct);
+  print("  accuracy:", round(report.accuracy * 1000) / 10, "percent");
+  print("  elapsed: ", round(report.elapsed_ms), "ms");
+  print("  build:   ", report.provenance.build);
+  print("  template:", report.provenance.template, "extraction:", report.provenance.mode, "decoding:", report.provenance.decoding);
+  report
+}

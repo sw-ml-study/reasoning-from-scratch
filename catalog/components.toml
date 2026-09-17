@@ -71,7 +71,7 @@ chapter = 3
 source = "lib/eval/harness.mlpl"
 test = "tests/test_eval_harness.mlpl"
 documentation = "docs/book-map.md"
-status = "planned"
+status = "accepted"
 
 [[component]]
 id = "TOK"

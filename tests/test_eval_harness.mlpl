@@ -1,0 +1,156 @@
+# Evaluation harness contract: prompt template, responder loop, grading tally, JSONL records, CSV metrics, provenance, and failure handling.
+include "lib/eval/data.mlpl";
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/harness.mlpl";
+
+def u:harness_oracle(prompt) {
+  "A responder that answers every fixture problem correctly, in a box.";
+  if u:text_contains(prompt, "odd integers") {
+    "The sum is \\boxed{25}."
+  } else {
+    if u:text_contains(prompt, "18}{24") {
+      "Dividing by six gives \\boxed{\\frac{3}{4}}."
+    } else {
+      if u:text_contains(prompt, "3x - 7") {
+        "\\boxed{6}"
+      } else {
+        if u:text_contains(prompt, "radius 3") {
+          "\\boxed{9\\pi}"
+        } else {
+          "\\boxed{6}"
+        }
+      }
+    }
+  }
+}
+
+def u:harness_silent(prompt) {
+  "A responder that never boxes an answer.";
+  "I am not sure."
+}
+
+def u:harness_unboxed(prompt) {
+  "A responder that states the right value for the first fixture problem without boxing it.";
+  if u:text_contains(prompt, "odd integers") {
+    "the sum is 25"
+  } else {
+    "no idea"
+  }
+}
+
+def u:harness_wrong(prompt) {
+  "A responder that always boxes the same wrong answer.";
+  "\\boxed{123456789}"
+}
+
+def u:harness_broken(prompt) {
+  "A responder that returns a number instead of text.";
+  42
+}
+
+def u:harness_fixture() {
+  "Load the committed five-problem fixture.";
+  u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {})
+}
+
+@test {name: "the prompt template is versioned and asks for a boxed result", tags: ["eval", "harness", "prompt"]}
+def u:test_eval_harness_prompt() {
+  "The rendered prompt embeds the problem and names the required boxed form.";
+  prompt = u:eval_render_prompt("What is 1+1?");
+  u:assert_eq(u:text_contains(prompt, "What is 1+1?"), 1, "problem embedded")?;
+  u:assert_eq(u:text_contains(prompt, "\\boxed{RESULT}"), 1, "boxed form requested")?;
+  u:assert_eq(u:text_ends_with(prompt, "Solution:\n"), 1, "ends at the answer position")?;
+  u:assert_text_eq(u:eval_template_id(), "boxed-v1", "template identifier")
+}
+
+@test {name: "a correct responder scores every problem", tags: ["eval", "harness"]}
+def u:test_eval_harness_all_correct() {
+  "The oracle responder grades five of five with a full accuracy and a recorded elapsed time.";
+  dataset = u:harness_fixture()?;
+  report = u:eval_run(dataset, :u:harness_oracle, {})?;
+  u:assert_eq(report.total, 5, "problem count")?;
+  u:assert_eq(report.correct, 5, "all correct")?;
+  u:assert_eq(report.accuracy, 1, "accuracy")?;
+  u:assert_true(1 - lt(report.elapsed_ms, 0), "elapsed time recorded")
+}
+
+@test {name: "extraction mode decides whether an unboxed answer counts", tags: ["eval", "harness", "modes"]}
+def u:test_eval_harness_modes() {
+  "A responder that never boxes scores zero; an unboxed but correct value counts only under the numeric fallback.";
+  dataset = u:harness_fixture()?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_silent, {})?.correct, 0, "no answer at all")?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_wrong, {})?.correct, 0, "boxed but wrong")?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_unboxed, {mode: "boxed_only"})?.correct, 0, "unboxed is rejected under the strict mode")?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_unboxed, {mode: "number_then_full"})?.correct, 1, "unboxed is accepted under the numeric fallback")
+}
+
+@test {name: "a limit bounds the run", tags: ["eval", "harness", "slice"]}
+def u:test_eval_harness_limit() {
+  "A limit below the dataset size shortens the run; a larger limit does not extend it.";
+  dataset = u:harness_fixture()?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_oracle, {limit: 2})?.total, 2, "limited run")?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_oracle, {limit: 99})?.total, 5, "limit beyond the dataset")?;
+  u:assert_eq(u:eval_run(dataset, :u:harness_oracle, {limit: 0})?.total, 0, "zero limit runs nothing")
+}
+
+@test {name: "one JSONL record is written per problem in order", tags: ["eval", "harness", "records"]}
+def u:test_eval_harness_records() {
+  "Each record carries the index, problem, reference, response, extracted candidate, verdict, and elapsed time.";
+  dataset = u:harness_fixture()?;
+  path = "out/test_eval_harness.jsonl";
+  u:eval_run(dataset, :u:harness_oracle, {out_path: path})?;
+  lines = str_split(read_text(path)?, "\n");
+  u:assert_eq(list_len(lines), 6, "five records and a trailing newline")?;
+  first = parse_json(list_get(lines, 0)?)?;
+  u:assert_eq(first.index, 0, "first index")?;
+  u:assert_eq(first.correct, 1, "verdict recorded")?;
+  u:assert_text_eq(first.reference, "25", "reference recorded")?;
+  u:assert_text_eq(first.extracted, "25", "extracted candidate recorded")?;
+  u:assert_eq(u:text_contains(first.response, "\\boxed{25}"), 1, "response recorded")?;
+  last = parse_json(list_get(lines, 4)?)?;
+  u:assert_eq(last.index, 4, "records stay in order")
+}
+
+@test {name: "metrics rows append under a header", tags: ["eval", "harness", "metrics"]}
+def u:test_eval_harness_metrics() {
+  "The first row writes the header; later rows append without repeating it.";
+  path = "out/test_eval_harness.csv";
+  remove_path(path);
+  u:eval_append_csv(path, ["step", "accuracy"], ["1", "0.5"])?;
+  u:eval_append_csv(path, ["step", "accuracy"], ["2", "0.75"])?;
+  lines = str_split(read_text(path)?, "\n");
+  u:assert_text_eq(list_get(lines, 0)?, "step,accuracy", "header once")?;
+  u:assert_text_eq(list_get(lines, 1)?, "1,0.5", "first row")?;
+  u:assert_text_eq(list_get(lines, 2)?, "2,0.75", "second row")
+}
+
+@test {name: "provenance travels with every report", tags: ["eval", "harness", "provenance"]}
+def u:test_eval_harness_provenance() {
+  "Build, template, extraction mode, and decoding settings are recorded, with documented defaults.";
+  dataset = u:harness_fixture()?;
+  report = u:eval_run(dataset, :u:harness_oracle, {build: "commit-abcdef", decoding: "temperature 0.8 top-p 0.9", limit: 1})?;
+  u:assert_text_eq(report.provenance.build, "commit-abcdef", "build recorded")?;
+  u:assert_text_eq(report.provenance.template, "boxed-v1", "template recorded")?;
+  u:assert_text_eq(report.provenance.decoding, "temperature 0.8 top-p 0.9", "decoding recorded")?;
+  defaults = u:eval_run(dataset, :u:harness_oracle, {limit: 1})?;
+  u:assert_text_eq(defaults.provenance.build, "unknown", "build defaults")?;
+  u:assert_text_eq(defaults.provenance.mode, "number_then_full", "mode defaults")?;
+  u:assert_text_eq(defaults.provenance.decoding, "greedy", "decoding defaults")
+}
+
+@test {name: "a responder that does not return text is an error", tags: ["eval", "harness", "errors"]}
+def u:test_eval_harness_broken_responder() {
+  "The run stops and reports the offending index rather than grading a non-string.";
+  dataset = u:harness_fixture()?;
+  outcome = u:eval_run(dataset, :u:harness_broken, {});
+  u:assert_err(outcome, "broken responder rejected")?;
+  u:assert_text_eq(err_message(outcome).kind, "responder", "error kind")?;
+  u:assert_eq(err_message(outcome).index, 0, "offending index")
+}
+
+u:run_registered_tests()

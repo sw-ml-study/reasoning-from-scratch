@@ -85,9 +85,14 @@ reference uses, and grading compares tuples part by part in order. Across
 44 tests plus an opt-in run over the real evaluation set, all 500 MATH-500
 reference answers grade correct against themselves with no false positives.
 
-Saga 1 (verifier and evaluation harness, no model needed) is active; its
-next step is `evaluation-harness`, which closes it. Nothing yet generates
-text.
+The evaluation harness closes the loop: a versioned prompt template, a run
+over any responder function, one JSONL record per problem, CSV metrics, and
+provenance on every report. `just verifier-demo` walks the whole pipeline
+over committed fixtures with a stand-in responder and no model.
+
+Saga 1 has one step left, a literate org-mode document built with `ob-mlpl`
+whose tangled output must match the committed sources byte for byte.
+Nothing yet generates text.
 
 ## Build and check
 

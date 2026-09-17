@@ -1,0 +1,98 @@
+# Narrated walk through the verifier and evaluation harness on the committed fixture, with no model involved.
+include "lib/eval/data.mlpl";
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/harness.mlpl";
+
+def u:demo_stage(candidate) {
+  "Show one answer moving through extraction, normalization, and evaluation.";
+  extracted = u:verify_final_candidate(candidate, "number_then_full");
+  normalized = u:verify_normalize(extracted);
+  parsed = u:verify_parse(normalized);
+  value = if is_ok(parsed) {
+    to_string(round(u:verify_value(unwrap(parsed)) * 10000) / 10000)
+  } else {
+    str_concat("not numeric: ", err_message(parsed).kind)
+  };
+  print("  ", candidate);
+  print("     extracted:  ", extracted);
+  print("     normalized: ", normalized);
+  print("     value:      ", value)
+}
+
+def u:demo_pair(candidate, reference) {
+  "Grade one candidate against one reference and print the verdict.";
+  print("  ", if u:verify_grade(candidate, reference) {
+      "match   "
+    } else {
+      "mismatch"
+    }, candidate, "vs", reference)
+}
+
+def u:demo_responder(prompt) {
+  "A stand-in model: boxed and correct on three problems, correct but unboxed on one, and unsure on the last.";
+  if u:text_contains(prompt, "odd integers") {
+    "1+3+5+7+9 = \\boxed{25}"
+  } else {
+    if u:text_contains(prompt, "18}{24") {
+      "Divide both by 6 to get \\boxed{\\frac{3}{4}}."
+    } else {
+      if u:text_contains(prompt, "3x - 7") {
+        "Add 7, divide by 3: \\boxed{6}"
+      } else {
+        if u:text_contains(prompt, "perimeter 20") {
+          "Half the perimeter is 10, so the length is 6"
+        } else {
+          "I am not sure."
+        }
+      }
+    }
+  }
+}
+
+print("WHAT THIS SHOWS -- a math answer is checked without any model: the last boxed group is extracted, LaTeX is normalized to a comparable form, the result is evaluated as an exact rational where possible, and the verdict is order-sensitive for tuples.")
+print("")
+print("BOUNDARY -- every stage below is sw-MLPL source in lib/; the interpreter supplies only arithmetic, string, and file primitives. There is no regular-expression engine and no symbolic algebra system.")
+print("")
+print("STAGE 1 -- extraction, normalization, and evaluation")
+u:demo_stage("so the final answer is \\boxed{\\dfrac{14}{3}}")
+u:demo_stage("$ \\boxed{ \\left( \\frac{3}{4} \\right) } $")
+u:demo_stage("after simplifying, \\boxed{\\frac{\\sqrt{8}}{2}}")
+u:demo_stage("Final Answer: 1,234/2")
+u:demo_stage("\\boxed{x + 1}")
+print("")
+print("STAGE 2 -- grading equivalent and inequivalent answers")
+u:demo_pair("0.5", "1/2")
+u:demo_pair("0.3333333333", "1/3")
+u:demo_pair("\\frac{\\sqrt{8}}{2}", "sqrt(2)")
+u:demo_pair("90^\\circ", "90")
+u:demo_pair("(1, 2)", "(1,2)")
+u:demo_pair("(2, 1)", "(1, 2)")
+u:demo_pair("50%", "1/2")
+print("")
+print("INTERPRETATION -- a decimal is parsed as an exact rational, so 0.5 equals one half while a truncated 0.3333333333 does not equal one third. Tuples are compared part by part in order. A dropped percent sign leaves the bare number, which is why the last pair is a mismatch.")
+print("")
+print("STAGE 3 -- evaluating a stand-in responder over the committed fixture")
+dataset = unwrap(u:eval_load_jsonl("fixtures/math/five_problems.jsonl", {}))
+print("  strict mode (a boxed answer is required, as reinforcement learning scores it):")
+strict = unwrap(u:eval_run(dataset, :u:demo_responder, {mode: "boxed_only", decoding: "stub responder"}))
+u:eval_report(strict)
+print("")
+print("  fallback mode (the last number counts when nothing is boxed):")
+lenient = unwrap(u:eval_run(dataset, :u:demo_responder, {mode: "number_then_full", decoding: "stub responder"}))
+u:eval_report(lenient)
+print("")
+print("INTERPRETATION -- the same responses score differently because one problem is answered correctly but never boxed. The strict mode is the reward signal for training; the fallback mode is used when measuring a base model that has not learned to box its answers.")
+if strict.total - 5 {
+  err("the fixture did not supply five problems")
+} else {
+  if gt(lenient.correct, strict.correct) {
+    ok(1)
+  } else {
+    err("the fallback mode should accept at least one more answer")
+  }
+}

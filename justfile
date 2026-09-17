@@ -29,6 +29,10 @@ math500-self-grade:
 fetch-math500:
     ./scripts/fetch-math500
 
+# Narrated verifier and harness walk-through over committed fixtures.
+verifier-demo:
+    ./scripts/run-verifier-demo
+
 # Print the upstream commits, interpreter build, and extension/library signals.
 upstream:
     ./scripts/check-upstream
