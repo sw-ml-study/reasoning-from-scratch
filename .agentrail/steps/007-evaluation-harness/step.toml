@@ -1,4 +1,4 @@
-number = 6
+number = 7
 slug = "evaluation-harness"
 status = "pending"
 description = "Implement lib/eval/harness.mlpl (prefix u:eval_): a prompt renderer in this p..."

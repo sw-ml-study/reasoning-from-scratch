@@ -11,11 +11,12 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 | # | Step | Status |
 |---|---|---|
 | 1 | `foundation` | done in the planning session |
-| 2 | `capability-probes` | pending |
-| 3 | `math-data-loader` | pending |
-| 4 | `boxed-extraction-and-normalization` | pending |
-| 5 | `expression-equivalence` | pending |
-| 6 | `evaluation-harness` | pending |
+| 2 | `feature-home-triage` | done: core versus library versus extension rule and handoffs |
+| 3 | `capability-probes` | pending |
+| 4 | `math-data-loader` | pending |
+| 5 | `boxed-extraction-and-normalization` | pending |
+| 6 | `expression-equivalence` | pending |
+| 7 | `evaluation-harness` | pending |
 
 Acceptance: `just check` runs a complete, tested verifier and evaluation
 harness without any model, and the capability ledger contains only measured
@@ -23,9 +24,9 @@ claims.
 
 ## Queued: Saga 2, `tokenizer`
 
-Import `tokenizer.json`, implement byte-level BPE encode and decode with
-special tokens and chat templates in MLPL, and measure throughput on the
-training corpus.
+Import `tokenizer.json`, write the MLPL reference byte-level BPE on a
+synthetic fixture, write the chat templates, hand the production encoder to
+`../demo-extensions` as a Rust extension, and prove parity and throughput.
 
 ## Queued: Saga 3, `model-and-generation`
 

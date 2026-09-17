@@ -1,4 +1,4 @@
-number = 5
+number = 6
 slug = "expression-equivalence"
 status = "pending"
 description = "Implement lib/verify/expr.mlpl and lib/verify/grade.mlpl (prefix u:verify_): ..."

@@ -1,4 +1,4 @@
-number = 2
+number = 3
 slug = "capability-probes"
 status = "pending"
 description = "Add executable capability probes under probes/ with a declared expected-resul..."

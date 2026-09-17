@@ -12,7 +12,8 @@ self-consistency, self-refinement), reinforcement learning with verifiable
 rewards (GRPO and its stabilizers), and distillation from a stronger
 teacher. Every one of those algorithms is `.mlpl` source in this repository.
 The interpreter contributes only generic array kernels, autograd, byte and
-JSON I/O, and process control.
+JSON I/O, and process control; tokenization and downloading are native
+services from `../demo-extensions` with MLPL reference or fallback paths.
 
 ## Summary
 
@@ -43,6 +44,14 @@ tokenizer, byte-decoding, and JSON gaps with their workarounds and upstream
 requests, plus single-operation timings that place CPU decoding of the 0.6B
 model at seconds per token, which makes bounded, measured real-model runs
 and an MLX build the decisive questions for later sagas.
+
+A second planning step settled where each missing capability lives
+([`docs/feature-homes.md`](docs/feature-homes.md)): autograd, dtype, and
+lexer gaps go to sw-MLPL core (in progress upstream); array-math and
+string helpers are MLPL libraries here; the production tokenizer and large
+downloads are Rust extensions requested from `../demo-extensions`
+([`docs/cross-repo-handoffs.md`](docs/cross-repo-handoffs.md)), with MLPL
+reference implementations kept as parity oracles.
 
 Saga 1 (verifier and evaluation harness, no model needed) is active; its
 next step is `capability-probes`. Nothing yet generates text.

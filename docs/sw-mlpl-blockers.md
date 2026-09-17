@@ -60,9 +60,9 @@ workaround), **missing** (a step is blocked or must stop with an honest
 
 | Need | Status | Evidence | Workaround or request |
 |---|---|---|---|
-| load a Hugging Face `tokenizer.json` | missing | `train_bpe` is the only constructor; merges cannot be injected; `load_tokenizer` is a plan-only name in `docs/SmolLM2-demo-plan.md` | implement byte-level BPE in MLPL over `parse_json` output; request a native import if throughput is inadequate |
+| load a Hugging Face `tokenizer.json` | missing (extension) | `train_bpe` is the only constructor; merges cannot be injected; `load_tokenizer` is a plan-only name in `docs/SmolLM2-demo-plan.md` | MLPL reference BPE on fixtures as the oracle; production encoder is a `../demo-extensions` extension (work order in `cross-repo-handoffs.md`) |
 | string-keyed lookup tables | awkward | records come only from `parse_json`; no `record_set`; `for` does not iterate string lists | pre-serialize merge ranks as a JSON object (one-time generator written in MLPL), parse once, look up with `record_get`; iterate with `while` and `list_get` |
-| regular expressions | missing | no regex builtin | hand-written scanners in `lib/text/` |
+| regular expressions | not needed | no regex builtin; the number fallback is a scanner and pre-tokenization lives in the tokenizer extension | hand-written scanners in `lib/text/`; never requested for core |
 | string primitives | supported | `str_slice`, `str_find`, `str_split` (empty separator yields characters), `str_join`, `str_concat`, `str_len`, `str_eq`, `tokenize_bytes`, `decode_bytes`, `to_number` | no `str_replace`, `starts_with`, `trim`, `lower`, `contains`, or character-code access; each is a few lines over the primitives; request the common ones |
 | literal syntax | awkward | no hexadecimal literals, no scientific notation (`1e-8` fails), no index or slice syntax | write `0.00000001`; use `at`, `take`, `gather_rows`, `list_get` |
 | JSON arrays of objects | missing | `parse_json("[{...}]")` returns `err("mixed or nested array")` | consume datasets as JSONL: `read_text`, split on newline, `parse_json` per line; MATH-500 is published as `test.jsonl` |
@@ -81,7 +81,7 @@ workaround), **missing** (a step is blocked or must stop with an honest
 
 | Need | Status | Evidence | Workaround or request |
 |---|---|---|---|
-| download weights and datasets | missing | no HTTP builtin; `fetch_dataset` is allow-listed | `curl` in `scripts/fetch-*` recipes |
+| download weights and datasets | extension exists, bounded | `../demo-extensions` `http-client` V1 (1 MiB response limit, 10 s timeout); its bounded large-artifact download is designed but not built | `curl` in `scripts/fetch-*` recipes until the large-download path ships |
 | call a local LLM server | supported | `llm_call(url, prompt, model[, system])` against Ollama, CLI only, 120 s timeout, text only | usable as a distillation teacher for text, not for token-level targets |
 
 ## Performance (single-operation timings, this machine, f64 interpreter)
@@ -111,23 +111,40 @@ configurations; real-model runs are bounded, opt-in, and measured; the
 throughput numbers, not assumptions, decide which upstream requests are
 filed.
 
-## Request queue (to be filed upstream by the owner, with probes)
+## Request queue, split by home
+
+The rule for deciding a home is in [`feature-homes.md`](feature-homes.md).
+
+### Core (upstream, in progress as of 2026-09-16)
 
 1. `bf16` and `f16` dtypes plus a bulk `unpack(bytes, dtype)` to an array.
 2. Batched `matmul` over leading axes, and a correct error message for the
    current rank-3 rejection.
 3. Differentiable `sqrt`, `pow`, `rsqrt` (and `cos`/`sin`, lower priority).
 4. Differentiable `softmax(a, axis)` and `transpose_axes`.
-5. Gradient clipping or an explicit-gradient optimizer step; weight decay.
-6. `parse_json` support for arrays of objects, or a JSONL reader.
-7. String helpers: `str_replace`, `str_starts_with`, `str_ends_with`,
-   `str_trim`, `str_contains`, character codes; scientific-notation literals.
-8. Native `tokenizer.json` import (only with a throughput measurement
-   showing the MLPL encoder is inadequate).
-9. An MLX-featured `mlpl-repl` build on this host, device dispatch for the
-   gather/concat/take family, and evidence that a width-1,024, 28-layer
-   forward and backward fits the resident tape.
-10. A pretrained-decoder surface (safetensors model load, grouped-query
-    attention with RoPE and QK-norm, LoRA, device residency) as sketched in
-    `docs/SmolLM2-demo-plan.md` and `../demo-ml-utils/docs/rust-native-model-training.md`;
-    this repository's array implementation is the acceptance oracle.
+5. Scientific-notation literals.
+6. Optional: a weight-decay flag on `adam`.
+7. Distribution, not a feature: an MLX-featured `mlpl-repl` build on this
+   host and device dispatch for the gather/concat/take family.
+
+### Library (this repository, MLPL)
+
+Gradient-norm clipping and decoupled weight decay in a hand-written Adam,
+string helpers, text scanners, the expression evaluator, top-p sampling,
+JSONL reading, the user-array KV cache, and per-tensor checkpoints. None of
+these is requested upstream.
+
+### Extension (`../demo-extensions`, Rust, work orders in `cross-repo-handoffs.md`)
+
+Hugging Face `tokenizer.json` import with byte-level BPE encode/decode
+(this repository keeps an MLPL reference implementation as the parity
+oracle), and the already designed bounded large-artifact download on top of
+the existing `http-client` extension.
+
+### Not requested anywhere
+
+Regular expressions (no remaining user once scanners and the tokenizer
+extension exist), a pretrained-decoder surface in the Model DSL (this
+repository's array implementation is the deliverable; a native surface is a
+later upstream choice with this code as its oracle), and `parse_json` for
+arrays of objects (JSONL is the idiomatic input by design).

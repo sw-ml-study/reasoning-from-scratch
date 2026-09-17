@@ -104,24 +104,34 @@ model; the ledger lists measured, not assumed, gaps.
 
 ## Saga 2: tokenizer
 
-1. `tokenizer-json-import`: bounded `parse_json` of `tokenizer.json`
-   (vocab, merges, added tokens, pre-tokenizer description), measured time
-   and memory, one-time conversion to a native `MLPB` cache, and a
-   hand-built synthetic tokenizer fixture; `just fetch-model` recipe.
-2. `byte-level-bpe-encode`: byte-to-unicode mapping, a hand-written
-   pre-tokenization scanner approximating the published pattern (letters,
-   digit groups, punctuation, whitespace, contractions), merge ranking, and
-   encoding; documented divergences; tests on the synthetic fixture plus a
-   small real-vocabulary golden set of known id sequences.
-3. `decode-and-special-tokens`: decoding to bytes and text, splitting on
-   `<|...|>` control tokens, the base and reasoning chat templates,
-   end-of-sequence rule; round-trip and template tests.
-4. `tokenizer-throughput`: encode the 12,000-problem training prompts under
-   a time budget; if the budget fails, file the native-import request with
-   the measurement and keep the cache path.
+Home decision (see [`feature-homes.md`](feature-homes.md)): the production
+encoder is a Rust extension built in `../demo-extensions` from the work
+order in [`cross-repo-handoffs.md`](cross-repo-handoffs.md); this repository
+owns an MLPL reference implementation on a synthetic fixture, the chat
+templates, and the parity tests.
 
-Exit: any prompt in the corpus encodes and decodes deterministically in
-MLPL with recorded throughput.
+1. `tokenizer-json-import`: bounded `parse_json` of `tokenizer.json`
+   (vocab, merges, added tokens, pre-tokenizer description) with measured
+   time and memory, a hand-built synthetic tokenizer fixture with expected
+   encodings, and the `just fetch-model` recipe; publish the fixture and
+   the extension work order.
+2. `bpe-reference-in-mlpl`: readable byte-to-unicode mapping, a
+   pre-tokenization scanner, merge ranking, encode and decode, and control
+   token splitting, tested on the synthetic fixture only; this is the
+   oracle, not the production path.
+3. `chat-templates-and-eos`: the base and reasoning templates, think-tag
+   ids, and the end-of-sequence rule in MLPL over integer id arrays,
+   independent of which encoder produced them.
+4. `extension-parity-and-throughput`: load the tokenizer extension with
+   `load_extension` when present, run the reference suite through it, run
+   the real-vocabulary golden set, encode the 12,000 training prompts under
+   a stated time budget, and record the numbers; if the extension is not yet
+   delivered, this step stops with an honest "unavailable" result and the
+   evaluation sagas proceed on cached ids produced by the reference encoder
+   for bounded slices.
+
+Exit: any prompt in the corpus encodes and decodes deterministically, with
+the MLPL reference and the extension agreeing on every golden.
 
 ## Saga 3: model loading and greedy generation
 
@@ -239,7 +249,7 @@ expression evaluator, safetensors reader) as a handoff to
 | Interpreter too slow for 0.6B inference (planning extrapolation: seconds per token) | measured in saga 3 step 4 before evaluation; bounded slices instead of full MATH-500 passes; ladder keeps every later saga testable on the tiny model; MLX build and dispatch-coverage request filed with numbers |
 | Autograd tape for 28 unrolled blocks exceeds memory | saga 5 step 3 measures; adapters shrink trainable leaves; toy-model tests keep the algorithms verified |
 | bf16 decode unsupported by `reinterpret` | vectorized integer decode is expressible; request filed |
-| Tokenizer divergence from the published pre-tokenizer | golden id sequences on real vocabulary; divergences documented; native import requested only with evidence |
+| Tokenizer divergence from the published pre-tokenizer | the production encoder is a Rust extension in `../demo-extensions` using the file's own pattern; the MLPL reference is checked against it on goldens |
 | Symbolic equivalence without a computer-algebra system | bounded evaluator with exact rationals; divergences pinned by tests |
 | Teacher-trace license unknown | local Ollama generation is the primary path |
 
@@ -247,6 +257,7 @@ expression evaluator, safetensors reader) as a handoff to
 
 - Pretraining, tokenizer training, or a chat interface.
 - Batched generation before single-sequence throughput is measured.
-- Writing Rust, native extensions, or modifying any sibling repository.
+- Writing Rust here or modifying any sibling repository; extensions are
+  requested from `../demo-extensions` through work orders.
 - Reproducing the book's full 500-step training runs; bounded runs with
   full provenance are the deliverable.
