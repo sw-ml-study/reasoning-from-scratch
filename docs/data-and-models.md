@@ -6,7 +6,7 @@ weights and datasets are opt-in and live in ignored directories.
 ```text
 models/qwen3-0.6b-base/   model.safetensors, tokenizer.json, config.json
 models/qwen3-0.6b/        optional reasoning variant for comparison runs
-data/math500/             math500 test set as JSON or JSONL
+data/math500/             math500 test set as JSONL (the JSON parser rejects arrays of objects)
 data/math-train/          12,000-problem training split minus MATH-500
 data/distill/             teacher traces (downloaded or generated locally)
 out/                      generated evaluations, metrics CSV, checkpoints

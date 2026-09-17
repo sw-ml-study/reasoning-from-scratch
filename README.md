@@ -39,8 +39,10 @@ Agentrail process, the [delivery plan](docs/plan.md), the
 [verifier contract](docs/verifier-contract.md), the
 [data and model layout](docs/data-and-models.md), and a measured
 [sw-MLPL capability ledger](docs/sw-mlpl-blockers.md) listing the autograd,
-tokenizer, and byte-decoding gaps with their workarounds and upstream
-requests.
+tokenizer, byte-decoding, and JSON gaps with their workarounds and upstream
+requests, plus single-operation timings that place CPU decoding of the 0.6B
+model at seconds per token, which makes bounded, measured real-model runs
+and an MLX build the decisive questions for later sagas.
 
 Saga 1 (verifier and evaluation harness, no model needed) is active; its
 next step is `capability-probes`. Nothing yet generates text.

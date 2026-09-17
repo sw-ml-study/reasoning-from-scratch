@@ -40,9 +40,17 @@ on a toy model, what runs on the real model, and what is blocked upstream.
   rank-2 `matmul` differentiate; `sqrt`, `pow`, `transpose_axes`, rank-3
   `matmul`, and axis `softmax` do not. A `param` leaf reassigned to a data
   array still receives gradients, so pretrained weights can be leaves.
-- Tokenizer, regex, bf16 decoding, gradient clipping, and weight decay have
-  no dedicated builtins; each has a documented MLPL workaround or a pending
-  measurement (see the ledger).
+- Tokenizer import, regular expressions, bf16 decoding, gradient clipping,
+  weight decay, JSON arrays of objects, and HTTP have no builtins; each has a
+  documented MLPL workaround (byte-level BPE in MLPL, hand-written scanners,
+  vectorized bit decoding, a hand-written Adam, JSONL input, curl recipes).
+- Single-operation timings (a 1024x3072 matrix-vector product in 11.7 ms,
+  the 151,936-row output head in about 0.6 s) extrapolate to seconds per
+  generated token on the f64 CPU interpreter. The MLX backend is not compiled
+  into the current binary and dispatches only nineteen operations. Real-model
+  evaluation and training therefore depend on measurements in Saga 3 and
+  Saga 5 and on upstream work; every algorithm is proven on tiny models
+  first.
 - The reference implementation reports about 15% MATH-500 accuracy for the
   base model, about 41% with a chain-of-thought suffix, about 47% after 50
   GRPO steps, and about 34% to 44% after distillation. These are targets
@@ -74,8 +82,9 @@ Details: [`architecture.md`](architecture.md). Chapter mapping:
    pin the autograd gaps, the `reinterpret` dtype list, `parse_json` time
    and memory on a 7 MB synthetic document, and the interpreter build
    commit. Update the ledger from measurements only.
-3. `math-data-loader`: JSON and JSONL loading of MATH-style records with
-   parse budgets, schema validation, and a five-problem hand-authored
+3. `math-data-loader`: JSONL loading of MATH-style records with parse
+   budgets (arrays of objects are rejected by `parse_json`, so JSON arrays
+   are converted to JSONL by the fetch recipe), schema validation, and a five-problem hand-authored
    fixture; `just fetch-math500` recipe that prints the license and checks
    the byte size; loader tests.
 4. `boxed-extraction-and-normalization`: `lib/text/` scanners (find, brace
@@ -227,7 +236,7 @@ expression evaluator, safetensors reader) as a handoff to
 
 | Risk | Mitigation |
 |---|---|
-| Interpreter too slow for 0.6B inference | measured in saga 3 step 4 before evaluation; ladder keeps every later saga testable on the tiny model; MLX or compiled-path request filed with numbers |
+| Interpreter too slow for 0.6B inference (planning extrapolation: seconds per token) | measured in saga 3 step 4 before evaluation; bounded slices instead of full MATH-500 passes; ladder keeps every later saga testable on the tiny model; MLX build and dispatch-coverage request filed with numbers |
 | Autograd tape for 28 unrolled blocks exceeds memory | saga 5 step 3 measures; adapters shrink trainable leaves; toy-model tests keep the algorithms verified |
 | bf16 decode unsupported by `reinterpret` | vectorized integer decode is expressible; request filed |
 | Tokenizer divergence from the published pre-tokenizer | golden id sequences on real vocabulary; divergences documented; native import requested only with evidence |
