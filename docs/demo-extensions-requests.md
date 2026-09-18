@@ -75,35 +75,50 @@ Acceptance:
 4. Malformed files, unsupported model types, and stale handles are `err`
    results, never panics.
 
-## E2. Bounded large-artifact download over `http-client`
+## E2. Bounded large-artifact download — DELIVERED 2026-09-18
 
-Trigger: Saga 3 step 4 needs `model.safetensors` (1.19 GB) inside the
-sandbox root.
+Shipped as `u:http_download(url, expected_bytes, sha256, root, path,
+chunk_bytes, timeout_ms)` in the `http-client` extension, together with a
+native streaming SHA-256 primitive. Thank you: this is exactly the shape
+that was asked for.
 
-Today: the `http-client` extension V1 has a 1 MiB response limit and a
-10-second timeout, so it cannot fetch the weights or the datasets. The
-extension repository has already designed a bounded large-download path
-(declared length and checksum, streamed chunks into a temporary file under
-a granted root, verification, atomic rename) but has not built it.
-
-Requested: that path, with this repository as the first consumer.
-Concrete first artifacts and their published sizes:
+**Planned consumption.** Saga 3 step 4 needs the weights, and the fetch
+scripts here currently use `curl` with a byte-size check only. They will move
+to `u:http_download` so the transfer is checksum-verified inside the sandbox
+rather than trusted from outside it. The artifacts:
 
 | Artifact | Bytes |
 |---|---|
 | `Qwen/Qwen3-0.6B-Base/model.safetensors` | 1,192,135,096 |
 | `Qwen/Qwen3-0.6B-Base/tokenizer.json` | 7,031,645 |
 
-Acceptance: a checksum-verified file appears under `models/` with the
-published size; a truncated or tampered transfer leaves no partial file.
-Until it ships, `scripts/fetch-*` use `curl` and check byte sizes.
+One question for that step rather than a request: what `chunk_bytes` and
+`timeout_ms` are sensible for a 1.19 GB transfer, and does the extension
+report progress or only a final result? A long silent download is
+indistinguishable from a hang. If progress reporting does not exist, this
+repository will simply document the expected duration rather than ask for
+it.
 
-## E3. Fallback only: `unpack_bf16(bytes) -> array`
+## E3. Contingent: a native safetensors tensor reader
 
-Requested only if `sw-mlpl` request R7 (`bf16` dtype) slips behind Saga 3.
-Decoding needs no differentiation and returns an ordinary array, so an
-extension is a legitimate home. The vectorized MLPL decode
-(`bf16-vectorized-decode`) remains the reference for parity.
+**Not requested yet. Raise only if `sw-mlpl` declines request R11.**
+
+The `bf16` dtype shipped upstream, but the bulk decode did not:
+`reinterpret(bytes, "bf16")` returns a typed byte view with no length and no
+arithmetic, and the only way to read values is one scalar at a time. The
+Qwen3-0.6B embedding alone holds 155,320,832 values, so scalar reads are not
+a path. That is filed upstream as R11, `unpack(bytes, dtype) -> array`, and
+it belongs in core by the rule in `feature-homes.md`: it completes a dtype
+that already lives there, and it is an array primitive.
+
+If core declines it, the fallback is an extension here:
+`sten:read_tensor(path, name) -> array` reading one named tensor from a
+safetensors file and returning it already decoded, with the Hugging Face
+name mapping left to MLPL. Decoding needs no differentiation, so an
+extension is a legitimate home. The vectorized MLPL decode pinned by
+`probes/bf16-vectorized-decode.mlpl` stays the parity reference either way.
+
+This repository will report which way it went after Saga 3 step 1.
 
 ## Not requested
 

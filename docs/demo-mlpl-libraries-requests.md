@@ -66,11 +66,22 @@ compares the two and decides whether the loader can sit on the library.
 - Trigger: `lib/eval/data.mlpl` here (Saga 1 step 5) plus one more
   consumer.
 
-## L3. Bounded safetensors header reader — DELIVERED 2026-09-17, to be consumed
+## L3. Bounded safetensors header reader — DELIVERED, consuming in Saga 3
 
-Shipped as `safetensors-header` 0.1.0. Saga 3 step 1 should vendor this by
-pinned revision rather than re-deriving the reader, and confine its own work
-to bf16 decoding, the Hugging Face name mapping, and tied embeddings.
+Shipped as `safetensors-header` 0.1.0, entry `lib/safetensors-header/header.mlpl`,
+prefix `u:sth_`. Saga 3 step 1 vendors this by pinned revision rather than
+re-deriving the reader, and confines its own work to bf16 decoding, the
+Hugging Face name mapping, and tied embeddings.
+
+Two things that step will report back, as consumer evidence rather than
+requests:
+
+- whether the installer's pinned-revision and hash-lock flow works from a
+  repository that is not `demo-extensions`, which is the second-consumer
+  evidence that repository wanted;
+- whether the header reader's budgets suit a 1.19 GB file whose header is a
+  few tens of kilobytes but whose tensor directory names several hundred
+  tensors.
 
 ### Original request
 
@@ -84,7 +95,17 @@ to bf16 decoding, the Hugging Face name mapping, and tied embeddings.
   (to publish) and `demo-mlpl-libraries` (to host); both are read-only from
   here.
 
-## L4. Per-tensor `MLPB` checkpoint helpers (later)
+## L4. Per-tensor `MLPB` checkpoint helpers — DELIVERED, consuming in Saga 5
+
+Shipped as `checkpoint` 0.1.0, prefix `u:ckpt_`. Saga 5 needs exactly this
+for reinforcement-learning checkpoints and will vendor it rather than
+writing its own. Measured context that may be useful: `to_native` of a
+10 MB array writes in 107 ms and reads back in 173 ms, and the tokenizer
+tables round-trip at 5.5 MB, so the primitive underneath is fast; what this
+project needs from the library is the directory layout, the index, and the
+manifest.
+
+### Original request
 
 - What: save and load a record of named arrays as one `to_native` file per
   tensor under a directory, with an index file, atomic writes, and a size

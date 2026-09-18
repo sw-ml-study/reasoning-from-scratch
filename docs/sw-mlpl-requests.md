@@ -19,8 +19,9 @@ restated here:
 
 | Open ask | Why it matters | Where it bites |
 |---|---|---|
-| R3, batched rank-3 `matmul` | only the error message shipped; the operation itself did not | grouped-query attention in Saga 3 must loop over sixteen heads per layer instead of one batched call |
-| R10, record lookup that does not scale with record size | newly measured and filed during the tokenizer work | the reference tokenizer costs 34 ms per vocabulary lookup, which is why the production encoder is a native extension |
+| **R11, bulk `unpack(bytes, dtype)` to an array** | **blocks Saga 3 entirely**: the `bf16` dtype shipped but only scalar reads exist, so loading a 155-million-value tensor means 155 million interpreter calls | the weight loader cannot be written at all |
+| R3, batched rank-3 `matmul` | only the error message shipped; the operation itself did not | attention must slice per head, and slicing a large array costs 0.93 ms, so the slicing alone would cost more than the arithmetic |
+| R10, element access that scales with container size | now measured on numeric arrays too, not just records and lists | the forward pass must avoid element access entirely; where the missing batched `matmul` forces slicing, that is not possible |
 
 Also queued upstream, not blocking: `pow` with a general constant exponent,
 behind an autograd crate refactor. The remaining items on this page are
@@ -68,6 +69,15 @@ ledger, and removes the workaround where the plan allows.
   operation itself is still open and the probe still expects failure.
 - Before that fix: rank-3 operands failed with "index has 3 components but
   array has rank 2", which named the wrong problem.
+- **New evidence for priority, 2026-09-18.** Without batched `matmul`,
+  grouped-query attention must slice per head, and slicing is not free:
+  `take` on a million-element array costs 0.93 ms because element access
+  copies (see R10). Qwen3-0.6B has sixteen query heads over twenty-eight
+  layers; at three slices per head per layer that is on the order of 1,300
+  slices per generated token, or more than a second of pure slicing before
+  any arithmetic happens. By contrast a `[1,1000] x [1000,1000]` product
+  takes 1.28 ms, so the arithmetic itself is not the problem. This moves R3
+  from an ergonomic improvement to a throughput requirement.
 - Requested: `matmul` on `[..., m, k] x [..., k, n]` with broadcasting of
   the leading axes, differentiable; until then, an error that says
   `matmul` accepts rank-2 operands only.
@@ -103,14 +113,40 @@ ledger, and removes the workaround where the plan allows.
 - Acceptance: `1e-4 == 0.0001` and `1e6 == 1000000`.
 - Used by: every epsilon and learning rate in the plan.
 
-## R7. `bf16` and `f16` dtypes with a bulk unpack to an array
+## R7. `bf16` and `f16` dtypes
 
 - Probe: `reinterpret-bf16`.
-- Status: the dtypes shipped in upstream commit a34cc230 on 2026-09-18 and
-  the probe passes. A bulk unpack straight to an array is still worth having
-  for the weight loader in Saga 3, which will report whether the dtype alone
-  is enough.
+- Status: shipped in upstream commit a34cc230 on 2026-09-18; the probe
+  passes. The bulk unpack that was bundled into this item did not ship and is
+  now R11 below, because measurement showed it is the blocking half.
 - Before the fix: accepted dtypes were `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64`.
+
+## R11. Bulk `unpack(bytes, dtype)` returning an array — blocking
+
+- Probe: to be added with the weight loader; measured by hand on 2026-09-18.
+- Today: `reinterpret(bytes, "bf16")` returns a typed *byte view*, not an
+  array. It has no length, does not take part in arithmetic, and there is no
+  `unpack` or `to_array`. The only way to get values out is one scalar at a
+  time with `read_bf16_le(bytes, offset)`, which does work and returns the
+  right value.
+- Why that blocks: the Qwen3-0.6B embedding matrix alone holds 155,320,832
+  values and the whole model about 596 million. At one interpreter call per
+  value, loading the embedding is tens of minutes at best. There is no
+  workaround in MLPL, because the vectorized bit arithmetic that decodes
+  bf16 needs the bytes *as an array* to begin with, and that is exactly what
+  is missing.
+- Requested: `unpack(bytes, dtype) -> array`, the inverse of the existing
+  `pack(array, dtype)`, for every dtype `reinterpret` accepts. Shape is a
+  flat rank-1 array of the decoded values; the caller reshapes. Errors when
+  the buffer length is not a multiple of the dtype width.
+- Acceptance: `unpack(pack(x, "f32"), "f32")` reproduces `x` within f32
+  precision for a million-element array; `unpack` of the bf16 bytes for
+  `[1, -1, 2, 0.5, 0, 50]` returns those values exactly; decoding a
+  155-million-value tensor completes in seconds rather than minutes.
+- Used by: `lib/safetensors/` in Saga 3, which is the gate to every
+  real-model result in this project. Everything downstream of it, generation,
+  evaluation, reinforcement learning, and distillation, waits on this one
+  call.
 - Requested: `bf16` and `f16` in `reinterpret`, and a bulk
   `unpack(bytes, dtype)` returning an f64 array (subnormals, infinities,
   and NaN preserved).
@@ -147,6 +183,15 @@ ledger, and removes the workaround where the plan allows.
 |---|---|---|
 | `record_get` | 0.0026 ms at 2 fields | 10.4 ms at 150,000 fields; 34 ms on the real 151,643-entry vocabulary |
 | `list_get` | negligible at 4 items | 10 ms at 303,282 items |
+| `at` on a numeric array | 0.0017 ms at 4 elements | 0.97 ms at 1,000,000 elements |
+| `take` of one row | — | 0.93 ms at 1,000,000 elements |
+
+  Numeric arrays are affected too, which was not obvious from the first two
+  probes and matters far more: it means the transformer forward pass must be
+  written entirely in whole-array operations and must never index an element
+  inside a loop. Whole-array arithmetic is genuinely fast by comparison, at
+  1.28 ms for a `[1,1000] x [1000,1000]` product, so this is specifically a
+  cost of *reaching into* a container rather than of computing with it.
 
   `record_get`, `has_field`, and `r.field` are equally affected, so records
   share one underlying lookup. The decisive observation is on lists: reading
