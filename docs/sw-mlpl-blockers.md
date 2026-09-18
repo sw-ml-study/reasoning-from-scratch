@@ -117,6 +117,8 @@ vocabulary lookup, and a lookup on a 151,643-field record costs 34 ms.
 | one vocabulary lookup | 0.0026 ms | 34 ms |
 | encode `hello` | under 1 ms | 2.7 s |
 | encode `hello world` | under 1 ms | 5.9 s |
+| encode eight short goldens | instant | 25 s total |
+| decode one token | instant | about 310 ms |
 | verify the merge invariant | 3 merges, instant | 38 sampled merges, 6.9 s |
 
 The ids are right: `hello` encodes to 14990 and a leading-space `the` to 279,

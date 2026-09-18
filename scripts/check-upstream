@@ -16,6 +16,14 @@ else
 fi
 
 echo "sw-mlpl head=$(head_of "$parent/sw-mlpl") binary=${binary:-unknown}"
-echo "demo-extensions head=$(head_of "$parent/demo-extensions") hftok=$([ -d "$parent/demo-extensions/extensions/hftok" ] && echo present || echo absent)"
+ext_dir="$parent/demo-extensions/extensions/hftok"
+if [ -f "$ext_dir/extension.toml" ] && [ -n "$(find "$parent/demo-extensions" -name 'lib*hftok*.dylib' -o -name 'lib*hftok*.so' 2>/dev/null | head -1)" ]; then
+    hftok=built
+elif [ -d "$ext_dir" ]; then
+    hftok=started
+else
+    hftok=absent
+fi
+echo "demo-extensions head=$(head_of "$parent/demo-extensions") hftok=$hftok"
 echo "demo-mlpl-libraries head=$(head_of "$parent/demo-mlpl-libraries") libraries=$(grep '^name = ' "$parent/demo-mlpl-libraries/catalog/libraries.toml" 2>/dev/null | sed 's/name = //; s/"//g' | tr '\n' ',' | sed 's/,$//')"
 echo "demo-ml-utils head=$(head_of "$parent/demo-ml-utils")"

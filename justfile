@@ -33,6 +33,10 @@ fetch-model:
 fetch-math500:
     ./scripts/fetch-math500
 
+# Compare the MLPL reference tokenizer with the native extension (opt-in).
+tokenizer-parity:
+    ./scripts/run-tokenizer-parity
+
 # Prove docs/reasoning.org tangles back to every committed library source.
 tangle:
     ./scripts/check-tangle

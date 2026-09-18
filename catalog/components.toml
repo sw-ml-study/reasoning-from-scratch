@@ -110,6 +110,15 @@ documentation = "docs/book-map.md"
 status = "accepted"
 
 [[component]]
+id = "PARITY"
+slug = "tokenizer-parity"
+chapter = 2
+source = "demos/tokenizer_parity.mlpl"
+test = "scripts/run-tokenizer-parity"
+documentation = "docs/demo-extensions-requests.md"
+status = "blocked"
+
+[[component]]
 id = "ST"
 slug = "safetensors"
 chapter = 2

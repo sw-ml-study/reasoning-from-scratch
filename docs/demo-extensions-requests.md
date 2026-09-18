@@ -11,9 +11,37 @@ begins.
 
 ## E1. Hugging Face tokenizer extension (`hftok`)
 
-Trigger: Saga 2 step 1 has parsed a real `tokenizer.json` and published the
-synthetic fixture `fixtures/tokenizer/tiny-tokenizer.json` with its expected
-encodings.
+**State on 2026-09-18: started, not yet loadable.** The directory
+`extensions/hftok/` exists with `Cargo.toml`, `src/lib.rs`,
+`src/tokenizer_file.rs`, `src/file_source.rs`, and a contract test, but no
+`extension.toml` manifest and no built library, so `load_extension("hftok")`
+reports it missing. This repository's parity step therefore stops with an
+honest unavailable result and the reference encoder remains the path for
+bounded slices. Rerun `just tokenizer-parity` once the manifest and a built
+library exist.
+
+**Everything needed to check the work is now published here:**
+
+| Artifact | What it pins |
+|---|---|
+| `fixtures/tokenizer/tiny-tokenizer.json` | a hand-authored byte-level BPE tokenizer, ten tokens and three merges |
+| `fixtures/tokenizer/tiny-expected.jsonl` | six expected id sequences with the reason each holds |
+| `fixtures/tokenizer/qwen3-goldens.jsonl` | eight real-vocabulary encodings produced and round-tripped by the reference encoder |
+| `lib/tokenizer/bpe.mlpl` | the readable algorithm, including the pre-tokenizer divergences |
+| `docs/reasoning.org` | prose for every function, tangling back to the sources |
+
+The real-vocabulary goldens are the sharpest target. They include
+`hello` to `[14990]`, `hello world` to `[14990, 1879]`, `42` to `[19, 17]`
+because digits are separate pre-tokens, and a lone newline to `[198]`. Each
+was verified by decoding it back to its input.
+
+**One invariant the extension may rely on**, verified across all 151,387
+merges of the Qwen3 vocabulary: the vocabulary id of the token a merge
+produces is exactly the merge rank plus 256. The reference encoder uses it
+instead of building a rank table, and checks it rather than assuming it.
+
+Trigger: satisfied. Saga 2 step 1 parsed a real `tokenizer.json` and
+published the fixtures above.
 
 Requested public surface (private namespace `_hftok`, public facade
 `hftok`):

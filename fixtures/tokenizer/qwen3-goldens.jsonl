@@ -1,0 +1,8 @@
+{"encode_ms":3139,"ids":[14990],"round_trip":"hello","text":"hello"}
+{"encode_ms":2273,"ids":[279],"round_trip":" the","text":" the"}
+{"encode_ms":6748,"ids":[14990,1879],"round_trip":"hello world","text":"hello world"}
+{"encode_ms":1666,"ids":[19,17],"round_trip":"42","text":"42"}
+{"encode_ms":2919,"ids":[87,10,16],"round_trip":"x+1","text":"x+1"}
+{"encode_ms":5989,"ids":[21806,25],"round_trip":" Answer:","text":" Answer:"}
+{"encode_ms":1321,"ids":[198],"round_trip":"\n","text":"\n"}
+{"encode_ms":1282,"ids":[370],"round_trip":"ab","text":"ab"}

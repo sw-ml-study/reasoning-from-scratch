@@ -18,14 +18,14 @@ grading, the evaluation harness, a narrated demo, and the literate
 MATH-500 reference answers grading against themselves with no false
 positives.
 
-## Active: Saga 2, `tokenizer`
+## Complete: Saga 2, `tokenizer`
 
 | # | Step | Status |
 |---|---|---|
 | 1 | `tokenizer-json-import` | done: sectioned import, fixtures, native cache; real file measured |
 | 2 | `bpe-reference-in-mlpl` | done: byte alphabet, pre-tokenizer, merge loop; correct but 34 ms per vocabulary lookup |
 | 3 | `chat-templates-and-eos` | done: inverse byte map, id-ordered line table, control splitting, both prompt conventions |
-| 4 | `extension-parity-and-throughput` | pending, gated on `../demo-extensions` |
+| 4 | `extension-parity-and-throughput` | done: unavailable result recorded; goldens and runner published for when `hftok` builds |
 
 The production encoder is a Rust extension requested from
 `../demo-extensions`; this repository owns the MLPL reference encoder on a
