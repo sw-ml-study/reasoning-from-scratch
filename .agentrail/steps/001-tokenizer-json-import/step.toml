@@ -1,9 +1,10 @@
 number = 1
 slug = "tokenizer-json-import"
-status = "pending"
+status = "completed"
 description = "Implement the tokenizer.json import and fixture. Add scripts/fetch-model to d..."
 role = "production"
 context_files = []
 created_at = "2026-09-17T19:02:47"
+completed_at = "2026-09-18T10:20:49"
 task_type = "mlpl-library"
-commits = []
+commits = ["8cca4a3381f141cf264b0862fe595c0a0ab5b85a"]
