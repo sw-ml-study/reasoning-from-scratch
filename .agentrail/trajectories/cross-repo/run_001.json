@@ -1,0 +1,11 @@
+{
+  "task_type": "cross-repo",
+  "state": {
+    "number": 4,
+    "step": "extension-parity-and-throughput"
+  },
+  "action": "Diagnosed the partially-built extension, hardened the detector, wrote the parity demo and runner, generated and verified real-vocabulary goldens with the reference encoder.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-18T13:45:25"
+}

@@ -1,9 +1,10 @@
 number = 4
 slug = "extension-parity-and-throughput"
-status = "pending"
+status = "completed"
 description = "Consume the hftok extension from ../demo-extensions when it exists: load it w..."
 role = "validation"
 context_files = []
 created_at = "2026-09-17T19:02:47"
+completed_at = "2026-09-18T13:45:25"
 task_type = "cross-repo"
-commits = []
+commits = ["a5ed33085d3487337c13907ceb03033bcbe055a7"]
