@@ -11,13 +11,13 @@ Measured against:
 
 ```text
 mlpl-repl 0.22.0
-Commit: 1abe8f10
+Commit: 1ce43dc2
 MLX feature: not compiled into this binary
 Previous pins: 1b4d29e5, then 0dfa3eae (sqrt, sin, cos backward rules),
 2a774891 (scientific-notation literals), 8a1fe24a (pow with a constant integer
 exponent), 3250cea9 (lenient unknown string escapes), fdb5e675 (actionable
 rank-3 matmul error), 363391a6 (axis softmax on the tape), 1abe8f10
-(transpose_axes backward)
+(transpose_axes backward), a34cc230 (bf16 and f16 dtypes), 1ce43dc2
 Machine: Apple M1 Max, 10 cores, 64 GB
 ```
 
@@ -57,7 +57,7 @@ workaround), **missing** (a step is blocked or must stop with an honest
 
 | Need | Status | Probe and observation | Home and workaround |
 |---|---|---|---|
-| `bf16` / `f16` dtype | missing | `reinterpret-bf16`: accepted dtypes are `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64`; `bf16` and `f16` are "unknown dtype" | core (upstream in progress) |
+| `bf16` / `f16` dtype | supported since a34cc230 | `reinterpret-bf16`: both dtypes are now accepted | shipped upstream (RS6); the vectorized decode below remains as a cross-check |
 | vectorized bf16 decode | supported | `bf16-vectorized-decode`: byte pairs for 1, -1, 2, 0.5, 0, 50 decode exactly with `shr`, `band`, `pow` on f64 byte arrays | library; subnormal, infinity, and NaN masks still to add; 8x transient memory per tensor |
 | large-array checkpoint round-trip | supported | `native-roundtrip-10mb`: 1,250,000 f64 values (10,000,019 bytes) through `to_native`, `write_bytes`, `read_bytes`, `parse_native` in 134 ms, peak 381 MB | library: one `MLPB` file per tensor with `write_atomic` |
 | f64-only array storage | awkward | `matmul-throughput` peak resident memory 3.7 GB while holding one `[1024, 151936]` array and its products | acceptable on 64 GB; narrower storage is an upstream choice tied to MLX |
@@ -105,6 +105,27 @@ The base tokenizer has no `<think>` token: it is absent from both the
 vocabulary and the added tokens, which matches the reference and means the
 format-reward work in Saga 5 must either add the tokens or use the reasoning
 tokenizer.
+
+## Tokenizer encoding (measured 2026-09-18)
+
+The reference encoder is correct and unusably slow on a production
+vocabulary, for one reason: every symbol and every candidate pair needs a
+vocabulary lookup, and a lookup on a 151,643-field record costs 34 ms.
+
+| Operation | Tiny fixture (10 tokens) | Real vocabulary (151,643 tokens) |
+|---|---|---|
+| one vocabulary lookup | 0.0026 ms | 34 ms |
+| encode `hello` | under 1 ms | 2.7 s |
+| encode `hello world` | under 1 ms | 5.9 s |
+| verify the merge invariant | 3 merges, instant | 38 sampled merges, 6.9 s |
+
+The ids are right: `hello` encodes to 14990 and a leading-space `the` to 279,
+both matching their vocabulary entries. Extrapolating, one MATH problem of
+about fifty pre-tokens would take roughly two minutes, and the
+twelve-thousand-prompt training corpus is out of reach entirely. This is the
+measured evidence behind the decision recorded in `feature-homes.md`: the
+reference encoder proves the algorithm, and the native extension in
+`../demo-extensions` is the production path.
 
 ## Performance (measured by `matmul-throughput`)
 

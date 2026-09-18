@@ -6,7 +6,7 @@ grad-softmax-axis	probes/grad-softmax-axis.mlpl	core	pass	softmax(a, axis) is di
 grad-transpose-axes	probes/grad-transpose-axes.mlpl	core	pass	transpose_axes is differentiable	shipped
 matmul-rank3	probes/matmul-rank3.mlpl	core	fail	matmul accepts batched rank-3 operands	open
 scientific-literal	probes/scientific-literal.mlpl	core	pass	scientific-notation literals parse	shipped
-reinterpret-bf16	probes/reinterpret-bf16.mlpl	core	fail	reinterpret accepts bf16 or f16	open
+reinterpret-bf16	probes/reinterpret-bf16.mlpl	core	pass	reinterpret accepts bf16 or f16	shipped
 grad-clip-builtin	probes/grad-clip-builtin.mlpl	library	fail	a gradient-norm clipping builtin exists (a library replaces it)	workaround
 str-helpers	probes/str-helpers.mlpl	library	fail	str_replace exists as a builtin (a library replaces it)	workaround
 for-string-list	probes/for-string-list.mlpl	library	fail	for iterates a string list (while plus list_get replaces it)	workaround
@@ -20,3 +20,4 @@ softmax-rowwise	probes/softmax-rowwise.mlpl	core	pass	one-argument softmax on ra
 parse-json-150k	probes/parse-json-150k.mlpl	core	pass	a 150,000-key 7 MB JSON object parses within 60 s	available
 native-roundtrip-10mb	probes/native-roundtrip-10mb.mlpl	core	pass	a 10 MB array round-trips through to_native and parse_native	available
 matmul-throughput	probes/matmul-throughput.mlpl	core	pass	informational matmul timings for the 0.6B feasibility estimate	available
+record-lookup-scaling	probes/record-lookup-scaling.mlpl	core	fail	record field lookup is independent of record size	open

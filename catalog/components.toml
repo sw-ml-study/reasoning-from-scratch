@@ -98,7 +98,7 @@ chapter = 2
 source = "lib/tokenizer/bpe.mlpl"
 test = "tests/test_tokenizer_bpe.mlpl"
 documentation = "docs/book-map.md"
-status = "planned"
+status = "accepted"
 
 [[component]]
 id = "ST"

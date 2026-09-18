@@ -2559,6 +2559,556 @@ def u:tok_added_id(tables, name) {
 }
 #+end_src
 
+** lib/tokenizer/bpe.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-tokenizer-bpe-mlpl
+:END:
+
+Byte-level BPE in three parts: an alphabet that makes every byte printable,
+a pre-tokenizer that decides where words begin, and a merge loop that walks a
+word up the vocabulary.
+
+One measurement shapes this module's status. It is correct: =hello= encodes to
+14990 and a leading-space =the= to 279, matching their vocabulary entries. It
+is also far too slow for production, because every symbol and every candidate
+pair costs a vocabulary lookup, and a lookup on a 151,643-field record takes
+34 ms. Encoding =hello world= takes 5.9 seconds. So this file is the readable
+oracle that the native extension in =../demo-extensions= is checked against,
+and the extension is what the evaluation and training sagas will call.
+
+The module comment records that status, and the two files it needs first.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+# Byte-level BPE encoding: the byte-to-character map, pre-tokenization, and the merge loop. This is the readable reference the native extension is checked against, not the production path. Requires lib/text/text.mlpl and lib/tokenizer/import.mlpl included first.
+#+end_src
+
+The byte alphabet exists so that a tokenizer can treat arbitrary bytes as
+text. Printable bytes stand for themselves; every other byte is lifted above
+255 in ascending order. The consequence worth noticing is that a space becomes
+a visible marker character and a line feed becomes code point 266, so a mapped
+string contains no whitespace at all. That is what makes it safe to hold a
+symbol list as one newline-separated string a few functions below.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_printable_byte(b) {
+  "1 when a byte maps to itself in the byte-level alphabet: the printable ASCII range and two Latin-1 ranges.";
+  gt(b, 32) * lt(b, 127) + gt(b, 160) * lt(b, 173) + gt(b, 173) * lt(b, 256)
+}
+
+def u:tok_byte_codepoint(b) {
+  "Code point that represents one byte in the byte-level alphabet. Printable bytes stand for themselves; every other byte is lifted above 255 in ascending order, which is what makes a space appear as the marker character rather than as whitespace.";
+  if u:tok_printable_byte(b) {
+    b
+  } else {
+    if lt(b, 33) {
+      256 + b
+    } else {
+      if lt(b, 161) {
+        256 + 33 + b - 127
+      } else {
+        323
+      }
+    }
+  }
+}
+
+def u:tok_codepoint_string(cp) {
+  "One code point as a string, encoded as UTF-8. Code points here never exceed 2047, so one or two bytes always suffice.";
+  if lt(cp, 128) {
+    decode_bytes([cp])
+  } else {
+    decode_bytes([192 + floor(cp / 64), 128 + mod(cp, 64)])
+  }
+}
+
+def u:tok_byte_string(b) {
+  "The single character standing for one byte.";
+  u:tok_codepoint_string(u:tok_byte_codepoint(b))
+}
+#+end_src
+
+A word is a list of symbols, and the list is carried as one string joined by
+line feeds. The justification is the previous paragraph: no mapped character
+can be a line feed, so the separator cannot collide with the data.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_symbol_separator() {
+  "Separator used to hold a symbol list in one string. A newline is safe because the byte map lifts every control byte above 255, so no mapped character is ever a raw newline.";
+  "\n"
+}
+
+def u:tok_map_text(text) {
+  "Rewrite text into the byte-level alphabet, one character per input byte, joined by the symbol separator so the result is also the initial symbol list.";
+  bytes = tokenize_bytes(text);
+  count = tally(bytes);
+  out = "";
+  i = 0;
+  while lt(i, count) {
+    symbol = u:tok_byte_string(at(bytes, i));
+    out = if i {
+      str_concat(out, str_concat(u:tok_symbol_separator(), symbol))
+    } else {
+      symbol
+    };
+    i = i + 1
+  };
+  out
+}
+#+end_src
+
+This is the trick that makes the encoder possible at all. Real BPE picks the
+adjacent pair with the lowest merge rank, which normally needs a map from pair
+to rank, and this language cannot build a 151,387-entry map cheaply.
+
+It turns out not to need one. Checking all 151,387 merges of the real
+tokenizer shows that the vocabulary id of the token a merge produces is
+exactly the merge's rank plus 256, with no exceptions. So the vocabulary is
+already the rank table, and the lowest id is the highest priority. The
+function verifies that invariant rather than assuming it, and refuses a
+tokenizer where it does not hold.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_merge_base(tables, stride) {
+  "Verify and return the offset between a merge's rank and the vocabulary id of the token it produces. Every merge is checked when stride is 1, otherwise every stride-th one. The encoder depends on this invariant: it uses the vocabulary id as the merge priority instead of building a rank table, which the language cannot construct cheaply for a list of this size.";
+  count = u:tok_merge_count(tables);
+  if count {
+    first = u:tok_merge_joined(tables, 0);
+    base_id = u:tok_token_id(tables, first);
+    if is_err(base_id) {
+      u:tok_error("invariant", "the first merge does not produce a vocabulary token")
+    } else {
+      base = unwrap(base_id);
+      i = 0;
+      failure = ok(base);
+      while lt(i, count) {
+        token = u:tok_merge_joined(tables, i);
+        found = u:tok_token_id(tables, token);
+        if is_err(found) {
+          failure = u:tok_error("invariant", str_concat("merge produces no vocabulary token: ", token));
+          i = count
+        } else {
+          if unwrap(found) - (base + i) {
+            failure = u:tok_error("invariant", str_concat("merge rank and vocabulary id disagree at: ", token));
+            i = count
+          } else {
+            i = i + stride
+          }
+        }
+      };
+      failure
+    }
+  } else {
+    u:tok_error("invariant", "no merges")
+  }
+}
+#+end_src
+
+The token a merge produces, which is its pair with the separating space
+removed.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_merge_joined(tables, index) {
+  "The token one merge produces: its pair with the separating space removed.";
+  pair = unwrap(list_get(tables.merges, index));
+  at_space = str_find(pair, " ");
+  str_concat(str_slice(pair, 0, at_space), str_slice(pair, at_space + 1, str_len(pair) - at_space - 1))
+}
+#+end_src
+
+Priority of an adjacent pair, with the guard that keeps the trick honest: a
+concatenation that exists in the vocabulary but did not come from a merge, such
+as a control token, is not mergeable.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_pair_priority(tables, left, right, base, count) {
+  "Merge priority of an adjacent symbol pair: the vocabulary id of their concatenation when that token came from a merge, or -1 when the pair may not be merged. A lower value is a higher priority, which is exactly merge rank order.";
+  joined = str_concat(left, right);
+  found = record_get(tables.vocab, joined);
+  if is_err(found) {
+    0 - 1
+  } else {
+    id = unwrap(found);
+    if lt(id, base) {
+      0 - 1
+    } else {
+      if lt(id, base + count) {
+        id
+      } else {
+        0 - 1
+      }
+    }
+  }
+}
+#+end_src
+
+One merge step scans for the best pair and rebuilds the list around it.
+=u:tok_merge_all= repeats until nothing may be merged, which terminates because
+every step removes exactly one symbol.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_merge_once(tables, symbols, base, count) {
+  "Apply the single highest-priority merge available in a symbol list; returns the new list, or the list unchanged when nothing may be merged.";
+  n = list_len(symbols);
+  best = 0 - 1;
+  best_at = 0 - 1;
+  i = 0;
+  while lt(i, n - 1) {
+    priority = u:tok_pair_priority(tables, unwrap(list_get(symbols, i)), unwrap(list_get(symbols, i + 1)), base, count);
+    if gt(priority, 0 - 1) {
+      if lt(best, 0) + lt(priority, best) {
+        best = priority;
+        best_at = i
+      } else {
+        0
+      }
+    } else {
+      0
+    };
+    i = i + 1
+  };
+  if lt(best_at, 0) {
+    symbols
+  } else {
+    out = "";
+    j = 0;
+    while lt(j, n) {
+      piece = if j - best_at {
+        unwrap(list_get(symbols, j))
+      } else {
+        str_concat(unwrap(list_get(symbols, j)), unwrap(list_get(symbols, j + 1)))
+      };
+      out = if j {
+        str_concat(out, str_concat(u:tok_symbol_separator(), piece))
+      } else {
+        piece
+      };
+      j = if j - best_at {
+        j + 1
+      } else {
+        j + 2
+      }
+    };
+    str_split(out, u:tok_symbol_separator())
+  }
+}
+
+def u:tok_merge_all(tables, symbols, base, count) {
+  "Merge repeatedly until no pair may be merged. Each pass removes one symbol, so the loop is bounded by the symbol count.";
+  current = symbols;
+  remaining = list_len(symbols);
+  while gt(remaining, 1) {
+    merged = u:tok_merge_once(tables, current, base, count);
+    if list_len(merged) - list_len(current) {
+      current = merged;
+      remaining = list_len(merged)
+    } else {
+      remaining = 0
+    }
+  };
+  current
+}
+#+end_src
+
+Symbols become ids, and a symbol outside the vocabulary is an error naming
+it rather than a silent unknown-token substitution.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_symbol_ids(tables, symbols) {
+  "Look up each symbol's vocabulary id; an unknown symbol is an error naming it.";
+  n = list_len(symbols);
+  ids = [];
+  i = 0;
+  failure = ok(1);
+  while lt(i, n) {
+    found = u:tok_token_id(tables, unwrap(list_get(symbols, i)));
+    if is_err(found) {
+      failure = found;
+      i = n
+    } else {
+      ids = concat(ids, unwrap(found));
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(ids)
+  }
+}
+#+end_src
+
+One pre-token, end to end: map its bytes, merge, look up.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_encode_piece(tables, piece, base, count) {
+  "Encode one pre-token: map its bytes into the byte-level alphabet, merge, then look up ids.";
+  if str_eq(piece, "") {
+    ok([])
+  } else {
+    symbols = str_split(u:tok_map_text(piece), u:tok_symbol_separator());
+    u:tok_symbol_ids(tables, u:tok_merge_all(tables, symbols, base, count))
+  }
+}
+#+end_src
+
+Pre-tokenization decides where one word ends and the next begins, and it
+matters more than it looks: the same characters split differently produce
+entirely different ids. The published rule is a regular expression with seven
+alternatives, and this is a hand-written approximation of it, so the divergence
+is stated plainly. The published pattern uses Unicode letter and number
+categories; this reference recognizes only ASCII, so text in a non-Latin
+script splits differently here than in the native tokenizer. Latin text,
+digits, punctuation, and whitespace follow the published behavior.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_is_word_byte(c) {
+  "1 when a character is a letter or digit for pre-tokenization purposes. This is the documented approximation: the published pattern uses Unicode letter and number categories, and this reference recognizes only ASCII, so a word in a non-Latin script splits differently here than in the native tokenizer.";
+  u:text_is_alnum(c)
+}
+
+def u:tok_is_newline(c) {
+  "1 when a character is a carriage return or line feed.";
+  str_eq(c, "\n") + str_eq(c, "\r")
+}
+
+def u:tok_space_end(text, i) {
+  "Index just past the run of whitespace starting at i.";
+  n = str_len(text);
+  j = i;
+  while lt(j, n) * u:text_is_space(u:text_char_at(text, j)) {
+    j = j + 1
+  };
+  j
+}
+
+def u:tok_letters_end(text, i) {
+  "Index just past the run of ASCII letters starting at i.";
+  n = str_len(text);
+  j = i;
+  while lt(j, n) * u:text_is_letter(u:text_char_at(text, j)) {
+    j = j + 1
+  };
+  j
+}
+#+end_src
+
+The first alternative: English contractions are their own pre-tokens,
+case-insensitively.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_contraction_end(text, i) {
+  "End index of a contraction such as an apostrophe followed by s, t, m, d, re, ve, or ll, case-insensitively; -1 when none starts at i.";
+  if str_eq(u:text_char_at(text, i), "'") {
+    one = u:text_lower(u:text_char_at(text, i + 1));
+    two = u:text_lower(str_slice(text, i + 1, 2));
+    if str_eq(two, "re") + str_eq(two, "ve") + str_eq(two, "ll") {
+      i + 3
+    } else {
+      if str_eq(one, "s") + str_eq(one, "t") + str_eq(one, "m") + str_eq(one, "d") {
+        i + 2
+      } else {
+        0 - 1
+      }
+    }
+  } else {
+    0 - 1
+  }
+}
+#+end_src
+
+Punctuation may carry one leading space, and trailing line breaks join it.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_punctuation_end(text, i) {
+  "End index of an optional leading space followed by a run of characters that are neither whitespace nor letters nor digits, then any newlines; -1 when none starts at i.";
+  n = str_len(text);
+  j = if str_eq(u:text_char_at(text, i), " ") {
+    i + 1
+  } else {
+    i
+  };
+  start = j;
+  while lt(j, n) * (1 - u:text_is_space(u:text_char_at(text, j))) * (1 - u:tok_is_word_byte(u:text_char_at(text, j))) {
+    j = j + 1
+  };
+  if j - start {
+    while lt(j, n) * u:tok_is_newline(u:text_char_at(text, j)) {
+      j = j + 1
+    };
+    j
+  } else {
+    0 - 1
+  }
+}
+#+end_src
+
+A whitespace run that contains a line break ends at the last break in the
+run.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_newline_run_end(text, i) {
+  "End index of a whitespace run that ends in a line break, measured to the last break in the run; -1 when the run contains none.";
+  stop = u:tok_space_end(text, i);
+  last = 0 - 1;
+  j = i;
+  while lt(j, stop) {
+    if u:tok_is_newline(u:text_char_at(text, j)) {
+      last = j
+    } else {
+      0
+    };
+    j = j + 1
+  };
+  if lt(last, 0) {
+    0 - 1
+  } else {
+    last + 1
+  }
+}
+#+end_src
+
+The subtle one. A whitespace run that is followed by visible text gives its
+last character back, so that the following word carries exactly one leading
+space and the rest stands alone. This is why two spaces between words produce
+three pre-tokens rather than two, and getting it wrong changes the ids of
+ordinary English text.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_trailing_space_end(text, i) {
+  "End index of a whitespace run that is not followed by a visible character. A run followed by text gives its last character back to the word that follows, which is what puts one leading space on a word and leaves the rest as its own piece.";
+  stop = u:tok_space_end(text, i);
+  if stop - str_len(text) {
+    if gt(stop - 1, i) {
+      stop - 1
+    } else {
+      0 - 1
+    }
+  } else {
+    if gt(stop, i) {
+      stop
+    } else {
+      0 - 1
+    }
+  }
+}
+#+end_src
+
+The alternatives in their published order. Order is the specification: a
+digit is matched before a punctuation run, so a number never joins the symbols
+around it.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_piece_end(text, i) {
+  "End index of the pre-token starting at i, trying the published alternatives in their published order.";
+  n = str_len(text);
+  c = u:text_char_at(text, i);
+  contraction = u:tok_contraction_end(text, i);
+  if gt(contraction, 0 - 1) {
+    contraction
+  } else {
+    lead = if u:tok_is_word_byte(c) + u:tok_is_newline(c) {
+      i
+    } else {
+      i + 1
+    };
+    letters = u:tok_letters_end(text, lead);
+    if gt(letters, lead) {
+      letters
+    } else {
+      if u:text_is_digit(c) {
+        i + 1
+      } else {
+        punctuation = u:tok_punctuation_end(text, i);
+        if gt(punctuation, 0 - 1) {
+          punctuation
+        } else {
+          newline_run = u:tok_newline_run_end(text, i);
+          if gt(newline_run, 0 - 1) {
+            newline_run
+          } else {
+            trailing = u:tok_trailing_space_end(text, i);
+            if gt(trailing, 0 - 1) {
+              trailing
+            } else {
+              if lt(i, n) {
+                i + 1
+              } else {
+                0 - 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+#+end_src
+
+Pre-tokens are returned as boundaries rather than as a list of strings,
+because a pre-token may itself contain a line break and no separator character
+is safe against arbitrary input. The symbol list above could use a separator
+only because the byte map had already removed the possibility of collision.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_piece_bounds(text) {
+  "Boundaries of every pre-token, as an array of start indexes ending with the length of the text. Boundaries rather than a list of strings, because a pre-token may itself contain a line break and no separator character is safe against the original text.";
+  n = str_len(text);
+  bounds = [0];
+  i = 0;
+  while lt(i, n) {
+    stop = u:tok_piece_end(text, i);
+    stop = if gt(stop, i) {
+      stop
+    } else {
+      i + 1
+    };
+    bounds = concat(bounds, stop);
+    i = stop
+  };
+  bounds
+}
+
+def u:tok_piece_count(bounds) {
+  "Number of pre-tokens described by a boundary array.";
+  tally(bounds) - 1
+}
+
+def u:tok_piece(text, bounds, index) {
+  "One pre-token by index.";
+  start = at(bounds, index);
+  str_slice(text, start, at(bounds, index + 1) - start)
+}
+#+end_src
+
+Encoding is pre-tokenization followed by the merge loop on each piece, with
+the first failure carried out whole.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/bpe.mlpl
+def u:tok_encode(tables, text, base, count) {
+  "Encode text to token ids: pre-tokenize, then merge and look up each piece.";
+  bounds = u:tok_piece_bounds(text);
+  n = u:tok_piece_count(bounds);
+  ids = [];
+  i = 0;
+  failure = ok(1);
+  while lt(i, n) {
+    piece_ids = u:tok_encode_piece(tables, u:tok_piece(text, bounds, i), base, count);
+    if is_err(piece_ids) {
+      failure = piece_ids;
+      i = n
+    } else {
+      ids = concat(ids, unwrap(piece_ids));
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(ids)
+  }
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -2566,8 +3116,8 @@ regular-expression engine, extraction of a boxed answer, a thirteen-rule
 normalizer, exact rational arithmetic, a recursive-descent evaluator, a
 grader that is total on malformed input, a dataset loader that validates
 before it returns, a harness that measures any responder with provenance
-attached, and the import that turns a six-megabyte tokenizer document into
-tables a byte-level encoder can use.
+attached, the import that turns a six-megabyte tokenizer document into
+tables a byte-level encoder can use, and the encoder itself.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it

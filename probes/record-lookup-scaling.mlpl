@@ -1,0 +1,25 @@
+# Probe: record field lookup should not cost time proportional to the record's size. Exits 0 when 100 lookups on a 150,000-field record complete within 100 ms.
+text = read_text("out/probes/vocab-150k.json")?
+table = parse_json(text, {max_bytes: 16777216, max_depth: 4, max_elements: 400000})?
+small = parse_json("{\"a\": 1, \"b\": 2}", {})?
+t0 = clock_ms()
+i = 0
+while i - 1000 {
+  record_get(small, "b");
+  i = i + 1
+}
+small_ms = clock_ms() - t0
+t1 = clock_ms()
+i = 0
+while i - 100 {
+  record_get(table, "token_entry_000000042");
+  i = i + 1
+}
+large_ms = clock_ms() - t1
+print("record-lookup-scaling: 1000 lookups on 2 fields:", small_ms, "ms; 100 lookups on", list_len(record_keys(table)), "fields:", large_ms, "ms")
+print("  per-lookup ratio:", large_ms / 100 / (small_ms / 1000))
+if gt(large_ms, 100) {
+  err("lookup cost grows with record size")
+} else {
+  ok(large_ms)
+}

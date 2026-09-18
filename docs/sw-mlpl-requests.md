@@ -89,7 +89,11 @@ ledger, and removes the workaround where the plan allows.
 ## R7. `bf16` and `f16` dtypes with a bulk unpack to an array
 
 - Probe: `reinterpret-bf16`.
-- Today: accepted dtypes are `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64`.
+- Status: the dtypes shipped in upstream commit a34cc230 on 2026-09-18 and
+  the probe passes. A bulk unpack straight to an array is still worth having
+  for the weight loader in Saga 3, which will report whether the dtype alone
+  is enough.
+- Before the fix: accepted dtypes were `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64`.
 - Requested: `bf16` and `f16` in `reinterpret`, and a bulk
   `unpack(bytes, dtype)` returning an f64 array (subnormals, infinities,
   and NaN preserved).
@@ -116,6 +120,28 @@ ledger, and removes the workaround where the plan allows.
   resident-tape backend.
 - What this repository will supply: the user-array forward pass as an
   acceptance oracle, and a measured attempt recorded in Saga 3 step 4.
+
+## R10. Record field lookup that does not scale with record size
+
+- Probe: `record-lookup-scaling`.
+- Today: one lookup costs 0.0026 ms on a two-field record and 10.4 ms on a
+  150,000-field record, and 34 ms on the real 151,643-entry tokenizer
+  vocabulary. `record_get`, `has_field`, and `r.field` are equally affected,
+  so it is one underlying lookup. The language reference describes records as
+  sorted-map-backed and `record_keys` returns keys in sorted order, so the
+  linear cost looks like an implementation gap rather than an intended
+  semantic.
+- Requested: lookup in time logarithmic in the field count, or constant with
+  hashing. No change to semantics or ordering is needed; `record_keys` may
+  keep returning sorted keys.
+- Acceptance: the probe's 100 lookups on a 150,000-field record complete
+  within 100 ms, and the per-lookup ratio between a two-field and a
+  150,000-field record stays within one order of magnitude.
+- Used by: the reference tokenizer, which needs a vocabulary lookup per
+  symbol and per candidate merge. At 34 ms per lookup, encoding one word
+  takes seconds. This does not block the project, because the production
+  encoder is a native extension, but it is the difference between a reference
+  implementation that can be run on real input and one that can only be read.
 
 ## Not requested
 

@@ -1,0 +1,119 @@
+# Byte-level BPE contract: the byte alphabet, pre-tokenization boundaries, merge ordering, and encoding against the hand-authored fixture.
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/tokenizer/import.mlpl";
+include "lib/tokenizer/bpe.mlpl";
+
+def u:bpe_tables() {
+  "Import the tiny fixture tokenizer.";
+  u:tok_import("fixtures/tokenizer/tiny-tokenizer.json", {})
+}
+
+def u:bpe_pieces(text) {
+  "Pre-tokens of a string rendered as bracketed text, for readable assertions.";
+  bounds = u:tok_piece_bounds(text);
+  n = u:tok_piece_count(bounds);
+  out = "";
+  i = 0;
+  while lt(i, n) {
+    out = str_concat(out, str_concat("[", str_concat(u:tok_piece(text, bounds, i), "]")));
+    i = i + 1
+  };
+  out
+}
+
+@test {name: "the byte alphabet lifts every unprintable byte above the printable range", tags: ["tokenizer", "bpe", "bytes"]}
+def u:test_bpe_byte_alphabet() {
+  "Printable bytes stand for themselves; control bytes, space, and the two gaps are lifted, so no mapped character is whitespace.";
+  u:assert_eq(u:tok_byte_codepoint(65), 65, "an upper-case letter maps to itself")?;
+  u:assert_eq(u:tok_byte_codepoint(126), 126, "the top of the printable range")?;
+  u:assert_eq(u:tok_byte_codepoint(32), 288, "space is lifted to the marker character")?;
+  u:assert_eq(u:tok_byte_codepoint(0), 256, "the first control byte")?;
+  u:assert_eq(u:tok_byte_codepoint(10), 266, "a line feed is lifted, so a mapped string holds no real newline")?;
+  u:assert_eq(u:tok_byte_codepoint(127), 289, "the first byte of the upper gap")?;
+  u:assert_eq(u:tok_byte_codepoint(160), 322, "the last byte of the upper gap")?;
+  u:assert_eq(u:tok_byte_codepoint(173), 323, "the soft hyphen is lifted last")?;
+  u:assert_eq(u:tok_byte_codepoint(174), 174, "the byte after the soft hyphen maps to itself")?;
+  u:assert_text_eq(u:tok_byte_string(32), "Ġ", "the space marker")?;
+  u:assert_text_eq(u:tok_byte_string(65), "A", "a letter")
+}
+
+@test {name: "mapping text produces one symbol per byte", tags: ["tokenizer", "bpe", "bytes"]}
+def u:test_bpe_map_text() {
+  "A multi-byte character becomes several symbols, which is what byte level means.";
+  u:assert_text_eq(u:tok_map_text("ab"), "a\nb", "two letters")?;
+  u:assert_text_eq(u:tok_map_text(" a"), "Ġ\na", "a leading space")?;
+  u:assert_eq(list_len(str_split(u:tok_map_text("é"), "\n")), 2, "a two-byte character yields two symbols")?;
+  u:assert_text_eq(u:tok_map_text(""), "", "empty text")
+}
+
+@test {name: "pre-tokenization follows the published alternatives in order", tags: ["tokenizer", "bpe", "pre-tokenize"]}
+def u:test_bpe_pre_tokenize() {
+  "Words carry one leading space, digits split individually, contractions stand alone, and a run of spaces gives its last character to the word that follows.";
+  u:assert_text_eq(u:bpe_pieces("hello world"), "[hello][ world]", "a word keeps one leading space")?;
+  u:assert_text_eq(u:bpe_pieces("a  b"), "[a][ ][ b]", "a double space splits one off")?;
+  u:assert_text_eq(u:bpe_pieces("123"), "[1][2][3]", "digits are separate pre-tokens")?;
+  u:assert_text_eq(u:bpe_pieces("isn't"), "[isn]['t]", "a contraction stands alone")?;
+  u:assert_text_eq(u:bpe_pieces("It'S"), "[It]['S]", "contractions ignore case")?;
+  u:assert_text_eq(u:bpe_pieces("x = 1;"), "[x][ =][ ][1][;]", "punctuation carries at most one leading space")?;
+  u:assert_text_eq(u:bpe_pieces("trailing  "), "[trailing][  ]", "trailing whitespace stays whole")?;
+  u:assert_text_eq(u:bpe_pieces(""), "", "empty text has no pre-tokens")
+}
+
+@test {name: "the merge invariant holds on the fixture", tags: ["tokenizer", "bpe", "merges"]}
+def u:test_bpe_merge_invariant() {
+  "Each merge produces a vocabulary token whose id is the merge rank plus a fixed base, which is what lets the vocabulary serve as the rank table.";
+  tables = u:bpe_tables()?;
+  u:assert_eq(u:tok_merge_base(tables, 1)?, 5, "the base offset")?;
+  u:assert_text_eq(u:tok_merge_joined(tables, 0), "ab", "the first merge joins its pair")?;
+  u:assert_text_eq(u:tok_merge_joined(tables, 2), "Ġa", "the last merge joins its pair")
+}
+
+@test {name: "merging applies the highest-priority pair first", tags: ["tokenizer", "bpe", "merges"]}
+def u:test_bpe_merge_order() {
+  "One step merges the lowest-ranked pair available, and repeated steps run until nothing may be merged.";
+  tables = u:bpe_tables()?;
+  base = u:tok_merge_base(tables, 1)?;
+  count = u:tok_merge_count(tables);
+  once = u:tok_merge_once(tables, ["a", "b", "c"], base, count);
+  u:assert_eq(list_len(once), 2, "one merge shortens the list")?;
+  u:assert_text_eq(list_get(once, 0)?, "ab", "the first pair merged")?;
+  all = u:tok_merge_all(tables, ["a", "b", "c"], base, count);
+  u:assert_eq(list_len(all), 1, "merging continues to a single symbol")?;
+  u:assert_text_eq(list_get(all, 0)?, "abc", "the final symbol")?;
+  stuck = u:tok_merge_all(tables, ["a", "d"], base, count);
+  u:assert_eq(list_len(stuck), 2, "a pair with no rule is left alone")?;
+  u:assert_eq(u:tok_pair_priority(tables, "a", "b", base, count), 5, "a mergeable pair reports its priority")?;
+  u:assert_eq(u:tok_pair_priority(tables, "a", "d", base, count), 0 - 1, "an unmergeable pair reports none")
+}
+
+@test {name: "encoding reproduces every expected id sequence", tags: ["tokenizer", "bpe", "encode"]}
+def u:test_bpe_encode_expected() {
+  "Each case in the committed expectations file encodes to its recorded ids.";
+  tables = u:bpe_tables()?;
+  base = u:tok_merge_base(tables, 1)?;
+  count = u:tok_merge_count(tables);
+  lines = str_split(u:text_trim(read_text("fixtures/tokenizer/tiny-expected.jsonl")?), "\n");
+  total = list_len(lines);
+  u:assert_eq(total, 6, "expectation count")?;
+  i = 0;
+  while lt(i, total) {
+    row = parse_json(list_get(lines, i)?)?;
+    ids = u:tok_encode(tables, row.text, base, count)?;
+    u:assert_true(equal(ids, row.ids), str_concat("expected ids for: ", row.why))?;
+    i = i + 1
+  };
+  ok(1)
+}
+
+@test {name: "an out-of-vocabulary byte is a classified error", tags: ["tokenizer", "bpe", "errors"]}
+def u:test_bpe_unknown_symbol() {
+  "The tiny fixture has no token for the letter z, so encoding reports the missing symbol rather than raising.";
+  tables = u:bpe_tables()?;
+  base = u:tok_merge_base(tables, 1)?;
+  outcome = u:tok_encode(tables, "zz", base, u:tok_merge_count(tables));
+  u:assert_err(outcome, "unknown symbol rejected")?;
+  u:assert_text_eq(err_message(outcome).kind, "unknown_token", "error kind")
+}
+
+u:run_registered_tests()
