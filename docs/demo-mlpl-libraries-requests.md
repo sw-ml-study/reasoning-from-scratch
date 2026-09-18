@@ -50,7 +50,13 @@ its own module and the library stays unconsumed.
   probe-pinned absence of native helpers (`str-helpers`) so the library
   can retire when core ships them.
 
-## L2. JSONL reader
+## L2. JSONL reader — DELIVERED 2026-09-17, not yet consumed
+
+Shipped as `jsonl` 0.1.0. This repository's `lib/eval/data.mlpl` already has
+a validating JSONL loader with MATH-specific schema checks; a future step
+compares the two and decides whether the loader can sit on the library.
+
+### Original request
 
 - What: `read_jsonl(path, opts) -> ok(list of records) | err`, line
   splitting, per-line `parse_json` with budgets, line-numbered errors, and
@@ -60,7 +66,13 @@ its own module and the library stays unconsumed.
 - Trigger: `lib/eval/data.mlpl` here (Saga 1 step 5) plus one more
   consumer.
 
-## L3. Bounded safetensors header reader (promotion from `../demo-ml-utils`)
+## L3. Bounded safetensors header reader — DELIVERED 2026-09-17, to be consumed
+
+Shipped as `safetensors-header` 0.1.0. Saga 3 step 1 should vendor this by
+pinned revision rather than re-deriving the reader, and confine its own work
+to bf16 decoding, the Hugging Face name mapping, and tied embeddings.
+
+### Original request
 
 - What: the eight-byte prefix read, header budget, `file_size` check, and
   JSON header validation that `../demo-ml-utils` already proved, as a
