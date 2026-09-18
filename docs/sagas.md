@@ -24,7 +24,7 @@ positives.
 |---|---|---|
 | 1 | `tokenizer-json-import` | done: sectioned import, fixtures, native cache; real file measured |
 | 2 | `bpe-reference-in-mlpl` | done: byte alphabet, pre-tokenizer, merge loop; correct but 34 ms per vocabulary lookup |
-| 3 | `chat-templates-and-eos` | pending |
+| 3 | `chat-templates-and-eos` | done: inverse byte map, id-ordered line table, control splitting, both prompt conventions |
 | 4 | `extension-parity-and-throughput` | pending, gated on `../demo-extensions` |
 
 The production encoder is a Rust extension requested from

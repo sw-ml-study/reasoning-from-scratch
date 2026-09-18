@@ -1,0 +1,207 @@
+# Decoding, control-token handling, and the chat templates. Everything here works over token id arrays and strings, so it is independent of which encoder produced the ids and stays in MLPL after the native encoder lands. Requires lib/text/text.mlpl, lib/tokenizer/import.mlpl, and lib/tokenizer/bpe.mlpl included first.
+
+def u:tok_char_codepoint(c) {
+  "Code point of a single character, decoded from its UTF-8 bytes. Only the one and two byte forms occur in the byte-level alphabet.";
+  b = tokenize_bytes(c);
+  if tally(b) - 1 {
+    64 * (at(b, 0) - 192) + at(b, 1) - 128
+  } else {
+    at(b, 0)
+  }
+}
+
+def u:tok_codepoint_byte(cp) {
+  "The byte a code point stands for in the byte-level alphabet: the inverse of the mapping the encoder applies.";
+  if lt(cp, 256) {
+    cp
+  } else {
+    if lt(cp, 289) {
+      cp - 256
+    } else {
+      if lt(cp, 323) {
+        cp - 256 - 33 + 127
+      } else {
+        173
+      }
+    }
+  }
+}
+
+def u:tok_unmap_text(mapped) {
+  "Turn a byte-level string back into the text it stands for, one byte per character.";
+  n = str_len(mapped);
+  bytes = [];
+  i = 0;
+  while lt(i, n) {
+    bytes = concat(bytes, u:tok_codepoint_byte(u:tok_char_codepoint(u:text_char_at(mapped, i))));
+    i = i + 1
+  };
+  if tally(bytes) {
+    decode_bytes(bytes)
+  } else {
+    ""
+  }
+}
+
+def u:tok_vocab_lines(document) {
+  "Split a tokenizer document into lines so that the entry for a token id can be read directly. The vocabulary is written one entry per line in id order, and a byte-level token can never contain a real line break, so line id plus one holds the entry for that id.";
+  vocab_at = u:tok_key_first(document, "vocab");
+  merges_at = u:tok_key_last(document, "merges");
+  if lt(vocab_at, 0) + lt(merges_at, vocab_at) {
+    []
+  } else {
+    str_split(str_slice(document, vocab_at, merges_at - vocab_at), "\n")
+  }
+}
+
+def u:tok_id_token(lines, id) {
+  "The token string for one id, read from its vocabulary line. The line's own id is checked, so a document whose vocabulary is not in id order reports an error instead of returning the wrong token.";
+  index = id + 1;
+  if lt(index, list_len(lines)) {
+    line = unwrap(list_get(lines, index));
+    quoted = u:tok_quoted_after(line, 0);
+    if lt(quoted.next, 0) {
+      u:tok_error("shape", "no token on the vocabulary line")
+    } else {
+      colon = u:text_find_from(line, ":", quoted.next);
+      found = u:tok_number_after(line, colon + 1);
+      if lt(found.next, 0) {
+        u:tok_error("shape", "no id on the vocabulary line")
+      } else {
+        if found.value - id { u:tok_error("invariant", "the vocabulary is not written in id order") } else {
+          ok(quoted.value)
+        }
+      }
+    }
+  } else {
+    u:tok_error("unknown_id", "id beyond the vocabulary")
+  }
+}
+
+def u:tok_decode(lines, ids) {
+  "Decode an id array back to text. Control tokens decode to their literal spelling, which keeps a generated turn readable.";
+  n = tally(ids);
+  mapped = "";
+  i = 0;
+  failure = ok(1);
+  while lt(i, n) {
+    token = u:tok_id_token(lines, at(ids, i));
+    if is_err(token) {
+      failure = token;
+      i = n
+    } else {
+      mapped = str_concat(mapped, unwrap(token));
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(u:tok_unmap_text(mapped))
+  }
+}
+
+def u:tok_control_end(text, i) {
+  "End index of a control token of the form angle-bar ... bar-angle starting at i, or -1.";
+  if str_eq(str_slice(text, i, 2), "<|") {
+    close = u:text_find_from(text, "|>", i + 2);
+    if lt(close, 0) {
+      0 - 1
+    } else {
+      close + 2
+    }
+  } else {
+    0 - 1
+  }
+}
+
+def u:tok_control_bounds(text) {
+  "Boundaries that separate control tokens from ordinary text, as an array of start indexes ending with the length. Each span is either one whole control token or a run of ordinary text.";
+  n = str_len(text);
+  bounds = [0];
+  i = 0;
+  run = 0;
+  while lt(i, n) {
+    stop = u:tok_control_end(text, i);
+    if gt(stop, 0 - 1) {
+      if run {
+        bounds = concat(bounds, i)
+      } else {
+        0
+      };
+      bounds = concat(bounds, stop);
+      run = 0;
+      i = stop
+    } else {
+      run = 1;
+      i = i + 1
+    }
+  };
+  if run {
+    concat(bounds, n)
+  } else {
+    bounds
+  }
+}
+
+def u:tok_encode_with_controls(tables, text, base, count) {
+  "Encode text in which control tokens appear literally: each control token maps straight to its id and the text between them is encoded normally.";
+  bounds = u:tok_control_bounds(text);
+  spans = tally(bounds) - 1;
+  ids = [];
+  i = 0;
+  failure = ok(1);
+  while lt(i, spans) {
+    start = at(bounds, i);
+    piece = str_slice(text, start, at(bounds, i + 1) - start);
+    piece_ids = if gt(u:tok_control_end(piece, 0), 0 - 1) { u:tok_added_id(tables, piece) } else { u:tok_encode(tables, piece, base, count) };
+    if is_err(piece_ids) {
+      failure = piece_ids;
+      i = spans
+    } else {
+      ids = concat(ids, unwrap(piece_ids));
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(ids)
+  }
+}
+
+def u:tok_chat_turn(role, message) {
+  "One chat turn in the template the reasoning model was trained on.";
+  str_concat("<|im_start|>", str_concat(role, str_concat("\n", str_concat(message, "<|im_end|>\n"))))
+}
+
+def u:tok_chat_prompt(message, thinking) {
+  "A user turn followed by the assistant's opening. With thinking enabled the assistant is left to open its own reasoning block; otherwise an empty one is supplied, which is how the template asks for a direct answer.";
+  opening = if thinking {
+    "<|im_start|>assistant\n"
+  } else {
+    "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  };
+  str_concat(u:tok_chat_turn("user", message), opening)
+}
+
+def u:tok_render(message, kind, thinking) {
+  "Render a prompt for one model kind. The base model is prompted with bare text, exactly as it was pretrained; the reasoning variant is wrapped in the chat template.";
+  if str_eq(kind, "base") {
+    message
+  } else { u:tok_chat_prompt(message, thinking) }
+}
+
+def u:tok_eos_id(tables, kind) {
+  "The id that ends a generated sequence: end-of-text for the base model, end-of-turn for the chat-templated reasoning variant.";
+  if str_eq(kind, "base") { u:tok_added_id(tables, "<|endoftext|>") } else { u:tok_added_id(tables, "<|im_end|>") }
+}
+
+def u:tok_think_ids(tables) {
+  "Ids of the opening and closing reasoning tags. The base tokenizer has neither, in its vocabulary or among its control tokens, so this reports which are missing rather than inventing them; the format reward in a later saga must add them or use the reasoning tokenizer.";
+  opening = u:tok_token_id(tables, "<think>");
+  closing = u:tok_token_id(tables, "</think>");
+  if is_ok(opening) * is_ok(closing) {
+    ok({start: unwrap(opening), end: unwrap(closing)})
+  } else { u:tok_error("unknown_token", "this tokenizer has no reasoning tags") }
+}

@@ -3109,6 +3109,298 @@ def u:tok_encode(tables, text, base, count) {
 }
 #+end_src
 
+** lib/tokenizer/template.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-tokenizer-template-mlpl
+:END:
+
+Three jobs that all work over token ids and strings rather than over model
+weights: turning ids back into text, keeping control tokens out of the
+byte-level machinery, and rendering a prompt the way each model kind was
+trained to receive it. None of this moves to the native extension; it stays
+MLPL after the encoder is replaced, because it is convention rather than
+computation.
+
+Decoding needs the opposite of a vocabulary lookup, an id to its token, and
+that is where the language's container cost bites again. Scanning 151,643
+keys is out of the question. What makes it tractable is that the vocabulary is
+written one entry per line in id order, so line id plus one holds the entry,
+and a byte-level token can never contain a real line break to break that
+correspondence. The reader checks the line's own id rather than trusting the
+ordering.
+
+The module needs the scanners, the import, and the encoder's alphabet.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+# Decoding, control-token handling, and the chat templates. Everything here works over token id arrays and strings, so it is independent of which encoder produced the ids and stays in MLPL after the native encoder lands. Requires lib/text/text.mlpl, lib/tokenizer/import.mlpl, and lib/tokenizer/bpe.mlpl included first.
+#+end_src
+
+The inverse alphabet. Each character of a token stands for one byte, so
+decoding is a code point per character, mapped back and handed to the byte
+decoder. The round trip is checked for all 256 byte values in the tests.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_char_codepoint(c) {
+  "Code point of a single character, decoded from its UTF-8 bytes. Only the one and two byte forms occur in the byte-level alphabet.";
+  b = tokenize_bytes(c);
+  if tally(b) - 1 {
+    64 * (at(b, 0) - 192) + at(b, 1) - 128
+  } else {
+    at(b, 0)
+  }
+}
+
+def u:tok_codepoint_byte(cp) {
+  "The byte a code point stands for in the byte-level alphabet: the inverse of the mapping the encoder applies.";
+  if lt(cp, 256) {
+    cp
+  } else {
+    if lt(cp, 289) {
+      cp - 256
+    } else {
+      if lt(cp, 323) {
+        cp - 256 - 33 + 127
+      } else {
+        173
+      }
+    }
+  }
+}
+
+def u:tok_unmap_text(mapped) {
+  "Turn a byte-level string back into the text it stands for, one byte per character.";
+  n = str_len(mapped);
+  bytes = [];
+  i = 0;
+  while lt(i, n) {
+    bytes = concat(bytes, u:tok_codepoint_byte(u:tok_char_codepoint(u:text_char_at(mapped, i))));
+    i = i + 1
+  };
+  if tally(bytes) {
+    decode_bytes(bytes)
+  } else {
+    ""
+  }
+}
+#+end_src
+
+The line table, and the reasoning that makes it safe: one entry per line, in
+id order, and no token can contain a line break.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_vocab_lines(document) {
+  "Split a tokenizer document into lines so that the entry for a token id can be read directly. The vocabulary is written one entry per line in id order, and a byte-level token can never contain a real line break, so line id plus one holds the entry for that id.";
+  vocab_at = u:tok_key_first(document, "vocab");
+  merges_at = u:tok_key_last(document, "merges");
+  if lt(vocab_at, 0) + lt(merges_at, vocab_at) {
+    []
+  } else {
+    str_split(str_slice(document, vocab_at, merges_at - vocab_at), "\n")
+  }
+}
+#+end_src
+
+An id to its token, verifying the line's own id rather than assuming the
+ordering holds. A document whose vocabulary is ordered differently gets an
+error instead of silently wrong text.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_id_token(lines, id) {
+  "The token string for one id, read from its vocabulary line. The line's own id is checked, so a document whose vocabulary is not in id order reports an error instead of returning the wrong token.";
+  index = id + 1;
+  if lt(index, list_len(lines)) {
+    line = unwrap(list_get(lines, index));
+    quoted = u:tok_quoted_after(line, 0);
+    if lt(quoted.next, 0) {
+      u:tok_error("shape", "no token on the vocabulary line")
+    } else {
+      colon = u:text_find_from(line, ":", quoted.next);
+      found = u:tok_number_after(line, colon + 1);
+      if lt(found.next, 0) {
+        u:tok_error("shape", "no id on the vocabulary line")
+      } else {
+        if found.value - id { u:tok_error("invariant", "the vocabulary is not written in id order") } else {
+          ok(quoted.value)
+        }
+      }
+    }
+  } else {
+    u:tok_error("unknown_id", "id beyond the vocabulary")
+  }
+}
+#+end_src
+
+Ids to text. Control tokens decode to their literal spelling, which is what
+keeps a generated turn readable when it contains turn markers or reasoning
+tags.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_decode(lines, ids) {
+  "Decode an id array back to text. Control tokens decode to their literal spelling, which keeps a generated turn readable.";
+  n = tally(ids);
+  mapped = "";
+  i = 0;
+  failure = ok(1);
+  while lt(i, n) {
+    token = u:tok_id_token(lines, at(ids, i));
+    if is_err(token) {
+      failure = token;
+      i = n
+    } else {
+      mapped = str_concat(mapped, unwrap(token));
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(u:tok_unmap_text(mapped))
+  }
+}
+#+end_src
+
+Control tokens must never reach the merge loop: they are single ids, not
+sequences of bytes to be merged. These two functions find them and cut the
+text into alternating spans of control token and ordinary text.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_control_end(text, i) {
+  "End index of a control token of the form angle-bar ... bar-angle starting at i, or -1.";
+  if str_eq(str_slice(text, i, 2), "<|") {
+    close = u:text_find_from(text, "|>", i + 2);
+    if lt(close, 0) {
+      0 - 1
+    } else {
+      close + 2
+    }
+  } else {
+    0 - 1
+  }
+}
+
+def u:tok_control_bounds(text) {
+  "Boundaries that separate control tokens from ordinary text, as an array of start indexes ending with the length. Each span is either one whole control token or a run of ordinary text.";
+  n = str_len(text);
+  bounds = [0];
+  i = 0;
+  run = 0;
+  while lt(i, n) {
+    stop = u:tok_control_end(text, i);
+    if gt(stop, 0 - 1) {
+      if run {
+        bounds = concat(bounds, i)
+      } else {
+        0
+      };
+      bounds = concat(bounds, stop);
+      run = 0;
+      i = stop
+    } else {
+      run = 1;
+      i = i + 1
+    }
+  };
+  if run {
+    concat(bounds, n)
+  } else {
+    bounds
+  }
+}
+#+end_src
+
+Encoding with that split applied. A control token becomes its id directly;
+everything between goes through the ordinary encoder.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_encode_with_controls(tables, text, base, count) {
+  "Encode text in which control tokens appear literally: each control token maps straight to its id and the text between them is encoded normally.";
+  bounds = u:tok_control_bounds(text);
+  spans = tally(bounds) - 1;
+  ids = [];
+  i = 0;
+  failure = ok(1);
+  while lt(i, spans) {
+    start = at(bounds, i);
+    piece = str_slice(text, start, at(bounds, i + 1) - start);
+    piece_ids = if gt(u:tok_control_end(piece, 0), 0 - 1) { u:tok_added_id(tables, piece) } else { u:tok_encode(tables, piece, base, count) };
+    if is_err(piece_ids) {
+      failure = piece_ids;
+      i = spans
+    } else {
+      ids = concat(ids, unwrap(piece_ids));
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(ids)
+  }
+}
+#+end_src
+
+The chat template the reasoning variant was trained on. The thinking flag is
+the interesting part: with thinking enabled the assistant turn is left open so
+the model opens its own reasoning block, and with it disabled an empty block is
+supplied, which is how the template asks for a direct answer.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_chat_turn(role, message) {
+  "One chat turn in the template the reasoning model was trained on.";
+  str_concat("<|im_start|>", str_concat(role, str_concat("\n", str_concat(message, "<|im_end|>\n"))))
+}
+
+def u:tok_chat_prompt(message, thinking) {
+  "A user turn followed by the assistant's opening. With thinking enabled the assistant is left to open its own reasoning block; otherwise an empty one is supplied, which is how the template asks for a direct answer.";
+  opening = if thinking {
+    "<|im_start|>assistant\n"
+  } else {
+    "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  };
+  str_concat(u:tok_chat_turn("user", message), opening)
+}
+#+end_src
+
+One entry point for both conventions. The base model is prompted with bare
+text, exactly as it was pretrained, and wrapping it in a chat template would
+measurably change its behavior.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_render(message, kind, thinking) {
+  "Render a prompt for one model kind. The base model is prompted with bare text, exactly as it was pretrained; the reasoning variant is wrapped in the chat template.";
+  if str_eq(kind, "base") {
+    message
+  } else { u:tok_chat_prompt(message, thinking) }
+}
+#+end_src
+
+Where generation stops differs by kind: end-of-text for the base model,
+end-of-turn for the chat-templated one. Getting this wrong means a run that
+never terminates or one that stops mid-answer.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_eos_id(tables, kind) {
+  "The id that ends a generated sequence: end-of-text for the base model, end-of-turn for the chat-templated reasoning variant.";
+  if str_eq(kind, "base") { u:tok_added_id(tables, "<|endoftext|>") } else { u:tok_added_id(tables, "<|im_end|>") }
+}
+#+end_src
+
+The reasoning tags, and an honest report when they are absent. The base
+tokenizer has neither tag, in its vocabulary or among its control tokens, so
+the format reward in a later saga must add them or use the reasoning
+tokenizer. This function refuses to invent ids for them.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/template.mlpl
+def u:tok_think_ids(tables) {
+  "Ids of the opening and closing reasoning tags. The base tokenizer has neither, in its vocabulary or among its control tokens, so this reports which are missing rather than inventing them; the format reward in a later saga must add them or use the reasoning tokenizer.";
+  opening = u:tok_token_id(tables, "<think>");
+  closing = u:tok_token_id(tables, "</think>");
+  if is_ok(opening) * is_ok(closing) {
+    ok({start: unwrap(opening), end: unwrap(closing)})
+  } else { u:tok_error("unknown_token", "this tokenizer has no reasoning tags") }
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -3117,7 +3409,8 @@ normalizer, exact rational arithmetic, a recursive-descent evaluator, a
 grader that is total on malformed input, a dataset loader that validates
 before it returns, a harness that measures any responder with provenance
 attached, the import that turns a six-megabyte tokenizer document into
-tables a byte-level encoder can use, and the encoder itself.
+tables a byte-level encoder can use, the encoder itself, and the decoding and
+prompt conventions that surround it.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it

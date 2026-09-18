@@ -138,27 +138,35 @@ ledger, and removes the workaround where the plan allows.
 - What this repository will supply: the user-array forward pass as an
   acceptance oracle, and a measured attempt recorded in Saga 3 step 4.
 
-## R10. Record field lookup that does not scale with record size
+## R10. Container element access that does not scale with container size
 
-- Probe: `record-lookup-scaling`.
-- Today: one lookup costs 0.0026 ms on a two-field record and 10.4 ms on a
-  150,000-field record, and 34 ms on the real 151,643-entry tokenizer
-  vocabulary. `record_get`, `has_field`, and `r.field` are equally affected,
-  so it is one underlying lookup. The language reference describes records as
-  sorted-map-backed and `record_keys` returns keys in sorted order, so the
-  linear cost looks like an implementation gap rather than an intended
-  semantic.
-- Requested: lookup in time logarithmic in the field count, or constant with
-  hashing. No change to semantics or ordering is needed; `record_keys` may
-  keep returning sorted keys.
-- Acceptance: the probe's 100 lookups on a 150,000-field record complete
-  within 100 ms, and the per-lookup ratio between a two-field and a
-  150,000-field record stays within one order of magnitude.
-- Used by: the reference tokenizer, which needs a vocabulary lookup per
-  symbol and per candidate merge. At 34 ms per lookup, encoding one word
-  takes seconds. This does not block the project, because the production
-  encoder is a native extension, but it is the difference between a reference
-  implementation that can be run on real input and one that can only be read.
+- Probes: `record-lookup-scaling`, `list-index-scaling`.
+- Today, measured on build 1ce43dc2:
+
+| Access | Small container | Large container |
+|---|---|---|
+| `record_get` | 0.0026 ms at 2 fields | 10.4 ms at 150,000 fields; 34 ms on the real 151,643-entry vocabulary |
+| `list_get` | negligible at 4 items | 10 ms at 303,282 items |
+
+  `record_get`, `has_field`, and `r.field` are equally affected, so records
+  share one underlying lookup. The decisive observation is on lists: reading
+  index 5 costs the same as reading index 50,000, so the cost follows the
+  container's **size**, not the distance to the element. That is the signature
+  of copying on access rather than of a linear scan, which suggests the fix is
+  sharing rather than a different data structure.
+
+- Requested: element access in time independent of container size, or at
+  worst logarithmic. No change to semantics or ordering is needed;
+  `record_keys` may keep returning sorted keys.
+- Acceptance: each probe's 100 accesses on a 150,000-element container
+  complete within 100 ms.
+- Used by: the reference tokenizer. Encoding needs a vocabulary lookup per
+  symbol and per candidate merge, so one word costs seconds; decoding needs
+  one list read per token, so a 512-token response would take minutes. This
+  does not block the project, because the production encoder is a native
+  extension, but it is the difference between a reference implementation that
+  can be run on real input and one that can only be read. It would also
+  affect any later library that keeps a large table in MLPL.
 
 ## Not requested
 

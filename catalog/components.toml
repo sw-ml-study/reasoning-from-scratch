@@ -101,6 +101,15 @@ documentation = "docs/book-map.md"
 status = "accepted"
 
 [[component]]
+id = "TOKT"
+slug = "decoding-and-templates"
+chapter = 2
+source = "lib/tokenizer/template.mlpl"
+test = "tests/test_tokenizer_template.mlpl"
+documentation = "docs/book-map.md"
+status = "accepted"
+
+[[component]]
 id = "ST"
 slug = "safetensors"
 chapter = 2

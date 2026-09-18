@@ -1,0 +1,32 @@
+# Probe: string-list indexing should not cost time proportional to the list's length. Exits 0 when 100 reads from a 150,000-item list complete within 100 ms.
+text = read_text("out/probes/vocab-150k.json")?
+small = str_split("a\nb\nc\nd", "\n")
+t0 = clock_ms()
+i = 0
+while i - 1000 {
+  list_get(small, 3);
+  i = i + 1
+}
+small_ms = clock_ms() - t0
+big = str_split(text, ",")
+t1 = clock_ms()
+i = 0
+while i - 100 {
+  list_get(big, 50000);
+  i = i + 1
+}
+far_ms = clock_ms() - t1
+t2 = clock_ms()
+i = 0
+while i - 100 {
+  list_get(big, 5);
+  i = i + 1
+}
+near_ms = clock_ms() - t2
+print("list-index-scaling: 1000 reads from 4 items:", small_ms, "ms;", list_len(big), "items, 100 reads at index 50000:", far_ms, "ms; at index 5:", near_ms, "ms")
+print("  reading a near element costs the same as a far one, so the cost follows the list length rather than the index")
+if gt(far_ms, 100) {
+  err("list indexing cost grows with list length")
+} else {
+  ok(far_ms)
+}

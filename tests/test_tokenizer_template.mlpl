@@ -1,0 +1,114 @@
+# Decoding and chat template contract: the inverse byte map, id lookups, round trips, control-token splitting, both prompt variants, and the end-of-sequence rule.
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/tokenizer/import.mlpl";
+include "lib/tokenizer/bpe.mlpl";
+include "lib/tokenizer/template.mlpl";
+
+def u:tmpl_tables() {
+  "Import the tiny fixture tokenizer.";
+  u:tok_import("fixtures/tokenizer/tiny-tokenizer.json", {})
+}
+
+def u:tmpl_lines() {
+  "Vocabulary lines of the tiny fixture document, as a Result so callers can propagate.";
+  ok(u:tok_vocab_lines(read_text("fixtures/tokenizer/tiny-tokenizer.json")?))
+}
+
+@test {name: "the inverse byte map undoes the encoder's alphabet", tags: ["tokenizer", "template", "bytes"]}
+def u:test_tmpl_inverse_bytes() {
+  "Every lifted code point maps back to its byte, and a printable one maps to itself.";
+  u:assert_eq(u:tok_codepoint_byte(288), 32, "the space marker")?;
+  u:assert_eq(u:tok_codepoint_byte(256), 0, "the first control byte")?;
+  u:assert_eq(u:tok_codepoint_byte(266), 10, "a line feed")?;
+  u:assert_eq(u:tok_codepoint_byte(289), 127, "the lower end of the upper gap")?;
+  u:assert_eq(u:tok_codepoint_byte(322), 160, "the upper end of the upper gap")?;
+  u:assert_eq(u:tok_codepoint_byte(323), 173, "the soft hyphen")?;
+  u:assert_eq(u:tok_codepoint_byte(65), 65, "a letter")?;
+  u:assert_eq(u:tok_char_codepoint("A"), 65, "code point of a one-byte character")?;
+  u:assert_eq(u:tok_char_codepoint("Ġ"), 288, "code point of a two-byte character")?;
+  u:assert_text_eq(u:tok_unmap_text("Ġa"), " a", "a mapped string becomes its text")?;
+  u:assert_text_eq(u:tok_unmap_text(""), "", "empty input")
+}
+
+@test {name: "every byte survives the round trip through the alphabet", tags: ["tokenizer", "template", "bytes"]}
+def u:test_tmpl_byte_round_trip() {
+  "Mapping a byte and mapping it back returns the same byte, for all 256 of them.";
+  i = 0;
+  mismatches = 0;
+  while lt(i, 256) {
+    if u:tok_codepoint_byte(u:tok_byte_codepoint(i)) - i {
+      mismatches = mismatches + 1
+    } else {
+      0
+    };
+    i = i + 1
+  };
+  u:assert_eq(mismatches, 0, "all byte values round-trip")
+}
+
+@test {name: "token ids resolve through the vocabulary lines", tags: ["tokenizer", "template", "decode"]}
+def u:test_tmpl_id_token() {
+  "A line table indexed by id returns each token, and an id past the end is an error.";
+  lines = u:tmpl_lines()?;
+  u:assert_text_eq(u:tok_id_token(lines, 0)?, "a", "first token")?;
+  u:assert_text_eq(u:tok_id_token(lines, 6)?, "abc", "a merged token")?;
+  u:assert_text_eq(u:tok_id_token(lines, 7)?, "Ġa", "a token carrying the space marker")?;
+  u:assert_text_eq(u:tok_id_token(lines, 8)?, "<|start|>", "a control token")?;
+  u:assert_text_eq(err_message(u:tok_id_token(lines, 99)).kind, "unknown_id", "an id past the end")
+}
+
+@test {name: "decoding inverts encoding", tags: ["tokenizer", "template", "decode"]}
+def u:test_tmpl_round_trip() {
+  "Text encoded and decoded again is the text that went in, including spaces.";
+  tables = u:tmpl_tables()?;
+  lines = u:tmpl_lines()?;
+  base = u:tok_merge_base(tables, 1)?;
+  count = u:tok_merge_count(tables);
+  u:assert_text_eq(u:tok_decode(lines, [6])?, "abc", "a merged token")?;
+  u:assert_text_eq(u:tok_decode(lines, [7])?, " a", "a leading space is restored")?;
+  u:assert_text_eq(u:tok_decode(lines, [])?, "", "no ids")?;
+  ids = u:tok_encode(tables, "abc ab", base, count)?;
+  u:assert_text_eq(u:tok_decode(lines, ids)?, "abc ab", "a sentence round-trips")?;
+  again = u:tok_encode(tables, "ad", base, count)?;
+  u:assert_text_eq(u:tok_decode(lines, again)?, "ad", "unmerged symbols round-trip")
+}
+
+@test {name: "control tokens are split out and mapped directly", tags: ["tokenizer", "template", "controls"]}
+def u:test_tmpl_controls() {
+  "A control token in the text becomes its own id; the text between control tokens is encoded normally.";
+  tables = u:tmpl_tables()?;
+  base = u:tok_merge_base(tables, 1)?;
+  count = u:tok_merge_count(tables);
+  bounds = u:tok_control_bounds("a<|start|>b");
+  u:assert_eq(tally(bounds), 4, "three spans")?;
+  u:assert_eq(at(bounds, 1), 1, "the control token starts after the text")?;
+  u:assert_eq(at(bounds, 2), 10, "and ends where its closing marker does")?;
+  u:assert_true(equal(u:tok_encode_with_controls(tables, "<|start|>ab<|end|>", base, count)?, [8, 5, 9]), "control tokens bracket the encoded text")?;
+  u:assert_true(equal(u:tok_encode_with_controls(tables, "ab", base, count)?, [5]), "text with no control tokens is unchanged")?;
+  u:assert_eq(u:tok_control_end("<|unterminated", 0), 0 - 1, "an unterminated marker is not a control token")
+}
+
+@test {name: "the two prompt conventions render as trained", tags: ["tokenizer", "template", "chat"]}
+def u:test_tmpl_render() {
+  "The base model sees bare text; the reasoning variant is wrapped, and the thinking flag decides whether the reasoning block is left open or supplied empty.";
+  u:assert_text_eq(u:tok_render("hi", "base", 1), "hi", "the base model is prompted with bare text")?;
+  thinking = u:tok_render("hi", "reasoning", 1);
+  u:assert_eq(u:text_contains(thinking, "<|im_start|>user\nhi<|im_end|>\n"), 1, "the user turn")?;
+  u:assert_eq(u:text_ends_with(thinking, "<|im_start|>assistant\n"), 1, "the assistant turn is left open")?;
+  u:assert_eq(u:text_contains(thinking, "</think>"), 0, "thinking mode supplies no reasoning block")?;
+  direct = u:tok_render("hi", "reasoning", 0);
+  u:assert_eq(u:text_ends_with(direct, "<think>\n\n</think>\n\n"), 1, "direct mode supplies an empty reasoning block")?;
+  u:assert_text_eq(u:tok_chat_turn("user", "hi"), "<|im_start|>user\nhi<|im_end|>\n", "one turn")
+}
+
+@test {name: "the end-of-sequence id follows the model kind", tags: ["tokenizer", "template", "eos"]}
+def u:test_tmpl_eos() {
+  "A tokenizer without the expected control tokens reports that rather than guessing, and a tokenizer without reasoning tags says so.";
+  tables = u:tmpl_tables()?;
+  u:assert_err(u:tok_eos_id(tables, "base"), "the fixture has no end-of-text token")?;
+  u:assert_err(u:tok_think_ids(tables), "the fixture has no reasoning tags")?;
+  u:assert_text_eq(err_message(u:tok_think_ids(tables)).kind, "unknown_token", "the reported kind")
+}
+
+u:run_registered_tests()
