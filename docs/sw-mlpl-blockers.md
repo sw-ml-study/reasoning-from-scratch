@@ -11,12 +11,13 @@ Measured against:
 
 ```text
 mlpl-repl 0.22.0
-Commit: 363391a6
+Commit: 1abe8f10
 MLX feature: not compiled into this binary
 Previous pins: 1b4d29e5, then 0dfa3eae (sqrt, sin, cos backward rules),
 2a774891 (scientific-notation literals), 8a1fe24a (pow with a constant integer
 exponent), 3250cea9 (lenient unknown string escapes), fdb5e675 (actionable
-rank-3 matmul error), 363391a6 (axis softmax on the tape)
+rank-3 matmul error), 363391a6 (axis softmax on the tape), 1abe8f10
+(transpose_axes backward)
 Machine: Apple M1 Max, 10 cores, 64 GB
 ```
 
@@ -39,7 +40,7 @@ workaround), **missing** (a step is blocked or must stop with an honest
 | `sin`, `cos` inside `grad` | supported since 0dfa3eae | `grad-sin-cos`: gradient of `sin(w) + cos(w)` matches `cos(w) - sin(w)` | shipped upstream (RS1) |
 | `softmax(a, axis)` inside `grad` | supported since 363391a6 | `grad-softmax-axis`: the axis form now differentiates | shipped upstream (RS2) |
 | rank-3 `matmul` | missing, error message fixed | `matmul-rank3`: rejected with an actionable message since fdb5e675 (RS4, first half) | core: the batched operation itself is still open; loop over heads with rank-2 `matmul` |
-| `transpose_axes` inside `grad` | missing | `grad-transpose-axes`: "function 'transpose_axes' not supported inside grad()" | core; keep per-head slices rank-2 and use `transpose` |
+| `transpose_axes` inside `grad` | supported since 1abe8f10 | `grad-transpose-axes`: the general permutation now differentiates | shipped upstream (RS3) |
 | square-root workaround | supported | `grad-sqrt-workaround`: gradient of `exp(0.5 * log(x))` matches `0.5 / sqrt(x)` to 1e-9 | library |
 | `mean`, axis `reduce`, `gather_rows`, `take`, axis `concat`, rank-2 `transpose`, SiLU as `x * sigmoid(x)`, log-softmax gather, RMSNorm via the exp-log spelling | supported | `grad-core-ops`: every gradient matches its analytic form (RMSNorm against central finite differences) within 1e-7 | none needed |
 | `param` leaf reassigned to a data array | supported | `param-data-gradient`: the reassigned leaf receives the expected gradient | core behaviour; pretrained weights load into `param` leaves |

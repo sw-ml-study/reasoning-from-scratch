@@ -3,7 +3,7 @@ grad-sqrt	probes/grad-sqrt.mlpl	core	pass	sqrt has a backward rule on the tape	s
 grad-pow	probes/grad-pow.mlpl	core	pass	pow has a backward rule on the tape for constant integer exponents	shipped
 grad-sin-cos	probes/grad-sin-cos.mlpl	core	pass	sin and cos have backward rules on the tape	shipped
 grad-softmax-axis	probes/grad-softmax-axis.mlpl	core	pass	softmax(a, axis) is differentiable	shipped
-grad-transpose-axes	probes/grad-transpose-axes.mlpl	core	fail	transpose_axes is differentiable	open
+grad-transpose-axes	probes/grad-transpose-axes.mlpl	core	pass	transpose_axes is differentiable	shipped
 matmul-rank3	probes/matmul-rank3.mlpl	core	fail	matmul accepts batched rank-3 operands	open
 scientific-literal	probes/scientific-literal.mlpl	core	pass	scientific-notation literals parse	shipped
 reinterpret-bf16	probes/reinterpret-bf16.mlpl	core	fail	reinterpret accepts bf16 or f16	open

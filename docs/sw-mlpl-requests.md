@@ -63,7 +63,8 @@ ledger, and removes the workaround where the plan allows.
 ## R4. Differentiable `transpose_axes`
 
 - Probe: `grad-transpose-axes`.
-- Today: "function 'transpose_axes' not supported inside grad()".
+- Status: shipped in upstream commit 1abe8f10 on 2026-09-18; the probe passes.
+- Before the fix: "function 'transpose_axes' not supported inside grad()".
 - Requested: backward is the inverse permutation.
 - Acceptance: gradient of a weighted sum through `transpose_axes(x, [1, 0])`
   equals the transposed weights.
