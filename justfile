@@ -25,6 +25,10 @@ tools:
 math500-self-grade:
     ./scripts/run-math500-self-grade
 
+# Download the Qwen3-0.6B-Base tokenizer and config (opt-in, not in check).
+fetch-model:
+    ./scripts/fetch-model
+
 # Download the MATH-500 evaluation set into ignored data/ (opt-in, not in check).
 fetch-math500:
     ./scripts/fetch-math500

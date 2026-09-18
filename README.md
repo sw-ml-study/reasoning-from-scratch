@@ -96,7 +96,13 @@ its 52 source blocks, three runnable self-contained examples, and a gate
 check that tangles the document and compares all eight sources byte for
 byte, so the prose can never describe code that no longer exists.
 
-Saga 2 is next, the tokenizer. Nothing yet generates text.
+Saga 2 is under way. The tokenizer import reads a real six-megabyte
+`tokenizer.json` by locating each section and parsing it separately, because
+the whole document cannot be parsed in one call: it contains an array of
+objects, which the JSON parser refuses by design. The 151,643-entry
+vocabulary and 151,387-entry merge list parse in about half a second, and a
+native binary cache brings a warm load down to 173 milliseconds. The
+byte-level encoder is next. Nothing yet generates text.
 
 ## Build and check
 

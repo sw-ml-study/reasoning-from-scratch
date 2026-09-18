@@ -1656,7 +1656,7 @@ line.
 The module owns the =u:eval_= prefix together with the harness.
 
 #+begin_src mlpl :tangle ../lib/eval/data.mlpl
-# Bounded loading and validation of MATH-style problem records from JSONL text, files, and small JSON arrays.
+# Bounded loading and validation of MATH-style problem records from JSONL text, files, and small JSON arrays. Requires lib/text/text.mlpl included first.
 #+end_src
 
 Budgets are explicit and overridable, and every failure has one shape:
@@ -1875,9 +1875,15 @@ def u:eval_slice(dataset, start, count) {
 
 Some published files are a JSON array of objects, so this scanner rewrites one
 into JSON Lines by tracking brace depth and string state, including escapes.
-It is bounded by a character budget because it runs in the interpreter, one
-character at a time. Braces inside strings do not split objects, which the
-tests check directly.
+Braces inside strings do not split objects, and raw newlines inside a record
+become spaces, because a pretty-printed array spreads each object over several
+lines while JSON Lines needs one line each.
+
+The character budget is not decoration. This scanner walks one character at a
+time through the interpreter, and its cost grows with the square of the input:
+measured at 15.5 ms for 400 characters and 135 ms for 1,600. It is the right
+tool for a small array and the wrong one for anything large, which is why the
+tokenizer import below scans with targeted searches instead.
 
 #+begin_src mlpl :tangle ../lib/eval/data.mlpl
 def u:eval_scan_step(state, c) {
@@ -2179,14 +2185,389 @@ def u:eval_report(report) {
 }
 #+end_src
 
+** lib/tokenizer/import.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-tokenizer-import-mlpl
+:END:
+
+A real =tokenizer.json= is six megabytes of pretty-printed JSON holding a
+151,643-entry vocabulary, a 151,387-entry merge list, and a handful of control
+tokens. Two measured facts shape this module.
+
+The first is that the document cannot be parsed in one call: =parse_json=
+refuses an array of objects by design, and =added_tokens= is exactly that, so
+the whole-document parse fails at byte 271. The import therefore locates each
+section by anchor and parses the sections separately.
+
+The second is cost. The parses themselves are fast, 242 ms for the vocabulary
+and 274 ms for the merges, but composing the tables into one record and
+returning it takes the full import to 17.4 seconds, because a record holding
+151,643 fields is expensive to move across a call boundary. The answer is to
+pay that once and keep a native binary cache: 5.5 MB, written in 107 ms and
+read back in 173 ms, which is the path every later run takes.
+
+The module needs the scanners and, for its error shape, the dataset loader.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+# Bounded import of a Hugging Face tokenizer.json: locate the vocabulary, merge, and added-token sections, validate the model kind, and cache the parsed tables. Requires lib/text/text.mlpl and lib/eval/data.mlpl included first.
+#+end_src
+
+Budgets are large here because a production vocabulary genuinely is, and every
+one of them is checked before allocation. The error shape matches the rest of
+the project: a kind and a message.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_budgets() {
+  "Default parse budgets. The vocabulary of a production tokenizer is several megabytes, so these are large by design and every one is checked before allocation.";
+  {max_bytes: 16777216, max_depth: 8, max_elements: 800000}
+}
+
+def u:tok_error(kind, message) {
+  "Uniform failure payload for every import step.";
+  err({kind: kind, message: message})
+}
+#+end_src
+
+Locating a section means finding its key, and the direction matters. A
+vocabulary token can be the word =vocab=, so the string ="vocab"= really does
+appear twice in this file; the real key is the first occurrence because it
+precedes the object it introduces. The merge list closes the document, so the
+last occurrence is the safe choice there. =u:tok_last_char= scans backwards
+from the end, which is cheap because a well-formed document closes within a
+few characters of its end.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_key_first(text, key) {
+  "Character index of the first occurrence of a quoted key, or -1. Safe for keys whose real occurrence precedes any vocabulary token of the same name.";
+  str_find(text, str_concat("\"", str_concat(key, "\"")))
+}
+
+def u:tok_key_last(text, key) {
+  "Character index of the last occurrence of a quoted key, or -1. Safe for a key that closes the document, such as the merge list.";
+  u:text_find_last(text, str_concat("\"", str_concat(key, "\"")))
+}
+
+def u:tok_after(text, index, opener) {
+  "Index of the first opening bracket of the given kind at or after index, or -1.";
+  if lt(index, 0) {
+    0 - 1
+  } else { u:text_find_from(text, opener, index) }
+}
+
+def u:tok_last_char(text, wanted) {
+  "Index of the last occurrence of a single character, scanning backwards from the end. Cheap even on a multi-megabyte document because a well-formed file closes within a few characters of its end.";
+  i = str_len(text) - 1;
+  found = 0 - 1;
+  while gt(i, 0 - 1) {
+    if str_eq(u:text_char_at(text, i), wanted) {
+      found = i;
+      i = 0 - 1
+    } else {
+      i = i - 1
+    }
+  };
+  found
+}
+
+def u:tok_trim_trailing_comma(section) {
+  "Strip trailing whitespace and one trailing comma, which is what separates a value from the key that follows it.";
+  trimmed = u:text_trim(section);
+  n = str_len(trimmed);
+  if str_eq(u:text_char_at(trimmed, n - 1), ",") { u:text_trim(str_slice(trimmed, 0, n - 1)) } else {
+    trimmed
+  }
+}
+
+def u:tok_section(text, start, stop) {
+  "Text between two character indexes, trimmed of the separator that follows it; an invalid span is the empty string.";
+  if lt(start, 0) + lt(stop, start) {
+    ""
+  } else { u:tok_trim_trailing_comma(str_slice(text, start, stop - start)) }
+}
+#+end_src
+
+Before parsing anything large, refuse what we cannot read. Only a byte-level
+BPE tokenizer is supported, and both halves of that claim are checked against
+small windows of the document rather than a full parse.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_validate_kind(text) {
+  "Require a byte-level BPE tokenizer: the model section declares BPE and the document declares a byte-level decoder. Anything else is refused rather than mis-parsed.";
+  model_at = u:tok_key_first(text, "model");
+  vocab_at = u:tok_key_first(text, "vocab");
+  header = u:tok_section(text, model_at, vocab_at);
+  decoder_at = u:tok_key_first(text, "decoder");
+  decoder = u:tok_section(text, decoder_at, model_at);
+  if lt(model_at, 0) + lt(vocab_at, 0) {
+    u:tok_error("shape", "no model or vocabulary section")
+  } else {
+    if u:text_contains(header, "\"BPE\"") {
+      if u:text_contains(decoder, "ByteLevel") {
+        ok(1)
+      } else { u:tok_error("unsupported", "the decoder is not byte level") }
+    } else {
+      u:tok_error("unsupported", "the model is not BPE")
+    }
+  }
+}
+#+end_src
+
+The two large tables. The vocabulary runs from the brace after its key to the
+merge key that follows it; the merge list runs from its bracket to the
+document's final closing bracket. Each is handed to =parse_json= as its own
+complete value, which is why the array-of-objects restriction never comes up:
+neither of these is one.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_parse_vocab(text, budgets) {
+  "Parse the vocabulary object, which maps each token string to its integer id. Its span runs from the brace after the vocabulary key to the merge key that follows it.";
+  vocab_at = u:tok_key_first(text, "vocab");
+  merges_at = u:tok_key_last(text, "merges");
+  open_at = u:tok_after(text, vocab_at, "{");
+  if lt(open_at, 0) + lt(merges_at, open_at) {
+    u:tok_error("shape", "no vocabulary object before the merge list")
+  } else {
+    section = u:tok_section(text, open_at, merges_at);
+    parsed = parse_json(section, budgets);
+    if is_err(parsed) { u:tok_error("parse", str_concat("vocabulary: ", err_message(parsed))) } else {
+      ok(unwrap(parsed))
+    }
+  }
+}
+
+def u:tok_parse_merges(text, budgets) {
+  "Parse the merge list, an ordered array of strings each holding one pair separated by a space. It is the document's last array, so it ends at the final closing bracket.";
+  merges_at = u:tok_key_last(text, "merges");
+  open_at = u:tok_after(text, merges_at, "[");
+  close_at = u:tok_last_char(text, "]");
+  if lt(open_at, 0) + lt(close_at, open_at) {
+    u:tok_error("shape", "no merge array")
+  } else {
+    parsed = parse_json(str_slice(text, open_at, close_at - open_at + 1), budgets);
+    if is_err(parsed) { u:tok_error("parse", str_concat("merges: ", err_message(parsed))) } else {
+      ok(unwrap(parsed))
+    }
+  }
+}
+#+end_src
+
+The added tokens are the array of objects that =parse_json= will not take, and
+they are also where a naive approach gets expensive. Rather than walking the
+section character by character, these two readers jump directly to each =id=
+and =content= field with =str_find=. The whole section is read in 53 ms.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_quoted_after(text, index) {
+  "Record {value, next} for the quoted string that follows index, honouring backslash escapes; next is -1 when there is no complete string.";
+  open_at = u:text_find_from(text, "\"", index);
+  if lt(open_at, 0) {
+    {value: "", next: 0 - 1}
+  } else {
+    n = str_len(text);
+    i = open_at + 1;
+    value = "";
+    closed = 0 - 1;
+    while lt(i, n) {
+      c = u:text_char_at(text, i);
+      if str_eq(c, "\\") {
+        value = str_concat(value, str_slice(text, i, 2));
+        i = i + 2
+      } else {
+        if str_eq(c, "\"") {
+          closed = i;
+          i = n
+        } else {
+          value = str_concat(value, c);
+          i = i + 1
+        }
+      }
+    };
+    if lt(closed, 0) {
+      {value: "", next: 0 - 1}
+    } else {
+      {value: value, next: closed + 1}
+    }
+  }
+}
+
+def u:tok_number_after(text, index) {
+  "Record {value, next} for the integer that follows index, skipping spaces; next is -1 when no digits follow.";
+  n = str_len(text);
+  i = index;
+  while lt(i, n) * (1 - u:text_is_digit(u:text_char_at(text, i))) * (1 - str_eq(u:text_char_at(text, i), "-")) {
+    i = i + 1
+  };
+  stop = u:text_number_end(text, i);
+  if lt(stop, 0) {
+    {value: 0, next: 0 - 1}
+  } else {
+    {value: unwrap(to_number(str_slice(text, i, stop - i))), next: stop}
+  }
+}
+
+def u:tok_parse_added(text, budgets) {
+  "Collect the added and control tokens by scanning for each id and content field in order. The generic array-to-JSON-Lines scanner is deliberately not used here: it walks one character at a time and its cost grows with the square of the input, which this document's added-token section is already large enough to feel.";
+  added_at = u:tok_key_first(text, "added_tokens");
+  stop_at = u:tok_key_first(text, "normalizer");
+  open_at = u:tok_after(text, added_at, "[");
+  if lt(open_at, 0) + lt(stop_at, open_at) {
+    ok({names: [], ids: []})
+  } else {
+    section = u:tok_section(text, open_at, stop_at);
+    names = "";
+    ids = [];
+    pos = 0;
+    count = 0;
+    running = 1;
+    while running {
+      id_at = u:text_find_from(section, "\"id\":", pos);
+      if lt(id_at, 0) {
+        running = 0
+      } else {
+        id_read = u:tok_number_after(section, id_at + 5);
+        content_at = u:text_find_from(section, "\"content\":", id_read.next);
+        if lt(id_read.next, 0) + lt(content_at, 0) {
+          running = 0
+        } else {
+          content = u:tok_quoted_after(section, content_at + 10);
+          if lt(content.next, 0) {
+            running = 0
+          } else {
+            names = if count {
+              str_concat(names, str_concat("\n", content.value))
+            } else {
+              content.value
+            };
+            ids = concat(ids, id_read.value);
+            count = count + 1;
+            pos = content.next
+          }
+        }
+      }
+    };
+    if count {
+      ok({names: str_split(names, "\n"), ids: ids})
+    } else {
+      ok({names: [], ids: []})
+    }
+  }
+}
+#+end_src
+
+Composition, and the expensive part. Everything above is fast; assembling the
+result is what costs seconds, which is why the next few functions exist.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_import_text(text, options) {
+  "Import a tokenizer document already in memory: validate the kind, then parse the vocabulary, merges, and added tokens into one record.";
+  budgets = if has_field(options, "max_bytes") {
+    options
+  } else { u:tok_budgets() };
+  u:tok_validate_kind(text)?;
+  vocab = u:tok_parse_vocab(text, budgets)?;
+  merges = u:tok_parse_merges(text, budgets)?;
+  added = u:tok_parse_added(text, budgets)?;
+  ok({vocab: vocab, merges: merges, added_names: added.names, added_ids: added.ids})
+}
+
+def u:tok_import(path, options) {
+  "Read and import a tokenizer document from a sandboxed path.";
+  text = read_text(path);
+  if is_err(text) { u:tok_error("io", err_message(text)) } else { u:tok_import_text(unwrap(text), options) }
+}
+#+end_src
+
+The native binary encoding round-trips any data value, so the parsed tables go
+to disk once and come back in 173 ms. =u:tok_load= prefers the cache and falls
+back to importing the document, which is what makes a cold checkout work and a
+warm one fast.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_cache_write(tables, path) {
+  "Write the parsed tables to a native binary cache so later runs skip the text parse entirely.";
+  encoded = to_native(tables);
+  if is_err(encoded) { u:tok_error("cache", err_message(encoded)) } else {
+    write_atomic(path, unwrap(encoded))
+  }
+}
+
+def u:tok_cache_read(path) {
+  "Read tables back from the native cache.";
+  bytes = read_bytes(path);
+  if is_err(bytes) {
+    u:tok_error("io", err_message(bytes))
+  } else {
+    decoded = parse_native(unwrap(bytes));
+    if is_err(decoded) { u:tok_error("cache", err_message(decoded)) } else {
+      ok(unwrap(decoded))
+    }
+  }
+}
+
+def u:tok_load(path, cache_path, options) {
+  "Load tables from the native cache when it exists, otherwise import the document and write the cache.";
+  cached = u:tok_cache_read(cache_path);
+  if is_ok(cached) {
+    cached
+  } else {
+    tables = u:tok_import(path, options)?;
+    u:tok_cache_write(tables, cache_path);
+    ok(tables)
+  }
+}
+#+end_src
+
+The lookups the encoder will need. A token that is not in the vocabulary is a
+classified error, not a raise, because an encoder must be able to ask before
+it commits.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/import.mlpl
+def u:tok_vocab_size(tables) {
+  "Number of entries in the vocabulary.";
+  list_len(record_keys(tables.vocab))
+}
+
+def u:tok_merge_count(tables) {
+  "Number of merge rules.";
+  list_len(tables.merges)
+}
+
+def u:tok_token_id(tables, token) {
+  "Integer id of one token string, or an error naming the missing token.";
+  found = record_get(tables.vocab, token);
+  if is_err(found) { u:tok_error("unknown_token", str_concat("token not in the vocabulary: ", token)) } else {
+    ok(unwrap(found))
+  }
+}
+
+def u:tok_added_id(tables, name) {
+  "Integer id of one added or control token, or an error.";
+  count = list_len(tables.added_names);
+  i = 0;
+  found = 0 - 1;
+  while lt(i, count) {
+    if str_eq(unwrap(list_get(tables.added_names, i)), name) {
+      found = at(tables.added_ids, i);
+      i = count
+    } else {
+      i = i + 1
+    }
+  };
+  if lt(found, 0) { u:tok_error("unknown_token", str_concat("not an added token: ", name)) } else {
+    ok(found)
+  }
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
 regular-expression engine, extraction of a boxed answer, a thirteen-rule
 normalizer, exact rational arithmetic, a recursive-descent evaluator, a
 grader that is total on malformed input, a dataset loader that validates
-before it returns, and a harness that measures any responder with provenance
-attached.
+before it returns, a harness that measures any responder with provenance
+attached, and the import that turns a six-megabyte tokenizer document into
+tables a byte-level encoder can use.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it
@@ -2198,7 +2579,7 @@ positives.
 
 What is deliberately absent is as important. There is no symbolic
 simplification, so =2x + 3x= and =5x= do not match. There is no regular
-expression anywhere. There is no model yet: nothing in this document
-generates a single token. The next saga builds the tokenizer, and the one
-after it the transformer forward pass, at which point the responder the
-harness calls stops being a stub.
+expression anywhere. There is no model yet: nothing here generates a single
+token. The encoder that turns the imported tables into token ids comes next,
+then the transformer forward pass, at which point the responder the harness
+calls stops being a stub.

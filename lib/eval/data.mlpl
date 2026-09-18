@@ -1,4 +1,4 @@
-# Bounded loading and validation of MATH-style problem records from JSONL text, files, and small JSON arrays.
+# Bounded loading and validation of MATH-style problem records from JSONL text, files, and small JSON arrays. Requires lib/text/text.mlpl included first.
 
 def u:eval_data_defaults() {
   "Default budgets: whole-input characters, record count, and characters per line.";

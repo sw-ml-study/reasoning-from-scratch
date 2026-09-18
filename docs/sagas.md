@@ -22,7 +22,7 @@ positives.
 
 | # | Step | Status |
 |---|---|---|
-| 1 | `tokenizer-json-import` | pending |
+| 1 | `tokenizer-json-import` | done: sectioned import, fixtures, native cache; real file measured |
 | 2 | `bpe-reference-in-mlpl` | pending |
 | 3 | `chat-templates-and-eos` | pending |
 | 4 | `extension-parity-and-throughput` | pending, gated on `../demo-extensions` |

@@ -1,0 +1,13 @@
+{
+  "added_tokens": [],
+  "decoder": {
+    "type": "ByteLevel"
+  },
+  "model": {
+    "type": "WordPiece",
+    "vocab": {
+      "a": 0
+    },
+    "merges": []
+  }
+}

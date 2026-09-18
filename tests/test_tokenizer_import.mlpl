@@ -1,0 +1,73 @@
+# Tokenizer import contract: section location, kind validation, table extraction, lookups, budgets, and the native cache.
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/tokenizer/import.mlpl";
+
+def u:tok_test_fixture() {
+  "Import the hand-authored tiny tokenizer fixture.";
+  u:tok_import("fixtures/tokenizer/tiny-tokenizer.json", {})
+}
+
+@test {name: "the tiny fixture imports into vocabulary merges and added tokens", tags: ["tokenizer", "import"]}
+def u:test_tok_import_fixture() {
+  "Every table is extracted with the right size, order, and contents.";
+  tables = u:tok_test_fixture()?;
+  u:assert_eq(u:tok_vocab_size(tables), 10, "vocabulary size")?;
+  u:assert_eq(u:tok_merge_count(tables), 3, "merge count")?;
+  u:assert_text_eq(list_get(tables.merges, 0)?, "a b", "first merge")?;
+  u:assert_text_eq(list_get(tables.merges, 2)?, "Ġ a", "last merge keeps its order")?;
+  u:assert_eq(list_len(tables.added_names), 2, "added token count")?;
+  u:assert_text_eq(list_get(tables.added_names, 0)?, "<|start|>", "first added token")?;
+  u:assert_eq(at(tables.added_ids, 1), 9, "second added token id")
+}
+
+@test {name: "token lookups succeed and fail by name", tags: ["tokenizer", "import", "lookup"]}
+def u:test_tok_import_lookup() {
+  "A known token resolves to its id; an unknown one is a classified error rather than a raise.";
+  tables = u:tok_test_fixture()?;
+  u:assert_eq(u:tok_token_id(tables, "abc")?, 6, "merged token")?;
+  u:assert_eq(u:tok_token_id(tables, "Ġ")?, 3, "space marker")?;
+  u:assert_text_eq(err_message(u:tok_token_id(tables, "zz")).kind, "unknown_token", "absent token")?;
+  u:assert_eq(u:tok_added_id(tables, "<|end|>")?, 9, "control token")?;
+  u:assert_text_eq(err_message(u:tok_added_id(tables, "<|nope|>")).kind, "unknown_token", "absent control token")
+}
+
+@test {name: "unsupported and malformed documents are refused", tags: ["tokenizer", "import", "errors"]}
+def u:test_tok_import_refusals() {
+  "A non-BPE model, a missing vocabulary, an over-budget parse, and an absent file each report their kind.";
+  u:assert_text_eq(err_message(u:tok_import("fixtures/tokenizer/bad-model-type.json", {})).kind, "unsupported", "word piece model")?;
+  u:assert_text_eq(err_message(u:tok_import("fixtures/tokenizer/no-vocab.json", {})).kind, "shape", "no vocabulary")?;
+  u:assert_text_eq(err_message(u:tok_import("fixtures/tokenizer/tiny-tokenizer.json", {max_bytes: 20, max_depth: 4, max_elements: 10})).kind, "parse", "over budget")?;
+  u:assert_text_eq(err_message(u:tok_import("fixtures/tokenizer/absent.json", {})).kind, "io", "absent file")
+}
+
+@test {name: "quoted and numeric field readers handle escapes and spacing", tags: ["tokenizer", "import", "scanning"]}
+def u:test_tok_import_scanners() {
+  "The field readers used to collect added tokens honour escaped quotes and skip separators.";
+  quoted = u:tok_quoted_after("x: \"ab\\\"c\" rest", 2);
+  u:assert_text_eq(quoted.value, "ab\\\"c", "escaped quote is kept whole")?;
+  u:assert_eq(u:text_char_at("x: \"ab\\\"c\" rest", quoted.next), " ", "position lands after the closing quote")?;
+  u:assert_eq(u:tok_quoted_after("no string here", 0).next, 0 - 1, "no string is reported")?;
+  number = u:tok_number_after("\"id\":   151643,", 5);
+  u:assert_eq(number.value, 151643, "number after spaces")?;
+  u:assert_eq(u:tok_number_after("nothing", 0).next, 0 - 1, "no number is reported")
+}
+
+@test {name: "tables round-trip through the native cache", tags: ["tokenizer", "import", "cache"]}
+def u:test_tok_import_cache() {
+  "Writing and reading the binary cache preserves every table, and loading prefers the cache when it exists.";
+  tables = u:tok_test_fixture()?;
+  path = "out/test_tokenizer_cache.mlpb";
+  remove_path(path);
+  u:tok_cache_write(tables, path)?;
+  restored = u:tok_cache_read(path)?;
+  u:assert_eq(u:tok_vocab_size(restored), 10, "vocabulary survives")?;
+  u:assert_true(equal(restored.merges, tables.merges), "merges survive in order")?;
+  u:assert_true(equal(restored.added_ids, tables.added_ids), "added ids survive")?;
+  loaded = u:tok_load("fixtures/tokenizer/absent.json", path, {})?;
+  u:assert_eq(u:tok_vocab_size(loaded), 10, "the cache is used when the document is absent")?;
+  remove_path(path);
+  u:assert_err(u:tok_load("fixtures/tokenizer/absent.json", path, {}), "no cache and no document is an error")
+}
+
+u:run_registered_tests()

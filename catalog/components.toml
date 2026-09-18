@@ -83,11 +83,20 @@ documentation = "docs/book-map.md"
 status = "accepted"
 
 [[component]]
-id = "TOK"
-slug = "tokenizer"
+id = "TOKIMP"
+slug = "tokenizer-import"
 chapter = 2
-source = "lib/tokenizer/tokenizer.mlpl"
-test = "tests/test_tokenizer.mlpl"
+source = "lib/tokenizer/import.mlpl"
+test = "tests/test_tokenizer_import.mlpl"
+documentation = "docs/book-map.md"
+status = "accepted"
+
+[[component]]
+id = "TOK"
+slug = "tokenizer-encoder"
+chapter = 2
+source = "lib/tokenizer/bpe.mlpl"
+test = "tests/test_tokenizer_bpe.mlpl"
 documentation = "docs/book-map.md"
 status = "planned"
 

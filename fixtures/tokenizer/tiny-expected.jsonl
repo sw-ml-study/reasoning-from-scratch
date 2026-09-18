@@ -1,0 +1,6 @@
+{"text": "abc", "ids": [6], "why": "a and b merge first, then ab and c"}
+{"text": "ab", "ids": [5], "why": "only the first merge applies"}
+{"text": "ad", "ids": [0, 4], "why": "no merge rule joins a and d"}
+{"text": " a", "ids": [7], "why": "the leading space becomes the space marker and merges"}
+{"text": "d", "ids": [4], "why": "a single byte token"}
+{"text": "", "ids": [], "why": "empty input produces no tokens"}

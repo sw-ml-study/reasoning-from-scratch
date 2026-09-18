@@ -1,0 +1,10 @@
+{
+  "added_tokens": [],
+  "decoder": {
+    "type": "ByteLevel"
+  },
+  "model": {
+    "type": "BPE",
+    "merges": []
+  }
+}

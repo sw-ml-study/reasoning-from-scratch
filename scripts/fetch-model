@@ -1,0 +1,41 @@
+#!/bin/sh
+# Download the Qwen3-0.6B-Base tokenizer and config into the ignored models/
+# tree. Opt-in: never part of `just check`. Prints provenance, checks the
+# published byte sizes, and refuses to overwrite existing files.
+#
+# The weights themselves (model.safetensors, 1,192,135,096 bytes) are a
+# separate, much larger download added by the saga step that needs them.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+base="https://huggingface.co/Qwen/Qwen3-0.6B-Base/resolve/main"
+dest_dir="$repo_root/models/qwen3-0.6b-base"
+
+echo "Qwen3-0.6B-Base tokenizer and configuration"
+echo "  source:  $base"
+echo "  license: Apache-2.0 (see the model card)"
+echo "  dest:    models/qwen3-0.6b-base/ (ignored by git, never redistributed)"
+
+fetch() {
+    name=$1
+    expected=$2
+    target="$dest_dir/$name"
+    if [ -e "$target" ]; then
+        echo "  skip:    $name already present" >&2
+        return 0
+    fi
+    mkdir -p "$dest_dir"
+    tmp="$target.part"
+    curl -L --fail --silent --show-error -o "$tmp" "$base/$name"
+    actual=$(wc -c < "$tmp" | tr -d ' ')
+    if [ "$expected" -gt 0 ] && [ "$actual" -ne "$expected" ]; then
+        rm -f "$tmp"
+        echo "size mismatch for $name: expected $expected bytes, got $actual" >&2
+        exit 1
+    fi
+    mv "$tmp" "$target"
+    echo "  bytes:   $name $actual"
+}
+
+fetch tokenizer.json 7031645
+fetch config.json 0
