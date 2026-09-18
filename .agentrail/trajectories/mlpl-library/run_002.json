@@ -1,0 +1,11 @@
+{
+  "task_type": "mlpl-library",
+  "state": {
+    "number": 2,
+    "step": "bpe-reference-in-mlpl"
+  },
+  "action": "Verified the rank-equals-id invariant across all merges in Python before relying on it, wrote the module and suite, diagnosed a separator collision and switched to boundary indexes, measured lookup scaling to explain the slowness, filed a new upstream request.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-18T11:43:02"
+}
