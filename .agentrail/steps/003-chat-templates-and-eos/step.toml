@@ -1,9 +1,10 @@
 number = 3
 slug = "chat-templates-and-eos"
-status = "pending"
+status = "completed"
 description = "Implement decoding and the chat templates in lib/tokenizer/template.mlpl (pre..."
 role = "production"
 context_files = []
 created_at = "2026-09-17T19:02:47"
+completed_at = "2026-09-18T13:37:35"
 task_type = "mlpl-library"
-commits = []
+commits = ["aebaee6a7eb000a65321aa7d0150064bcdb23685"]
