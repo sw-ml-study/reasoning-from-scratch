@@ -32,11 +32,21 @@ The production encoder is a Rust extension requested from
 synthetic fixture, the chat templates, and the parity tests. Step 4 stops
 with an honest unavailable result if the extension has not landed.
 
-## Queued: Saga 3, `model-and-generation`
+## Active: Saga 3, `model-and-generation`
 
-Decode bf16 safetensors, implement the Qwen3 forward pass and KV-cache
-generation over plain arrays, prove it on a tiny configuration, then measure
-the real model and run the MATH-500 baseline.
+| # | Step | Status |
+|---|---|---|
+| 1 | `qwen3-forward-tiny` | pending |
+| 2 | `kv-cache-generation` | pending |
+| 3 | `safetensors-header` | pending |
+| 4 | `bf16-tensor-decode` | pending, gated on upstream R11 |
+| 5 | `real-model-smoke` | pending, follows step 4 |
+| 6 | `math500-baseline` | pending, follows step 5 |
+
+Resequenced so the blocked work comes last. Loading real weights needs a
+bulk decode from a typed byte buffer to an array, which did not ship with
+the `bf16` dtype; the forward pass, generation, and header parsing need
+nothing upstream and come first.
 
 ## Queued: Saga 4, `inference-time-scaling`
 

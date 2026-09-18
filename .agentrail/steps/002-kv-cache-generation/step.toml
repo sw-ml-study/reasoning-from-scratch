@@ -1,0 +1,9 @@
+number = 2
+slug = "kv-cache-generation"
+status = "pending"
+description = "Implement KV-cache generation in lib/generate/ (prefix u:gen_): a per-layer k..."
+role = "production"
+context_files = []
+created_at = "2026-09-18T16:43:33"
+task_type = "mlpl-library"
+commits = []

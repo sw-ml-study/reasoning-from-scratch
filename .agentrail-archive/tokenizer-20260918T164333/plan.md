@@ -140,49 +140,34 @@ templates, and the parity tests.
 Exit: any prompt in the corpus encodes and decodes deterministically, with
 the MLPL reference and the extension agreeing on every golden.
 
-## Saga 3: model loading and generation
+## Saga 3: model loading and greedy generation
 
-Resequenced on 2026-09-18. The original order began with weight loading,
-which is blocked: the `bf16` dtype shipped upstream but the bulk decode did
-not, and `reinterpret` returns a byte view with no length and no arithmetic,
-so a 155-million-value tensor would need 155 million scalar reads. That is
-filed as request R11. Everything else in this saga is unblocked, so the
-forward pass and generation now come first, proven on a tiny configuration
-with synthetic weights; the real model is loaded last.
+1. `safetensors-bf16-decode`: vendored or re-derived bounded header reader,
+   tensor directory validation, bf16 decoding (via `reinterpret` if it
+   accepts `bf16`, else vectorized integer arithmetic), Hugging Face name
+   mapping, tied-embedding handling; a synthetic safetensors fixture written
+   by MLPL itself with known values; decode tests.
+2. `qwen3-forward-tiny`: pure-array RMSNorm, split-halves RoPE, grouped-query
+   attention with QK-norm and causal masking, SwiGLU, block, and full forward
+   at a tiny configuration; property tests (norm invariants, RoPE
+   norm-preservation, prefix invariance of logits); a deterministic
+   parameter-fill parity check whose expected token sequence is recorded from
+   the reference test suite as a fact, attempted and reported either way.
+3. `kv-cache-generation`: MLPL record cache per layer, prefill plus
+   one-token steps, equality with full recompute, greedy loop with end-of-
+   text stop and token budget, tokens-per-second stats; tests on the tiny
+   model.
+4. `real-model-smoke` (opt-in recipe): load the 0.6B weights, record load
+   time and resident memory, generate a short continuation for a fixed
+   prompt whose expected next word is well known, record tokens per second,
+   and compare with the book's CPU yardsticks; decide and document whether
+   the interpreter path is adequate for evaluation.
+5. `math500-baseline` (opt-in recipe): run the harness on a bounded slice,
+   then the full set if throughput allows; record accuracy against the
+   published 15% baseline with full provenance.
 
-A second measurement shapes every step: element access copies the container,
-costing 0.97 ms on a million-element array, while whole-array arithmetic
-stays fast at 1.28 ms for a `[1,1000] x [1000,1000]` product. The forward
-pass is therefore written entirely in whole-array operations, and the one
-place that cannot avoid indexing, per-head attention slicing, is exactly
-what the missing batched `matmul` of R3 would remove.
-
-1. `qwen3-forward-tiny`: RMSNorm, split-halves RoPE, grouped-query attention
-   with QK-norm and causal masking, SwiGLU, the residual block, and the full
-   forward at a tiny configuration with seeded synthetic weights. Property
-   tests rather than golden numbers: normalization invariants, RoPE
-   preserving vector norms, a prefix's logits unchanged when the sequence
-   grows, attention rows summing to one, and shape agreement throughout.
-2. `kv-cache-generation`: a per-layer key and value cache as an MLPL record,
-   prefill then one token per step, equality with full recomputation, greedy
-   decoding with a stop id and a token budget, and tokens per second.
-3. `safetensors-header`: vendor `safetensors-header` from
-   `../demo-mlpl-libraries` by pinned revision, parse the real file's header
-   and tensor directory, validate dtypes, shapes, and offsets, map Hugging
-   Face names, and handle tied embeddings. Header only; no tensor data.
-4. `bf16-tensor-decode`: gated on R11. With `unpack` available, decode named
-   tensors and check one against the vectorized MLPL decode. Without it,
-   stop with an honest unavailable result and choose between waiting for
-   core and requesting the contingent native reader, item E3.
-5. `real-model-smoke`: opt-in. Move the fetch scripts onto the extension's
-   checksum-verified download, load the weights, record load time, resident
-   memory, and tokens per second against the book's CPU yardsticks.
-6. `math500-baseline`: opt-in. Run the harness over a bounded slice, then
-   the full set if throughput allows, with full provenance.
-
-Exit: the forward pass and generation are proven exactly on a tiny model;
-the real model is either measured end to end or blocked with a precise,
-filed request.
+Exit: the base model generates text and is evaluated end to end in MLPL,
+with measured cost.
 
 ## Saga 4: inference-time scaling
 
