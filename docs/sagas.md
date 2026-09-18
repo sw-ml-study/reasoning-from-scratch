@@ -6,7 +6,7 @@ with Agentrail commands, never by editing append-only `.agentrail/` state.
 Full step prompts live in `.agentrail/steps/`; the outline is in
 [`plan.md`](plan.md).
 
-## Active: Saga 1, `foundation-and-verifier`
+## Complete: Saga 1, `foundation-and-verifier`
 
 | # | Step | Status |
 |---|---|---|
@@ -18,7 +18,7 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 | 6 | `boxed-extraction-and-normalization` | done: `lib/text/`, `lib/verify/extract.mlpl`, `lib/verify/normalize.mlpl`, 23 tests |
 | 7 | `expression-equivalence` | done: exact rationals, bounded evaluator, grading; 500 of 500 MATH-500 answers self-grade |
 | 8 | `evaluation-harness` | done: prompt template, responder loop, JSONL records, CSV metrics, provenance, narrated demo |
-| 9 | `literate-org-document` | pending: `docs/reasoning.org` via `ob-mlpl`, tangle-verified |
+| 9 | `literate-org-document` | done: `docs/reasoning.org`, 52 blocks, tangles back to all 8 sources |
 
 Acceptance: `just check` runs a complete, tested verifier and evaluation
 harness without any model, and the capability ledger contains only measured

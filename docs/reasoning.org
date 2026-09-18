@@ -1,0 +1,2204 @@
+#+title: A reasoning model, from scratch, in sw-MLPL
+#+subtitle: the verifier and evaluation harness, read in the order they were built
+#+author: Michael A Wright
+#+startup: showall
+#+property: header-args:mlpl :results output :exports code :eval no-export
+#+property: header-args:emacs-lisp :eval no-export
+#+options: toc:2 num:t
+
+* How to read and run this document
+
+This is the first half of a from-scratch reasoning model: everything needed to
+*decide whether an answer is right*, written in sw-MLPL, with prose before
+every block. It is a literate reading of the committed sources, not a
+paraphrase of them. Each source block carries a =:tangle= target, and
+=scripts/check-tangle= runs in the pre-commit gate to prove that tangling this
+document reproduces every file it explains, byte for byte. The =.mlpl= files
+remain the source of truth; when they change, this document is edited to
+match, and the gate fails until it is.
+
+Why a verifier comes before a model: the project's goal is to turn a plain
+next-token predictor into a model that reasons, and the mechanism for that is
+reinforcement learning from a *verifiable reward*. The reward is exactly the
+function in this document. There is no reward model and no human labels; a
+rollout scores one if its boxed answer verifies against the reference and zero
+otherwise. Building the reward first means every later claim about accuracy is
+measurable from the start. The full picture is in
+[[file:how-base-becomes-reasoning.md][how-base-becomes-reasoning.md]].
+
+** Evaluating blocks
+
+The document never evaluates anything on export (=:eval no-export= in the
+header), so exporting produces no prompts. Evaluation is for reading
+interactively. To make =C-c C-c= work, evaluate this setup block once per
+Emacs session; it loads sw-MLPL's Org-babel backend from the adjacent checkout
+and points it at whichever interpreter exists:
+
+#+begin_src emacs-lisp :tangle no
+(let* ((here (file-name-directory (buffer-file-name)))
+       (repo (or (locate-dominating-file here "AGENTS.md") (expand-file-name ".." here)))
+       (sw-mlpl (expand-file-name "../sw-mlpl" repo))
+       (candidates (list (expand-file-name "target/release/mlpl-repl" sw-mlpl)
+                         (expand-file-name "target/debug/mlpl-repl" sw-mlpl)
+                         (executable-find "mlpl-repl")
+                         (expand-file-name "~/.local/softwarewrighter/bin/mlpl-repl"))))
+  (add-to-list 'load-path (expand-file-name "elisp" sw-mlpl))
+  (require 'ob-mlpl)
+  (make-directory (expand-file-name "out" repo) t)
+  (setq temporary-file-directory (expand-file-name "out/" repo))
+  (setq org-babel-mlpl-command
+        (or (seq-find (lambda (p) (and p (file-executable-p p))) candidates)
+            (user-error "no mlpl-repl found; build ../sw-mlpl or set org-babel-mlpl-command")))
+  (setq org-confirm-babel-evaluate nil)
+  (message "ob-mlpl ready: %s" org-babel-mlpl-command))
+#+end_src
+
+Two things to know before pressing =C-c C-c=:
+
+- A block runs in a fresh interpreter on a temporary file, so a block that
+  says =include "lib/text/text.mlpl"= cannot find its neighbour. This is not a
+  quirk of Org: =include= resolves relative to the including file and
+  =--source-dir= only bounds the sandbox, which is why =demos/= scripts run
+  through =scripts/run-mlpl-demo= and why library modules declare their
+  dependencies in a comment instead of nesting includes. The function blocks
+  below are for reading and tangling; the runnable ones are the
+  self-contained examples in the primer.
+- =org-confirm-babel-evaluate= controls the yes/no prompt. The setup block
+  turns it off for the session.
+
+** A five-minute primer
+
+Three self-contained blocks, each complete enough to run on its own.
+
+The first shows why normalization exists. Two answers that share almost no
+characters denote the same number:
+
+#+begin_src mlpl :tangle no
+print("dfrac and a plain fraction look nothing alike:")
+print("  ", "\\dfrac{14}{3}")
+print("  ", "(14)/(3)")
+print("but 14 divided by 3 is the same number either way:", 14 / 3)
+#+end_src
+
+The second shows the exact-rational decision that the verifier turns on. A
+decimal is a rational, so a half is a half, but a truncated third is not a
+third:
+
+#+begin_src mlpl :tangle no
+half = 1 / 2
+third = 1 / 3
+print("0.5 equals 1/2 exactly:       ", eq(0.5, half))
+print("0.3333333333 equals 1/3:      ", eq(0.3333333333, third))
+print("the difference is not nothing:", third - 0.3333333333)
+#+end_src
+
+The third is the shape of every scanner in this document: no regular
+expressions, just an index walking forward:
+
+#+begin_src mlpl :tangle no
+def u:primer_digits_end(s, i) {
+  "Index just past the run of digits starting at i.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * gt(at(tokenize_bytes(str_slice(s, j, 1)), 0), 47) * lt(at(tokenize_bytes(str_slice(s, j, 1)), 0), 58) {
+    j = j + 1
+  };
+  j
+}
+print("digits end at index:", u:primer_digits_end("1234abc", 0))
+print("no digits here:     ", u:primer_digits_end("abc", 0))
+#+end_src
+
+* The sources
+
+** lib/text/text.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-text-text-mlpl
+:END:
+
+Everything downstream reads strings a character at a time, so this module
+comes first. sw-MLPL has no regular-expression engine and this project never
+asks for one: the two places the reference implementation uses a pattern are
+finding the last number in a response and splitting a tokenizer's input, and
+both are ordinary scans. What the language does give us is
+=str_slice=, =str_find=, =str_split=, =str_len= and byte conversion, all
+indexed by character rather than byte, so a multi-byte character such as
+=²= counts once.
+
+The module comment is the file's first line, as the style gate requires.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+# Character-indexed string scanning helpers that stand in for regular expressions: classes, search, trim, replace, brace matching, number recognition.
+#+end_src
+
+One accessor underpins every scan. It is deliberately *total*: a negative
+index or one past the end yields the empty string rather than raising. That
+single decision is what lets later scanners look one character behind the
+start without guarding every call, and it was added after a crash proved the
+guard-at-every-call discipline does not survive contact with real code.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_char_at(s, i) {
+  "The single character at index i, or the empty string for a negative index or one past the end. Total, so scanners may look one character behind the start.";
+  if lt(i, 0) {
+    ""
+  } else {
+    str_slice(s, i, 1)
+  }
+}
+#+end_src
+
+The character classes are ASCII-only and each is written as arithmetic on the
+byte value, because comparison builtins return 1 or 0 and multiplication is
+therefore logical *and*. A non-ASCII character such as =é= or =²= is not a
+letter or a digit here, which matters: the normalization rules treat Unicode
+superscripts separately and must not mistake them for digits.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_is_digit(c) {
+  "1 when c is one ASCII digit.";
+  if str_eq(c, "") {
+    0
+  } else {
+    b = tokenize_bytes(c);
+    if tally(b) - 1 {
+      0
+    } else {
+      gt(at(b, 0), 47) * lt(at(b, 0), 58)
+    }
+  }
+}
+
+def u:text_is_letter(c) {
+  "1 when c is one ASCII letter.";
+  if str_eq(c, "") {
+    0
+  } else {
+    b = tokenize_bytes(c);
+    if tally(b) - 1 {
+      0
+    } else {
+      v = at(b, 0);
+      gt(v, 64) * lt(v, 91) + gt(v, 96) * lt(v, 123)
+    }
+  }
+}
+
+def u:text_is_alnum(c) {
+  "1 when c is one ASCII letter or digit.";
+  u:text_is_digit(c) + u:text_is_letter(c)
+}
+
+def u:text_is_space(c) {
+  "1 when c is a space, tab, newline, or carriage return.";
+  str_eq(c, " ") + str_eq(c, "\t") + str_eq(c, "\n") + str_eq(c, "\r")
+}
+#+end_src
+
+Search is built from the language's =str_find=, which only reports the first
+match from the beginning. Scanning from an offset means slicing the tail and
+adding the offset back, and finding the *last* match means walking forward
+until no more are found. An empty needle is never found, which keeps
+=u:text_find_last= from looping forever.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_find_from(s, needle, start) {
+  "First character index of needle at or after start, or -1.";
+  n = str_len(s);
+  if gt(start, n) {
+    0 - 1
+  } else {
+    found = str_find(str_slice(s, start, n - start), needle);
+    if lt(found, 0) {
+      0 - 1
+    } else {
+      start + found
+    }
+  }
+}
+
+def u:text_find_last(s, needle) {
+  "Last character index of needle in s, or -1; an empty needle is never found.";
+  if str_eq(needle, "") {
+    0 - 1
+  } else {
+    last = 0 - 1;
+    pos = u:text_find_from(s, needle, 0);
+    while gt(pos, 0 - 1) {
+      last = pos;
+      pos = u:text_find_from(s, needle, pos + 1)
+    };
+    last
+  }
+}
+
+def u:text_contains(s, needle) {
+  "1 when needle occurs in s.";
+  gt(str_find(s, needle), 0 - 1)
+}
+
+def u:text_starts_with(s, prefix) {
+  "1 when s begins with prefix.";
+  str_eq(str_slice(s, 0, str_len(prefix)), prefix)
+}
+
+def u:text_ends_with(s, suffix) {
+  "1 when s ends with suffix.";
+  n = str_len(s);
+  k = str_len(suffix);
+  if gt(k, n) {
+    0
+  } else {
+    str_eq(str_slice(s, n - k, k), suffix)
+  }
+}
+#+end_src
+
+These four rewrite a string. =u:text_replace_all= advances past each
+replacement so a replacement containing the needle cannot loop, and an empty
+needle is a no-op for the same reason. =u:text_lower= converts through the
+byte array, adding 32 only to bytes in the upper-case range, so non-ASCII
+characters pass through untouched.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_trim(s) {
+  "Strip leading and trailing whitespace characters.";
+  n = str_len(s);
+  a = 0;
+  while lt(a, n) * u:text_is_space(u:text_char_at(s, a)) {
+    a = a + 1
+  };
+  b = n;
+  while gt(b, a) * u:text_is_space(u:text_char_at(s, b - 1)) {
+    b = b - 1
+  };
+  str_slice(s, a, b - a)
+}
+
+def u:text_strip_chars(s, chars) {
+  "Strip any characters of the set string chars from both ends.";
+  n = str_len(s);
+  a = 0;
+  while lt(a, n) * u:text_contains(chars, u:text_char_at(s, a)) {
+    a = a + 1
+  };
+  b = n;
+  while gt(b, a) * u:text_contains(chars, u:text_char_at(s, b - 1)) {
+    b = b - 1
+  };
+  str_slice(s, a, b - a)
+}
+
+def u:text_replace_all(s, needle, replacement) {
+  "Replace every non-overlapping occurrence of needle, scanning left to right; an empty needle returns s unchanged.";
+  if str_eq(needle, "") {
+    s
+  } else {
+    out = "";
+    pos = 0;
+    k = str_len(needle);
+    n = str_len(s);
+    found = u:text_find_from(s, needle, 0);
+    while gt(found, 0 - 1) {
+      out = str_concat(out, str_concat(str_slice(s, pos, found - pos), replacement));
+      pos = found + k;
+      found = u:text_find_from(s, needle, pos)
+    };
+    str_concat(out, str_slice(s, pos, n - pos))
+  }
+}
+
+def u:text_lower(s) {
+  "ASCII lower-case; non-ASCII characters pass through unchanged.";
+  if str_eq(s, "") {
+    s
+  } else {
+    b = tokenize_bytes(s);
+    decode_bytes(b + 32 * gt(b, 64) * lt(b, 91))
+  }
+}
+#+end_src
+
+Brace matching is what makes =\boxed{outer {inner} ok}= extract correctly
+rather than stopping at the first closing brace. The scan counts depth and
+returns -1 for an unbalanced input or an index that is not a brace at all,
+so callers branch on data instead of catching an error.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_match_brace(s, open_index) {
+  "Index of the brace closing the one at open_index, counting nested pairs, or -1 when unbalanced or not a brace.";
+  if str_eq(u:text_char_at(s, open_index), "{") {
+    depth = 0;
+    i = open_index;
+    n = str_len(s);
+    result = 0 - 1;
+    while lt(i, n) {
+      c = u:text_char_at(s, i);
+      if str_eq(c, "{") {
+        depth = depth + 1
+      } else {
+        0
+      };
+      if str_eq(c, "}") {
+        depth = depth - 1
+      } else {
+        0
+      };
+      if str_eq(c, "}") * (1 - gt(depth, 0)) {
+        result = i;
+        i = n
+      } else {
+        i = i + 1
+      }
+    };
+    result
+  } else {
+    0 - 1
+  }
+}
+#+end_src
+
+This is the number recognizer, and it is the closest thing here to a regular
+expression. It accepts an optional minus sign, then either an integer
+fraction such as =14/3=, or digits with an optional decimal part and an
+optional exponent. =u:text_last_number= scans left to right and keeps the
+last match, which is what "the final number in the response" means.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_digits_end(s, i) {
+  "Index just past the run of ASCII digits starting at i (equal to i when there is none).";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * u:text_is_digit(u:text_char_at(s, j)) {
+    j = j + 1
+  };
+  j
+}
+
+def u:text_number_end(s, i) {
+  "End index of a number token starting at i (optional minus, then integer fraction, or decimal with optional exponent), or -1 when none starts there.";
+  n = str_len(s);
+  j = i;
+  if str_eq(u:text_char_at(s, j), "-") {
+    j = j + 1
+  } else {
+    0
+  };
+  if u:text_is_digit(u:text_char_at(s, j)) {
+    j = u:text_digits_end(s, j);
+    if str_eq(u:text_char_at(s, j), "/") * u:text_is_digit(u:text_char_at(s, j + 1)) {
+      u:text_digits_end(s, j + 1)
+    } else {
+      if str_eq(u:text_char_at(s, j), ".") * u:text_is_digit(u:text_char_at(s, j + 1)) {
+        j = u:text_digits_end(s, j + 1)
+      } else {
+        0
+      };
+      e = u:text_char_at(s, j);
+      if str_eq(e, "e") + str_eq(e, "E") {
+        k = j + 1;
+        sign = u:text_char_at(s, k);
+        if str_eq(sign, "+") + str_eq(sign, "-") {
+          k = k + 1
+        } else {
+          0
+        };
+        if u:text_is_digit(u:text_char_at(s, k)) { u:text_digits_end(s, k) } else {
+          j
+        }
+      } else {
+        j
+      }
+    }
+  } else {
+    0 - 1
+  }
+}
+
+def u:text_last_number(s) {
+  "The last number token in s (leftmost-longest scan, as a regular-expression search would find), or the empty string.";
+  n = str_len(s);
+  i = 0;
+  last = "";
+  while lt(i, n) {
+    stop = u:text_number_end(s, i);
+    if gt(stop, 0 - 1) {
+      last = str_slice(s, i, stop - i);
+      i = stop
+    } else {
+      i = i + 1
+    }
+  };
+  last
+}
+#+end_src
+
+Chat control tokens such as =<|im_end|>= appear in model output and must not
+reach the verifier. The guard counter is belt and braces: the loop already
+terminates because each pass shortens the string.
+
+#+begin_src mlpl :tangle ../lib/text/text.mlpl
+def u:text_remove_control_tokens(s) {
+  "Delete every <|...|> control-token span.";
+  out = s;
+  open = str_find(out, "<|");
+  guard = 0;
+  while gt(open, 0 - 1) * lt(guard, 100000) {
+    close = u:text_find_from(out, "|>", open + 2);
+    if gt(close, 0 - 1) {
+      out = str_concat(str_slice(out, 0, open), str_slice(out, close + 2, str_len(out) - close - 2));
+      open = str_find(out, "<|")
+    } else {
+      open = 0 - 1
+    };
+    guard = guard + 1
+  };
+  out
+}
+#+end_src
+
+** lib/verify/extract.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-verify-extract-mlpl
+:END:
+
+Given a model's free text, the first job is to find what it claims the answer
+is. The convention the whole pipeline depends on is that the model writes its
+final result inside =\boxed{...}=. This module finds that group and decides
+what to do when it is missing.
+
+These files need =lib/text/text.mlpl= loaded first. An =include= resolves
+relative to the including file and cannot climb out of its directory, so
+library modules declare their dependencies in the module comment and the
+loader inlines them in order.
+
+The dependency is stated in the module comment rather than nested as an
+include, for the reason given above.
+
+#+begin_src mlpl :tangle ../lib/verify/extract.mlpl
+# Final-answer extraction: the last boxed group with brace matching, then the numeric or full-text fallbacks. Requires lib/text/text.mlpl included first (nested includes cannot climb directories).
+#+end_src
+
+The *last* box wins, because a response often shows work in intermediate
+boxes before committing to an answer. Whitespace between the command and the
+brace is tolerated. Three distinct failures are reported separately, which the
+tests pin: no box at all, a box command not followed by a brace, and an
+unbalanced brace.
+
+#+begin_src mlpl :tangle ../lib/verify/extract.mlpl
+def u:verify_last_boxed(text) {
+  "ok(content) of the last \\boxed{...} group with balanced braces, or err({kind}) when there is no box, no brace, or an unbalanced brace.";
+  at_box = u:text_find_last(text, "\\boxed");
+  if lt(at_box, 0) {
+    err({kind: "no_boxed", message: "no \\boxed command"})
+  } else {
+    i = at_box + 6;
+    n = str_len(text);
+    while lt(i, n) * u:text_is_space(u:text_char_at(text, i)) {
+      i = i + 1
+    };
+    if str_eq(u:text_char_at(text, i), "{") {
+      close = u:text_match_brace(text, i);
+      if lt(close, 0) {
+        err({kind: "unbalanced", message: "unbalanced braces after \\boxed"})
+      } else {
+        ok(str_slice(text, i + 1, close - i - 1))
+      }
+    } else {
+      err({kind: "no_brace", message: "\\boxed not followed by a brace"})
+    }
+  }
+}
+#+end_src
+
+When there is no box the caller chooses what happens, and the choice is not
+cosmetic. Reinforcement learning scores with =boxed_only=, so an answer that
+is correct but unboxed earns nothing and the model learns the format.
+Measuring a base model uses =number_then_full=, which accepts the last bare
+number, because a model that has never been taught to box its answers would
+otherwise score zero for the wrong reason.
+
+#+begin_src mlpl :tangle ../lib/verify/extract.mlpl
+def u:verify_final_candidate(text, mode) {
+  "Candidate answer string: the last boxed group stripped of spaces and dollar signs; else, by mode, the last number (number_only, number_then_full), the whole trimmed text (number_then_full), or the empty string (boxed_only).";
+  trimmed = u:text_trim(text);
+  if str_eq(trimmed, "") {
+    ""
+  } else {
+    boxed = u:verify_last_boxed(trimmed);
+    if is_ok(boxed) {
+      u:text_strip_chars(u:text_trim(unwrap(boxed)), "$ ")
+    } else {
+      if str_eq(mode, "boxed_only") {
+        ""
+      } else {
+        number = u:text_last_number(trimmed);
+        if str_eq(number, "") {
+          if str_eq(mode, "number_then_full") {
+            trimmed
+          } else {
+            ""
+          }
+        } else {
+          number
+        }
+      }
+    }
+  }
+}
+#+end_src
+
+** lib/verify/normalize.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-verify-normalize-mlpl
+:END:
+
+Two answers can denote the same value and share no characters: =\dfrac{14}{3}=
+and =(14)/(3)=, or =90^\circ= and =90=. Normalization rewrites both sides into
+one comparable form by applying thirteen rules in a fixed order. The order
+matters; =docs/verifier-contract.md= is the specification and this module is
+its implementation.
+
+The module comment names the contract it implements and the dependency it
+needs loaded first.
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+# Ordered normalization of a candidate or reference answer into a comparable form (docs/verifier-contract.md). Requires lib/text/text.mlpl included first.
+#+end_src
+
+Two rules that only fire at the edges of the string. A leading =c.= or =b:=
+is a multiple-choice label and is dropped; a =\text{...}= that wraps the
+*entire* string is unwrapped. A partial =\text{}= is deliberately left alone,
+matching the reference implementation, and the later brace-removal rule then
+strips its braces so =a\text{b}c= becomes =a\textbc=.
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+def u:verify_strip_choice_label(s) {
+  "Drop a leading single-letter multiple-choice label followed by a period or colon and optional spaces.";
+  if u:text_is_letter(u:text_char_at(s, 0)) {
+    i = 1;
+    n = str_len(s);
+    while lt(i, n) * u:text_is_space(u:text_char_at(s, i)) {
+      i = i + 1
+    };
+    mark = u:text_char_at(s, i);
+    if str_eq(mark, ".") + str_eq(mark, ":") {
+      i = i + 1;
+      while lt(i, n) * u:text_is_space(u:text_char_at(s, i)) {
+        i = i + 1
+      };
+      str_slice(s, i, n - i)
+    } else {
+      s
+    }
+  } else {
+    s
+  }
+}
+
+def u:verify_unwrap_text(s) {
+  "Unwrap a \\text{...} that spans the whole string.";
+  if u:text_starts_with(s, "\\text{") {
+    close = u:text_match_brace(s, 5);
+    if close - (str_len(s) - 1) {
+      s
+    } else {
+      str_slice(s, 6, close - 6)
+    }
+  } else {
+    s
+  }
+}
+#+end_src
+
+LaTeX sizing commands such as =\left= are followed by spaces that must go
+with them, otherwise =\left( 1= would normalize to =( 1= and differ from
+=(1=.
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+def u:verify_remove_command_spaces(s, command) {
+  "Delete every occurrence of a LaTeX command together with the spaces that follow it.";
+  out = "";
+  pos = 0;
+  k = str_len(command);
+  n = str_len(s);
+  found = u:text_find_from(s, command, 0);
+  while gt(found, 0 - 1) {
+    out = str_concat(out, str_slice(s, pos, found - pos));
+    pos = found + k;
+    while lt(pos, n) * str_eq(u:text_char_at(s, pos), " ") {
+      pos = pos + 1
+    };
+    found = u:text_find_from(s, command, pos)
+  };
+  str_concat(out, str_slice(s, pos, n - pos))
+}
+#+end_src
+
+Unicode superscripts are mapped to ASCII and, when attached to an operand,
+become an explicit exponent: =2²= is =2**2=, while a bare =²= is just =2=.
+The long conditional chain is the language's idiom for a lookup table; there
+is no literal map type, and building a record incrementally is not possible.
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+def u:verify_superscript_digit(c) {
+  "ASCII form of one Unicode superscript character, or the empty string when c is not one.";
+  if str_eq(c, "⁰") {
+    "0"
+  } else {
+    if str_eq(c, "¹") {
+      "1"
+    } else {
+      if str_eq(c, "²") {
+        "2"
+      } else {
+        if str_eq(c, "³") {
+          "3"
+        } else {
+          if str_eq(c, "⁴") {
+            "4"
+          } else {
+            if str_eq(c, "⁵") {
+              "5"
+            } else {
+              if str_eq(c, "⁶") {
+                "6"
+              } else {
+                if str_eq(c, "⁷") {
+                  "7"
+                } else {
+                  if str_eq(c, "⁸") {
+                    "8"
+                  } else {
+                    if str_eq(c, "⁹") {
+                      "9"
+                    } else {
+                      if str_eq(c, "⁺") {
+                        "+"
+                      } else {
+                        if str_eq(c, "⁻") {
+                          "-"
+                        } else {
+                          if str_eq(c, "⁽") {
+                            "("
+                          } else {
+                            if str_eq(c, "⁾") {
+                              ")"
+                            } else {
+                              ""
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:verify_rewrite_superscripts(s) {
+  "Turn runs of Unicode superscripts into ASCII, prefixed by ** when attached to a preceding operand.";
+  out = "";
+  i = 0;
+  n = str_len(s);
+  while lt(i, n) {
+    c = u:text_char_at(s, i);
+    mapped = u:verify_superscript_digit(c);
+    if str_eq(mapped, "") {
+      out = str_concat(out, c);
+      i = i + 1
+    } else {
+      run = "";
+      while lt(i, n) * (1 - str_eq(u:verify_superscript_digit(u:text_char_at(s, i)), "")) {
+        run = str_concat(run, u:verify_superscript_digit(u:text_char_at(s, i)));
+        i = i + 1
+      };
+      prev = u:text_char_at(out, str_len(out) - 1);
+      attached = u:text_is_alnum(prev) + str_eq(prev, ")") + str_eq(prev, "]") + str_eq(prev, "}");
+      out = str_concat(out, if attached {
+          str_concat("**", run)
+        } else {
+          run
+        })
+    }
+  };
+  out
+}
+#+end_src
+
+Roots and fractions accept two spellings each, =\sqrt{2}= and =\sqrt 2=,
+=\frac{a}{b}= and =\frac a b=. =u:verify_group_after= reads whichever form is
+present and reports where it ended, so the two rewriters share one notion of
+"the next group".
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+def u:verify_rewrite_group_command(s, command, prefix, suffix) {
+  "Rewrite every command{a} as prefix a suffix and every command<space>c (single character) the same way.";
+  out = "";
+  pos = 0;
+  k = str_len(command);
+  n = str_len(s);
+  found = u:text_find_from(s, command, 0);
+  while gt(found, 0 - 1) {
+    out = str_concat(out, str_slice(s, pos, found - pos));
+    i = found + k;
+    while lt(i, n) * str_eq(u:text_char_at(s, i), " ") {
+      i = i + 1
+    };
+    if str_eq(u:text_char_at(s, i), "{") {
+      close = u:text_match_brace(s, i);
+      if lt(close, 0) {
+        out = str_concat(out, str_slice(s, found, k));
+        pos = found + k
+      } else {
+        out = str_concat(out, str_concat(prefix, str_concat(str_slice(s, i + 1, close - i - 1), suffix)));
+        pos = close + 1
+      }
+    } else {
+      if u:text_is_alnum(u:text_char_at(s, i)) {
+        out = str_concat(out, str_concat(prefix, str_concat(u:text_char_at(s, i), suffix)));
+        pos = i + 1
+      } else {
+        out = str_concat(out, str_slice(s, found, k));
+        pos = found + k
+      }
+    };
+    found = u:text_find_from(s, command, pos)
+  };
+  str_concat(out, str_slice(s, pos, n - pos))
+}
+
+def u:verify_group_after(s, i) {
+  "Record {text, next} for the group at i: a brace-matched group or one alphanumeric character after optional spaces; next is -1 when neither.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * str_eq(u:text_char_at(s, j), " ") {
+    j = j + 1
+  };
+  if str_eq(u:text_char_at(s, j), "{") {
+    close = u:text_match_brace(s, j);
+    if lt(close, 0) {
+      {text: "", next: 0 - 1}
+    } else {
+      {text: str_slice(s, j + 1, close - j - 1), next: close + 1}
+    }
+  } else {
+    if u:text_is_alnum(u:text_char_at(s, j)) {
+      {text: u:text_char_at(s, j), next: j + 1}
+    } else {
+      {text: "", next: 0 - 1}
+    }
+  }
+}
+
+def u:verify_rewrite_frac(s) {
+  "Rewrite every \\frac{a}{b} or \\frac a b as (a)/(b).";
+  out = "";
+  pos = 0;
+  n = str_len(s);
+  found = u:text_find_from(s, "\\frac", 0);
+  while gt(found, 0 - 1) {
+    out = str_concat(out, str_slice(s, pos, found - pos));
+    first = u:verify_group_after(s, found + 5);
+    second = if lt(first.next, 0) {
+      {text: "", next: 0 - 1}
+    } else { u:verify_group_after(s, first.next) };
+    if lt(second.next, 0) {
+      out = str_concat(out, "\\frac");
+      pos = found + 5
+    } else {
+      out = str_concat(out, str_concat("(", str_concat(first.text, str_concat(")/(", str_concat(second.text, ")")))));
+      pos = second.next
+    };
+    found = u:text_find_from(s, "\\frac", pos)
+  };
+  str_concat(out, str_slice(s, pos, n - pos))
+}
+#+end_src
+
+Two conventions from how people write numbers rather than how mathematics
+defines them: =3 1/2= means three and a half, and the comma in =1,234= is a
+thousands separator rather than a tuple boundary. The separator rule fires
+only when exactly three digits follow and a non-digit or the end comes after,
+which is what keeps =(1, 234)= a two-element tuple.
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+def u:verify_rewrite_mixed_numbers(s) {
+  "Turn a whole number followed by one space and a fraction (n a/b) into n+a/b.";
+  out = "";
+  i = 0;
+  n = str_len(s);
+  while lt(i, n) {
+    c = u:text_char_at(s, i);
+    is_gap = u:text_is_digit(u:text_char_at(s, i - 1)) * str_eq(c, " ") * gt(i, 0);
+    if is_gap {
+      stop = u:text_number_end(s, i + 1);
+      frac = if gt(stop, 0 - 1) {
+        str_slice(s, i + 1, stop - i - 1)
+      } else {
+        ""
+      };
+      if u:text_contains(frac, "/") * (1 - u:text_starts_with(frac, "-")) {
+        out = str_concat(out, "+")
+      } else {
+        out = str_concat(out, c)
+      }
+    } else {
+      out = str_concat(out, c)
+    };
+    i = i + 1
+  };
+  out
+}
+
+def u:verify_remove_thousands_commas(s) {
+  "Delete a comma that sits between a digit and exactly three digits followed by a non-digit or the end.";
+  out = "";
+  i = 0;
+  n = str_len(s);
+  while lt(i, n) {
+    c = u:text_char_at(s, i);
+    drop = 0;
+    if str_eq(c, ",") * u:text_is_digit(u:text_char_at(s, i - 1)) * gt(i, 0) {
+      stop = u:text_digits_end(s, i + 1);
+      if stop - (i + 4) {
+        0
+      } else {
+        drop = 1
+      }
+    } else {
+      0
+    };
+    if drop {
+      0
+    } else {
+      out = str_concat(out, c)
+    };
+    i = i + 1
+  };
+  out
+}
+#+end_src
+
+The pipeline itself. Reading it top to bottom is reading the contract: the
+rules are numbered there in this order, and each line here is one rule. The
+last three lines strip braces, trim, and lower-case, which is why anything
+that survives as a LaTeX command ends up as bare letters.
+
+#+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
+def u:verify_normalize(text) {
+  "Apply the thirteen ordered normalization rules of the verifier contract and return the comparable lower-case form.";
+  if str_eq(text, "") {
+    ""
+  } else {
+    s = u:text_trim(u:text_remove_control_tokens(text));
+    s = u:verify_strip_choice_label(s);
+    s = u:text_replace_all(s, "^{\\circ}", "");
+    s = u:text_replace_all(s, "^\\circ", "");
+    s = u:text_replace_all(s, "°", "");
+    s = u:verify_unwrap_text(s);
+    s = u:text_replace_all(s, "\\(", "");
+    s = u:text_replace_all(s, "\\)", "");
+    s = u:text_replace_all(s, "\\[", "");
+    s = u:text_replace_all(s, "\\]", "");
+    s = u:verify_remove_command_spaces(s, "\\left");
+    s = u:verify_remove_command_spaces(s, "\\right");
+    s = u:text_replace_all(s, "\\,", "");
+    s = u:text_replace_all(s, "\\!", "");
+    s = u:text_replace_all(s, str_concat("\\", ";"), "");
+    s = u:text_replace_all(s, "\\:", "");
+    s = u:text_replace_all(s, "\\cdot", "*");
+    s = u:text_replace_all(s, "·", "*");
+    s = u:text_replace_all(s, "×", "*");
+    s = u:text_replace_all(s, "\\dfrac", "\\frac");
+    s = u:text_replace_all(s, "\\tfrac", "\\frac");
+    s = u:verify_rewrite_superscripts(s);
+    s = u:text_replace_all(s, "\\%", "%");
+    s = u:text_replace_all(s, "$", "");
+    s = u:text_replace_all(s, "%", "");
+    s = u:verify_rewrite_group_command(s, "\\sqrt", "sqrt(", ")");
+    s = u:verify_rewrite_frac(s);
+    s = u:text_replace_all(s, "^", "**");
+    s = u:verify_rewrite_mixed_numbers(s);
+    s = u:verify_remove_thousands_commas(s);
+    s = u:text_replace_all(s, "{", "");
+    s = u:text_replace_all(s, "}", "");
+    u:text_lower(u:text_trim(s))
+  }
+}
+#+end_src
+
+** lib/verify/number.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-verify-number-mlpl
+:END:
+
+To decide that =0.5= and =1/2= are the same number, something has to evaluate
+them. The reference implementation calls a symbolic algebra system; there is
+none here, so this module provides exact rational arithmetic and the next one
+provides a parser.
+
+The single most consequential decision in the verifier is here: a decimal is
+parsed as an exact rational, not a float. That is why =0.5= equals one half
+while a truncated =0.3333333333= does *not* equal one third, matching the
+reference exactly. An earlier draft of the contract predicted a
+floating-point tolerance would be needed and that the truncated decimal would
+wrongly compare equal; exact rationals avoided the problem entirely.
+
+A value is a record: a numerator, a denominator, and a flag saying whether it
+is still exact.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+# Exact-rational arithmetic with a floating fallback, so a decimal and a fraction compare exactly while roots and constants stay approximate.
+#+end_src
+
+Every array element in sw-MLPL is a double, so integers are exact only below
+two to the fifty-third. That bound is named once here and consulted whenever
+a result could cross it. The greatest common divisor uses magnitudes because
+the language's modulo takes the sign of its left operand.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+def u:verify_exact_limit() {
+  "Largest magnitude an exact numerator or denominator may reach before the value degrades to floating point.";
+  9007199254740992
+}
+
+def u:verify_gcd(a, b) {
+  "Greatest common divisor of two magnitudes, by Euclid.";
+  x = abs(a);
+  y = abs(b);
+  while y {
+    t = mod(x, y);
+    x = y;
+    y = t
+  };
+  x
+}
+
+def u:verify_float(v) {
+  "An inexact value carrying only its floating magnitude.";
+  {num: v, den: 1, exact: 0}
+}
+
+def u:verify_value(v) {
+  "The floating magnitude of an exact or inexact value.";
+  v.num / v.den
+}
+#+end_src
+
+Construction is where exactness is won or lost. The result is reduced, the
+sign is moved to the numerator so equal values have equal representations,
+and if either part would exceed the exact limit the value degrades to a
+float rather than silently reporting a wrong answer. =u:verify_combine= makes
+that contagious: any operation involving an approximate value is
+approximate.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+def u:verify_rational(n, d) {
+  "An exact rational reduced to lowest terms with the sign in the numerator; degrades to floating point on a zero denominator or once a part exceeds the exact-integer limit.";
+  if d {
+    sign = if lt(d, 0) {
+      0 - 1
+    } else {
+      1
+    };
+    g = u:verify_gcd(n, d);
+    if g {
+      num = sign * n / g;
+      den = sign * d / g;
+      if gt(abs(num), u:verify_exact_limit()) + gt(den, u:verify_exact_limit()) { u:verify_float(num / den) } else {
+        {num: num, den: den, exact: 1}
+      }
+    } else {
+      {num: 0, den: 1, exact: 1}
+    }
+  } else {
+    u:verify_float(n / d)
+  }
+}
+
+def u:verify_combine(a, b, n, d) {
+  "Build the result of a binary operation: exact when both operands are exact, floating otherwise.";
+  if a.exact * b.exact { u:verify_rational(n, d) } else { u:verify_float(n / d) }
+}
+#+end_src
+
+The four arithmetic operations are the schoolbook rational formulas. Division
+by zero yields a floating infinity rather than an error, because the verifier
+must be total: a malformed answer should grade wrong, not crash the run.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+def u:verify_add(a, b) {
+  "Sum of two values.";
+  u:verify_combine(a, b, a.num * b.den + b.num * a.den, a.den * b.den)
+}
+
+def u:verify_sub(a, b) {
+  "Difference of two values.";
+  u:verify_combine(a, b, a.num * b.den - b.num * a.den, a.den * b.den)
+}
+
+def u:verify_mul(a, b) {
+  "Product of two values.";
+  u:verify_combine(a, b, a.num * b.num, a.den * b.den)
+}
+
+def u:verify_div(a, b) {
+  "Quotient of two values; division by zero yields a floating infinity rather than an error.";
+  u:verify_combine(a, b, a.num * b.den, a.den * b.num)
+}
+
+def u:verify_neg(a) {
+  "Negation of a value.";
+  if a.exact {
+    {num: 0 - a.num, den: a.den, exact: 1}
+  } else { u:verify_float(0 - a.num) }
+}
+#+end_src
+
+A square root stays exact only when both parts are perfect squares, so
+=sqrt(9/4)= is three halves exactly while =sqrt(2)= becomes approximate. This
+is the honest boundary: the module never claims exactness it cannot
+demonstrate.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+def u:verify_perfect_root(n) {
+  "Exact square root of a non-negative integer, or -1 when it is not a perfect square.";
+  if lt(n, 0) {
+    0 - 1
+  } else {
+    r = round(sqrt(n));
+    if r * r - n {
+      0 - 1
+    } else {
+      r
+    }
+  }
+}
+
+def u:verify_sqrt(a) {
+  "Square root: exact when both parts of an exact value are perfect squares, floating otherwise.";
+  if a.exact * (1 - lt(a.num, 0)) {
+    rn = u:verify_perfect_root(a.num);
+    rd = u:verify_perfect_root(a.den);
+    if gt(rn, 0 - 1) * gt(rd, 0 - 1) { u:verify_rational(rn, rd) } else { u:verify_float(sqrt(u:verify_value(a))) }
+  } else {
+    u:verify_float(sqrt(u:verify_value(a)))
+  }
+}
+#+end_src
+
+Exponentiation is repeated multiplication for an exact base and an exact
+integer exponent, which keeps =2**10= exact; anything else falls back to the
+floating builtin. A negative exponent inverts.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+def u:verify_pow_int(a, k) {
+  "Raise a value to a non-negative integer power by repeated multiplication.";
+  result = {num: 1, den: 1, exact: 1};
+  i = 0;
+  while i - k {
+    result = u:verify_mul(result, a);
+    i = i + 1
+  };
+  result
+}
+
+def u:verify_pow(a, b) {
+  "Exponentiation: exact for an exact base with an exact integer exponent, floating otherwise.";
+  whole = if b.exact {
+    if b.den - 1 {
+      0
+    } else {
+      1
+    }
+  } else {
+    0
+  };
+  if a.exact * whole {
+    if lt(b.num, 0) { u:verify_div({num: 1, den: 1, exact: 1}, u:verify_pow_int(a, 0 - b.num)) } else { u:verify_pow_int(a, b.num) }
+  } else {
+    u:verify_float(pow(u:verify_value(a), u:verify_value(b)))
+  }
+}
+#+end_src
+
+Equality is the point of the whole module. Two exact values are compared by
+cross-multiplication, which is exact as long as the cross-products themselves
+stay under the limit. Otherwise, and whenever either side is approximate, the
+comparison is numeric within a relative tolerance.
+
+#+begin_src mlpl :tangle ../lib/verify/number.mlpl
+def u:verify_equal_values(a, b) {
+  "1 when two values are equal: cross-multiplied exactly when both are exact and within the integer limit, else within a relative tolerance of 1e-9.";
+  both_exact = a.exact * b.exact;
+  cross_small = lt(abs(a.num * b.den), u:verify_exact_limit()) * lt(abs(b.num * a.den), u:verify_exact_limit());
+  if both_exact * cross_small {
+    if a.num * b.den - b.num * a.den {
+      0
+    } else {
+      1
+    }
+  } else {
+    x = u:verify_value(a);
+    y = u:verify_value(b);
+    scale = reduce(:max, [1, abs(x), abs(y)]);
+    1 - gt(abs(x - y), 0.000000001 * scale)
+  }
+}
+#+end_src
+
+** lib/verify/expr.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-verify-expr-mlpl
+:END:
+
+A recursive-descent parser over the normalized string, producing one of those
+values. The grammar is small on purpose: sums, products, powers, unary signs,
+parentheses, =sqrt=, =pi=, =e=, and implicit multiplication. Anything else,
+including a free symbol such as =x=, is reported rather than guessed at.
+
+Each parsing function returns a record carrying success, the position it
+reached, and the value, which is how a language without mutable references
+threads parser state.
+
+The module comment lists the two files that must be loaded before it.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+# Bounded recursive-descent parser and evaluator for normalized answers. Requires lib/text/text.mlpl and lib/verify/number.mlpl included first.
+#+end_src
+
+The shared vocabulary: a length budget, the two result shapes, and a
+whitespace skipper. Failures carry a classification, and the three kinds are
+meaningful to callers: =budget= means too long to try, =syntax= means
+malformed, =symbolic= means well formed but not a number.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+def u:verify_expr_limit() {
+  "Longest input the parser accepts, in characters.";
+  2000
+}
+
+def u:verify_fail(kind, message) {
+  "A parse failure carrying its classification.";
+  {ok: 0, pos: 0, value: {num: 0, den: 1, exact: 1}, kind: kind, message: message}
+}
+
+def u:verify_step(pos, value) {
+  "A successful parse step: the value and the position just past it.";
+  {ok: 1, pos: pos, value: value, kind: "", message: ""}
+}
+
+def u:verify_skip(s, i) {
+  "Index of the first non-space character at or after i.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * u:text_is_space(u:text_char_at(s, j)) {
+    j = j + 1
+  };
+  j
+}
+#+end_src
+
+Tokens. A number is digits, an optional fractional part, and an optional
+exponent; the fractional part becomes a rational with a power-of-ten
+denominator, which is the mechanism behind exact decimals. A trailing point
+with no digits after it is accepted, so =4.= is four, matching what the
+reference's parser does with the same input.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+def u:verify_digits_value(s, a, b) {
+  "Decimal value of the digits in [a, b).";
+  v = 0;
+  i = a;
+  while lt(i, b) {
+    v = v * 10 + unwrap(to_number(u:text_char_at(s, i)));
+    i = i + 1
+  };
+  v
+}
+
+def u:verify_scan_number(s, i) {
+  "Parse an unsigned number (digits, optional fraction, optional exponent) into an exact rational.";
+  n = str_len(s);
+  a = u:text_digits_end(s, i);
+  if a - i {
+    whole = u:verify_digits_value(s, i, a);
+    pos = a;
+    frac = {num: 0, den: 1, exact: 1};
+    if str_eq(u:text_char_at(s, pos), ".") {
+      b = u:text_digits_end(s, pos + 1);
+      frac = u:verify_rational(u:verify_digits_value(s, pos + 1, b), u:verify_pow_int({num: 10, den: 1, exact: 1}, b - pos - 1).num);
+      pos = b
+    } else {
+      0
+    };
+    value = u:verify_add(u:verify_rational(whole, 1), frac);
+    marker = u:text_char_at(s, pos);
+    if str_eq(marker, "e") + str_eq(marker, "E") {
+      k = pos + 1;
+      negative = str_eq(u:text_char_at(s, k), "-");
+      if negative + str_eq(u:text_char_at(s, k), "+") {
+        k = k + 1
+      } else {
+        0
+      };
+      if u:text_is_digit(u:text_char_at(s, k)) {
+        stop = u:text_digits_end(s, k);
+        scale = u:verify_pow_int({num: 10, den: 1, exact: 1}, u:verify_digits_value(s, k, stop));
+        value = if negative { u:verify_div(value, scale) } else { u:verify_mul(value, scale) };
+        pos = stop
+      } else {
+        0
+      }
+    } else {
+      0
+    };
+    u:verify_step(pos, value)
+  } else {
+    u:verify_fail("syntax", "expected a number")
+  }
+}
+
+def u:verify_scan_name(s, i) {
+  "Index just past a run of ASCII letters starting at i.";
+  n = str_len(s);
+  j = i;
+  while lt(j, n) * u:text_is_letter(u:text_char_at(s, j)) {
+    j = j + 1
+  };
+  j
+}
+#+end_src
+
+Primaries are where recursion begins: a parenthesized expression, a call to
+=sqrt=, a named constant, or a number. An unrecognized name is not an error in
+the syntactic sense, it is the =symbolic= verdict, and the grader uses that
+distinction to fall back to text comparison.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+def u:verify_parse_primary(s, i) {
+  "Parse a number, a parenthesized expression, sqrt applied to one, or a known constant; an unknown name is a symbolic failure.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "") {
+    u:verify_fail("syntax", "unexpected end of input")
+  } else {
+    if str_eq(c, "(") {
+      inner = u:verify_parse_expr(s, pos + 1);
+      if inner.ok {
+        after = u:verify_skip(s, inner.pos);
+        if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, inner.value) } else { u:verify_fail("syntax", "missing closing parenthesis") }
+      } else {
+        inner
+      }
+    } else {
+      if u:text_is_digit(c) {
+        u:verify_scan_number(s, pos)
+      } else {
+        if u:text_is_letter(c) {
+          stop = u:verify_scan_name(s, pos);
+          name = str_slice(s, pos, stop - pos);
+          if str_eq(name, "sqrt") {
+            open = u:verify_skip(s, stop);
+            if str_eq(u:text_char_at(s, open), "(") {
+              inner = u:verify_parse_expr(s, open + 1);
+              if inner.ok {
+                after = u:verify_skip(s, inner.pos);
+                if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, u:verify_sqrt(inner.value)) } else { u:verify_fail("syntax", "missing closing parenthesis after sqrt") }
+              } else {
+                inner
+              }
+            } else {
+              u:verify_fail("syntax", "sqrt without an argument")
+            }
+          } else {
+            if str_eq(name, "pi") {
+              u:verify_step(stop, u:verify_float(pi()))
+            } else {
+              if str_eq(name, "e") { u:verify_step(stop, u:verify_float(e())) } else { u:verify_fail("symbolic", str_concat("free symbol: ", name)) }
+            }
+          }
+        } else {
+          u:verify_fail("syntax", str_concat("unexpected character: ", c))
+        }
+      }
+    }
+  }
+}
+#+end_src
+
+Precedence lives in the shape of these three functions. Exponentiation binds
+tighter than a unary minus, so =-2**2= is minus four; and it is
+right-associative, so =2**3**2= is two to the ninth. =u:verify_starts_factor=
+decides when juxtaposition means multiplication, which is what makes
+=2(3+4)= and =3sqrt(4)= parse.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+def u:verify_parse_power(s, i) {
+  "Parse a primary optionally raised to a power; the exponent is right-associative and may carry a sign.";
+  base = u:verify_parse_primary(s, i);
+  if base.ok {
+    pos = u:verify_skip(s, base.pos);
+    if str_eq(u:text_char_at(s, pos), "*") * str_eq(u:text_char_at(s, pos + 1), "*") {
+      exponent = u:verify_parse_unary(s, pos + 2);
+      if exponent.ok { u:verify_step(exponent.pos, u:verify_pow(base.value, exponent.value)) } else {
+        exponent
+      }
+    } else {
+      base
+    }
+  } else {
+    base
+  }
+}
+
+def u:verify_parse_unary(s, i) {
+  "Parse an optionally signed power; a leading minus binds looser than exponentiation.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "-") {
+    inner = u:verify_parse_unary(s, pos + 1);
+    if inner.ok { u:verify_step(inner.pos, u:verify_neg(inner.value)) } else {
+      inner
+    }
+  } else {
+    if str_eq(c, "+") { u:verify_parse_unary(s, pos + 1) } else { u:verify_parse_power(s, i) }
+  }
+}
+
+def u:verify_starts_factor(c) {
+  "1 when c can begin a factor, which is what makes implicit multiplication unambiguous.";
+  u:text_is_digit(c) + u:text_is_letter(c) + str_eq(c, "(")
+}
+#+end_src
+
+Products and sums are left-associative loops rather than recursion, so a long
+expression does not deepen the stack. Both carry a failure record out of the
+loop instead of raising, keeping the parser total.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+def u:verify_parse_term(s, i) {
+  "Parse a product: explicit star and slash operators plus implicit multiplication such as 2(3+4) or 3sqrt(2).";
+  left = u:verify_parse_unary(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      is_star = str_eq(c, "*") * (1 - str_eq(u:text_char_at(s, at + 1), "*"));
+      is_slash = str_eq(c, "/");
+      implicit = u:verify_starts_factor(c);
+      if is_star + is_slash + implicit {
+        start = if implicit {
+          at
+        } else {
+          at + 1
+        };
+        right = u:verify_parse_power(s, start);
+        if right.ok {
+          value = if is_slash { u:verify_div(value, right.value) } else { u:verify_mul(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_parse_expr(s, i) {
+  "Parse a sum of terms.";
+  left = u:verify_parse_term(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      if str_eq(c, "+") + str_eq(c, "-") {
+        right = u:verify_parse_term(s, at + 1);
+        if right.ok {
+          value = if str_eq(c, "+") { u:verify_add(value, right.value) } else { u:verify_sub(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+#+end_src
+
+The entry point applies the budget, rejects trailing characters that the
+grammar did not consume, and returns an ordinary Result.
+
+#+begin_src mlpl :tangle ../lib/verify/expr.mlpl
+def u:verify_parse(text) {
+  "Evaluate a normalized answer to a numeric value: ok(value) or err({kind, message}) with kind budget, syntax, or symbolic.";
+  if gt(str_len(text), u:verify_expr_limit()) {
+    err({kind: "budget", message: "expression exceeds the character limit"})
+  } else {
+    trimmed = u:text_trim(text);
+    if str_eq(trimmed, "") {
+      err({kind: "syntax", message: "empty expression"})
+    } else {
+      parsed = u:verify_parse_expr(trimmed, 0);
+      if parsed.ok {
+        rest = u:verify_skip(trimmed, parsed.pos);
+        if rest - str_len(trimmed) {
+          err({kind: "syntax", message: "trailing characters"})
+        } else {
+          ok(parsed.value)
+        }
+      } else {
+        err({kind: parsed.kind, message: parsed.message})
+      }
+    }
+  }
+}
+#+end_src
+
+** lib/verify/grade.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-verify-grade-mlpl
+:END:
+
+The verdict. Grading composes everything above: normalize both sides, split
+tuples, compare part by part, and return one or zero. This function is the
+reward signal that reinforcement learning will optimize, so its edge cases are
+not academic.
+
+Five dependencies, all of which the demo runner inlines in order.
+
+#+begin_src mlpl :tangle ../lib/verify/grade.mlpl
+# Answer grading: tuple splitting, part-wise equivalence, and the total grade function. Requires lib/text/text.mlpl, lib/verify/number.mlpl, lib/verify/expr.mlpl, and lib/verify/normalize.mlpl included first.
+#+end_src
+
+A bracketed, comma-separated answer is a tuple and its parts are compared
+individually. The split only fires on top-level commas, so a nested tuple
+stays whole, and an empty part abandons the split entirely rather than
+producing a meaningless part.
+
+#+begin_src mlpl :tangle ../lib/verify/grade.mlpl
+def u:verify_bracket_depth(c, depth) {
+  "Depth after reading one character: opening brackets add, closing brackets subtract.";
+  depth + str_eq(c, "(") + str_eq(c, "[") + str_eq(c, "{") - str_eq(c, ")") - str_eq(c, "]") - str_eq(c, "}")
+}
+
+def u:verify_split_parts(text) {
+  "Split a bracketed comma-separated answer into trimmed parts; anything else, and any split that would leave an empty part, stays one part. An empty input has no parts.";
+  n = str_len(text);
+  if n {
+    first = u:text_char_at(text, 0);
+    last = u:text_char_at(text, n - 1);
+    opened = str_eq(first, "(") + str_eq(first, "[");
+    closed = str_eq(last, ")") + str_eq(last, "]");
+    if opened * closed {
+      joined = "";
+      piece = "";
+      depth = 0;
+      commas = 0;
+      empty = 0;
+      i = 1;
+      while lt(i, n - 1) {
+        c = u:text_char_at(text, i);
+        if str_eq(c, ",") * (1 - depth) {
+          trimmed = u:text_trim(piece);
+          if str_eq(trimmed, "") {
+            empty = 1
+          } else {
+            0
+          };
+          joined = if commas {
+            str_concat(joined, str_concat("\n", trimmed))
+          } else {
+            trimmed
+          };
+          commas = commas + 1;
+          piece = ""
+        } else {
+          depth = u:verify_bracket_depth(c, depth);
+          piece = str_concat(piece, c)
+        };
+        i = i + 1
+      };
+      trimmed = u:text_trim(piece);
+      if str_eq(trimmed, "") {
+        empty = 1
+      } else {
+        0
+      };
+      joined = if commas {
+        str_concat(joined, str_concat("\n", trimmed))
+      } else {
+        trimmed
+      };
+      if commas * (1 - empty) {
+        str_split(joined, "\n")
+      } else {
+        str_split(text, "\n")
+      }
+    } else {
+      str_split(text, "\n")
+    }
+  } else {
+    str_split("", "")
+  }
+}
+#+end_src
+
+Two parts match if their text matches, or if both evaluate to equal numbers.
+When either fails to evaluate, the comparison falls back to text with spaces
+removed, so =x+1= matches =x + 1= but not =1+x=. Recognizing that last pair
+would require symbolic simplification, which this project does not implement
+and the contract says so plainly.
+
+#+begin_src mlpl :tangle ../lib/verify/grade.mlpl
+def u:verify_equivalent(left, right) {
+  "1 when two already-normalized parts are equal as numbers, or, when either fails to evaluate, as strings compared with every space removed. Symbolic rearrangement is deliberately not recognized.";
+  if str_eq(left, right) {
+    1
+  } else {
+    a = u:verify_parse(left);
+    b = u:verify_parse(right);
+    if is_ok(a) * is_ok(b) {
+      u:verify_equal_values(unwrap(a), unwrap(b))
+    } else {
+      str_eq(u:text_replace_all(left, " ", ""), u:text_replace_all(right, " ", ""))
+    }
+  }
+}
+#+end_src
+
+The grader is total: an empty side, a mismatched part count, or unparsable
+text all grade zero rather than raising. =u:verify_grade_response= is the
+reward function itself, extraction mode included, and it is what chapter six
+will call once per rollout.
+
+#+begin_src mlpl :tangle ../lib/verify/grade.mlpl
+def u:verify_grade(candidate, reference) {
+  "1 when the candidate answer matches the reference: both normalize, split into the same number of parts, and every aligned pair is equivalent in order. Total: an empty or unparsable side grades 0 rather than raising.";
+  if str_eq(candidate, "") + str_eq(reference, "") {
+    0
+  } else {
+    left = u:verify_split_parts(u:verify_normalize(candidate));
+    right = u:verify_split_parts(u:verify_normalize(reference));
+    count = list_len(left);
+    if count - list_len(right) {
+      0
+    } else {
+      if count {
+        matched = 1;
+        i = 0;
+        while lt(i, count) {
+          if u:verify_equivalent(unwrap(list_get(left, i)), unwrap(list_get(right, i))) {
+            0
+          } else {
+            matched = 0;
+            i = count
+          };
+          i = i + 1
+        };
+        matched
+      } else {
+        0
+      }
+    }
+  }
+}
+
+def u:verify_grade_response(response, reference, mode) {
+  "Extract the final answer from a model response using the given fallback mode, then grade it. This is the reward function used by evaluation and reinforcement learning.";
+  u:verify_grade(u:verify_final_candidate(response, mode), reference)
+}
+#+end_src
+
+** lib/eval/data.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-eval-data-mlpl
+:END:
+
+Datasets arrive as JSON Lines, one problem per line. That is not a stylistic
+preference: =parse_json= rejects an array of objects by design, because
+sw-MLPL arrays are homogeneous and numeric, so a heterogeneous list has no
+representation. JSON Lines sidesteps the question, and the loader below adds
+budgets, schema validation, and errors that name the offending field and
+line.
+
+The module owns the =u:eval_= prefix together with the harness.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+# Bounded loading and validation of MATH-style problem records from JSONL text, files, and small JSON arrays.
+#+end_src
+
+Budgets are explicit and overridable, and every failure has one shape:
+a kind, a line number, a field name, and a message. Six kinds appear across
+the module and the tests pin each one.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+def u:eval_data_defaults() {
+  "Default budgets: whole-input characters, record count, and characters per line.";
+  {max_bytes: 4194304, max_records: 100000, max_line_bytes: 65536}
+}
+
+def u:eval_data_opt(opts, name, fallback) {
+  "Read one budget from an options record, falling back to the default when absent.";
+  if has_field(opts, name) {
+    unwrap(record_get(opts, name))
+  } else {
+    fallback
+  }
+}
+
+def u:eval_data_error(kind, line_no, field, message) {
+  "Build the uniform error payload every loader failure carries.";
+  err({kind: kind, line: line_no, field: field, message: message})
+}
+#+end_src
+
+The schema requires a problem and an answer, both strings, and permits a
+solution, subject, identifier, and level. Level may be a number or a string
+because published datasets disagree about that field.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+def u:eval_field_string(record, name, line_no, required) {
+  "Require or permit one string-valued field; report a missing or wrongly typed field by name and line.";
+  if has_field(record, name) {
+    if str_eq(type_of(unwrap(record_get(record, name))), "string") {
+      ok(1)
+    } else {
+      u:eval_data_error("type", line_no, name, str_concat(name, " must be a string"))
+    }
+  } else {
+    if required {
+      u:eval_data_error("missing_field", line_no, name, str_concat("required field absent: ", name))
+    } else {
+      ok(1)
+    }
+  }
+}
+
+def u:eval_validate_record(record, line_no) {
+  "Validate the MATH record schema: problem and answer strings, optional solution, subject, unique_id strings, optional numeric or string level.";
+  u:eval_field_string(record, "problem", line_no, 1)?;
+  u:eval_field_string(record, "answer", line_no, 1)?;
+  u:eval_field_string(record, "solution", line_no, 0)?;
+  u:eval_field_string(record, "subject", line_no, 0)?;
+  u:eval_field_string(record, "unique_id", line_no, 0)?;
+  if has_field(record, "level") {
+    kind = type_of(record.level);
+    if str_eq(kind, "array") {
+      if rank(record.level) { u:eval_data_error("type", line_no, "level", "level must be a scalar or a string") } else {
+        ok(record)
+      }
+    } else {
+      if str_eq(kind, "string") {
+        ok(record)
+      } else { u:eval_data_error("type", line_no, "level", "level must be a scalar or a string") }
+    }
+  } else {
+    ok(record)
+  }
+}
+#+end_src
+
+One line at a time, under its own character budget, with the parse error
+carried through rather than raised. A trailing newline at the end of a file
+would otherwise look like an empty final record, so it is counted away.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+def u:eval_parse_line(line, line_no, max_line_bytes) {
+  "Parse one JSONL line within its character budget and validate its schema.";
+  if gt(str_len(line), max_line_bytes) {
+    u:eval_data_error("budget", line_no, "", "line exceeds max_line_bytes")
+  } else {
+    parsed = parse_json(line, {max_depth: 4, max_bytes: max_line_bytes * 4});
+    if is_err(parsed) {
+      u:eval_data_error("parse", line_no, "", err_message(parsed))
+    } else {
+      value = unwrap(parsed);
+      if str_eq(type_of(value), "record") {
+        u:eval_validate_record(value, line_no)
+      } else {
+        u:eval_data_error("type", line_no, "", "line is not a JSON object")
+      }
+    }
+  }
+}
+
+def u:eval_line_count(lines) {
+  "Count lines while ignoring one trailing empty line left by a final newline.";
+  n = list_len(lines);
+  if n {
+    if str_eq(unwrap(list_get(lines, n - 1)), "") {
+      n - 1
+    } else {
+      n
+    }
+  } else {
+    0
+  }
+}
+#+end_src
+
+The loop validates every line before returning, so a dataset is either
+entirely usable or reported with the first thing wrong with it. Validation
+happens once; the lines themselves are kept as text.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+def u:eval_load_jsonl_text(text, source, opts) {
+  "Validate every line of JSONL text under the budgets and return a dataset record {source, lines, count}.";
+  max_bytes = u:eval_data_opt(opts, "max_bytes", 4194304);
+  max_records = u:eval_data_opt(opts, "max_records", 100000);
+  max_line_bytes = u:eval_data_opt(opts, "max_line_bytes", 65536);
+  if gt(str_len(text), max_bytes) {
+    u:eval_data_error("budget", 0, "", "input exceeds max_bytes")
+  } else {
+    lines = str_split(text, "\n");
+    count = u:eval_line_count(lines);
+    if gt(count, max_records) {
+      u:eval_data_error("budget", 0, "", "record count exceeds max_records")
+    } else {
+      i = 0;
+      failure = ok(1);
+      while i - count {
+        checked = u:eval_parse_line(unwrap(list_get(lines, i)), i + 1, max_line_bytes);
+        if is_err(checked) {
+          failure = checked;
+          i = count
+        } else {
+          i = i + 1
+        }
+      };
+      if is_err(failure) {
+        failure
+      } else {
+        ok({source: source, lines: lines, count: count})
+      }
+    }
+  }
+}
+
+def u:eval_load_jsonl(path, opts) {
+  "Read a sandboxed JSONL file and validate it into a dataset record.";
+  text = read_text(path);
+  if is_err(text) {
+    u:eval_data_error("io", 0, "", err_message(text))
+  } else {
+    u:eval_load_jsonl_text(unwrap(text), path, opts)
+  }
+}
+#+end_src
+
+Records are parsed on access rather than kept as a list, because the language
+has string lists and numeric arrays but no growable list of records. Slicing
+is by re-splitting the retained text, which keeps a slice the same kind of
+value as the whole dataset.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+def u:eval_count(dataset) {
+  "Number of validated records in a dataset.";
+  dataset.count
+}
+
+def u:eval_record(dataset, index) {
+  "Return record index (0-based) as a parsed record; out-of-range indexes are an error, not a crash.";
+  if lt(index, 0) {
+    u:eval_data_error("index", 0, "", "index below zero")
+  } else {
+    if lt(index, dataset.count) {
+      ok(unwrap(parse_json(unwrap(list_get(dataset.lines, index)))))
+    } else {
+      u:eval_data_error("index", 0, "", "index beyond the last record")
+    }
+  }
+}
+
+def u:eval_slice(dataset, start, count) {
+  "Deterministic contiguous slice [start, start + count) clamped to the dataset, as a new dataset record.";
+  if lt(start, 0) {
+    u:eval_data_error("index", 0, "", "slice start below zero")
+  } else {
+    stop = start + count;
+    if gt(stop, dataset.count) {
+      stop = dataset.count
+    } else {
+      0
+    };
+    text = "";
+    i = start;
+    while lt(i, stop) {
+      line = unwrap(list_get(dataset.lines, i));
+      text = if str_eq(text, "") {
+        line
+      } else {
+        str_concat(text, str_concat("\n", line))
+      };
+      i = i + 1
+    };
+    if str_eq(text, "") {
+      ok({source: dataset.source, lines: [], count: 0})
+    } else {
+      ok({source: dataset.source, lines: str_split(text, "\n"), count: stop - start})
+    }
+  }
+}
+#+end_src
+
+Some published files are a JSON array of objects, so this scanner rewrites one
+into JSON Lines by tracking brace depth and string state, including escapes.
+It is bounded by a character budget because it runs in the interpreter, one
+character at a time. Braces inside strings do not split objects, which the
+tests check directly.
+
+#+begin_src mlpl :tangle ../lib/eval/data.mlpl
+def u:eval_scan_step(state, c) {
+  "Advance the JSON array scanner state {depth, in_string, escaped, seen_open, seen_close, start, pieces} by one character at index state.i over state.text.";
+  if state.in_string {
+    if state.escaped {
+      state = {depth: state.depth, in_string: 1, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+    } else {
+      if str_eq(c, "\\") {
+        state = {depth: state.depth, in_string: 1, escaped: 1, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+      } else {
+        if str_eq(c, "\"") {
+          state = {depth: state.depth, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+        } else {
+          0
+        }
+      }
+    }
+  } else {
+    if str_eq(c, "\"") {
+      state = {depth: state.depth, in_string: 1, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+    } else {
+      if str_eq(c, "[") {
+        if state.depth {
+          0
+        } else {
+          state = {depth: 0, in_string: 0, escaped: 0, seen_open: 1, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+        }
+      } else {
+        if str_eq(c, "]") {
+          if state.depth {
+            0
+          } else {
+            state = {depth: 0, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: 1, start: state.start, pieces: state.pieces, text: state.text, i: state.i}
+          }
+        } else {
+          if str_eq(c, "{") {
+            begin = if state.depth {
+              state.start
+            } else {
+              state.i
+            };
+            state = {depth: state.depth + 1, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: begin, pieces: state.pieces, text: state.text, i: state.i}
+          } else {
+            if str_eq(c, "}") {
+              depth = state.depth - 1;
+              pieces = if depth {
+                state.pieces
+              } else { u:eval_append_line(state.pieces, str_slice(state.text, state.start, state.i - state.start + 1)) };
+              state = {depth: depth, in_string: 0, escaped: 0, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: pieces, text: state.text, i: state.i}
+            } else {
+              0
+            }
+          }
+        }
+      }
+    }
+  };
+  state
+}
+
+def u:eval_append_line(text, line) {
+  "Append one line to accumulated JSONL text, without a leading newline on the first line.";
+  if str_eq(text, "") {
+    line
+  } else {
+    str_concat(text, str_concat("\n", line))
+  }
+}
+
+def u:eval_split_json_array(text, max_bytes) {
+  "Rewrite a JSON array of objects as JSONL by scanning brace depth and string state; bounded by max_bytes characters because the scan is interpreted.";
+  if gt(str_len(text), max_bytes) {
+    u:eval_data_error("budget", 0, "", "array text exceeds max_bytes")
+  } else {
+    chars = str_split(text, "");
+    n = list_len(chars);
+    state = {depth: 0, in_string: 0, escaped: 0, seen_open: 0, seen_close: 0, start: 0, pieces: "", text: text, i: 0};
+    i = 0;
+    while i - n {
+      state = {depth: state.depth, in_string: state.in_string, escaped: state.escaped, seen_open: state.seen_open, seen_close: state.seen_close, start: state.start, pieces: state.pieces, text: text, i: i};
+      state = u:eval_scan_step(state, unwrap(list_get(chars, i)));
+      i = i + 1
+    };
+    if state.seen_open {
+      if state.depth {
+        u:eval_data_error("parse", 0, "", "unbalanced braces in JSON array")
+      } else {
+        if state.in_string {
+          u:eval_data_error("parse", 0, "", "unterminated string in JSON array")
+        } else {
+          if state.seen_close {
+            ok(state.pieces)
+          } else { u:eval_data_error("parse", 0, "", "unterminated JSON array") }
+        }
+      }
+    } else {
+      u:eval_data_error("parse", 0, "", "text is not a JSON array")
+    }
+  }
+}
+
+def u:eval_load_json_array(path, opts) {
+  "Read a sandboxed JSON array file, rewrite it as JSONL, and validate it into a dataset record.";
+  text = read_text(path);
+  if is_err(text) {
+    u:eval_data_error("io", 0, "", err_message(text))
+  } else {
+    jsonl = u:eval_split_json_array(unwrap(text), u:eval_data_opt(opts, "max_bytes", 1048576));
+    if is_err(jsonl) {
+      jsonl
+    } else { u:eval_load_jsonl_text(unwrap(jsonl), path, opts) }
+  }
+}
+#+end_src
+
+** lib/eval/harness.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-eval-harness-mlpl
+:END:
+
+The harness turns everything above into a measurement. It renders a prompt,
+asks a responder for text, extracts, grades, records, and summarizes. The
+responder is an ordinary function reference, so the same harness measures a
+stub today and a language model in a later saga without changing.
+
+The harness depends on the loader and the whole verifier.
+
+#+begin_src mlpl :tangle ../lib/eval/harness.mlpl
+# Evaluation harness: prompt rendering, a responder-driven loop over a dataset, per-problem JSONL records, CSV metrics, and provenance. Requires lib/eval/data.mlpl, lib/text/text.mlpl, lib/verify/number.mlpl, lib/verify/expr.mlpl, lib/verify/extract.mlpl, lib/verify/normalize.mlpl, and lib/verify/grade.mlpl included first.
+#+end_src
+
+The template is versioned because prompt wording measurably changes accuracy.
+Recording the identifier with every result means a wording change shows up in
+the data rather than silently shifting a number. The wording here is this
+project's own; only the boxed final line is a requirement, because the
+verifier depends on it.
+
+#+begin_src mlpl :tangle ../lib/eval/harness.mlpl
+def u:eval_template_id() {
+  "Identifier of the prompt template, recorded with every result so a wording change is visible in the data.";
+  "boxed-v1"
+}
+
+def u:eval_render_prompt(problem) {
+  "Wrap one problem in the boxed-answer template. The wording is this project's own; only the boxed final line is required by the verifier.";
+  str_concat("Solve the mathematics problem below.\nPut the final result on its own line, written exactly as \\boxed{RESULT}.\n\nProblem:\n", str_concat(problem, "\n\nSolution:\n"))
+}
+
+def u:eval_provenance(options) {
+  "Record describing how a run was produced: interpreter build, template, extraction mode, and whatever decoding settings the caller passed.";
+  {build: u:eval_data_opt(options, "build", "unknown"), template: u:eval_template_id(), mode: u:eval_data_opt(options, "mode", "number_then_full"), decoding: u:eval_data_opt(options, "decoding", "greedy")}
+}
+#+end_src
+
+Results are written as JSON Lines, the first record atomically so a rerun
+replaces rather than appends, the rest appended. Metrics go to a separate
+comma-separated file whose header is written only when the file does not
+exist yet.
+
+#+begin_src mlpl :tangle ../lib/eval/harness.mlpl
+def u:eval_write_line(path, text, first) {
+  "Write the first line of a file atomically, then append the rest.";
+  if first {
+    write_atomic(path, text)
+  } else {
+    append_bytes(path, tokenize_bytes(text))
+  }
+}
+
+def u:eval_record_line(index, problem, reference, response, extracted, correct, elapsed) {
+  "One result as a JSON object, ending in a newline, ready to append to a JSONL file.";
+  encoded = to_json({index: index, problem: problem, reference: reference, response: response, extracted: extracted, correct: correct, elapsed_ms: elapsed});
+  if is_err(encoded) {
+    encoded
+  } else {
+    ok(str_concat(unwrap(encoded), "\n"))
+  }
+}
+
+def u:eval_csv_row(values) {
+  "Join already-stringified values into one comma-separated line ending in a newline.";
+  str_concat(str_join(values, ","), "\n")
+}
+
+def u:eval_append_csv(path, header, values) {
+  "Append one metrics row, writing the header first when the file does not exist yet.";
+  existing = read_text(path);
+  if is_err(existing) {
+    write_atomic(path, str_concat(u:eval_csv_row(header), u:eval_csv_row(values)))
+  } else {
+    append_bytes(path, tokenize_bytes(u:eval_csv_row(values)))
+  }
+}
+#+end_src
+
+One problem: render, time the responder, extract, grade. A responder that
+returns something other than text is a classified error naming the index,
+not a crash halfway through a long run.
+
+#+begin_src mlpl :tangle ../lib/eval/harness.mlpl
+def u:eval_grade_one(dataset, index, responder, mode) {
+  "Render, respond, extract, and grade one problem; returns the record fields plus its elapsed milliseconds.";
+  record = u:eval_record(dataset, index)?;
+  prompt = u:eval_render_prompt(record.problem);
+  started = clock_ms();
+  response = call(responder, prompt);
+  elapsed = clock_ms() - started;
+  if str_eq(type_of(response), "string") {
+    extracted = u:verify_final_candidate(response, mode);
+    ok({index: index, problem: record.problem, reference: record.answer, response: response, extracted: extracted, correct: u:verify_grade(extracted, record.answer), elapsed_ms: elapsed})
+  } else {
+    err({kind: "responder", index: index, message: "the responder did not return a string"})
+  }
+}
+#+end_src
+
+The loop, with an optional limit for bounded runs and an optional output
+path. It returns the tally, the accuracy, the elapsed time, and the
+provenance, and it stops at the first responder failure.
+
+#+begin_src mlpl :tangle ../lib/eval/harness.mlpl
+def u:eval_run(dataset, responder, options) {
+  "Evaluate a responder over a dataset: grade every problem, optionally write one JSONL record each, and return {total, correct, accuracy, elapsed_ms, provenance}. A responder failure stops the run and is returned as an error.";
+  mode = u:eval_data_opt(options, "mode", "number_then_full");
+  out_path = u:eval_data_opt(options, "out_path", "");
+  verbose = u:eval_data_opt(options, "verbose", 0);
+  limit = u:eval_data_opt(options, "limit", 0 - 1);
+  total = u:eval_count(dataset);
+  if gt(limit, 0 - 1) {
+    if lt(limit, total) {
+      total = limit
+    } else {
+      0
+    }
+  } else {
+    0
+  };
+  correct = 0;
+  index = 0;
+  failure = ok(1);
+  started = clock_ms();
+  while lt(index, total) {
+    graded = u:eval_grade_one(dataset, index, responder, mode);
+    if is_err(graded) {
+      failure = graded;
+      index = total
+    } else {
+      result = unwrap(graded);
+      correct = correct + result.correct;
+      if str_eq(out_path, "") {
+        0
+      } else {
+        line = u:eval_record_line(result.index, result.problem, result.reference, result.response, result.extracted, result.correct, result.elapsed_ms);
+        if is_err(line) {
+          failure = line;
+          index = total
+        } else { u:eval_write_line(out_path, unwrap(line), 1 - gt(index, 0)) }
+      };
+      if verbose {
+        print("  ", result.index, if result.correct {
+            "correct"
+          } else {
+            "wrong"
+          }, "extracted:", result.extracted, "reference:", result.reference)
+      } else {
+        0
+      };
+      index = index + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    elapsed = clock_ms() - started;
+    ok({total: total, correct: correct, accuracy: if total {
+          correct / total
+        } else {
+          0
+        }, elapsed_ms: elapsed, provenance: u:eval_provenance(options)})
+  }
+}
+#+end_src
+
+The summary prints the provenance alongside the number, so an accuracy
+figure never appears without the build, template, extraction mode, and
+decoding settings that produced it.
+
+#+begin_src mlpl :tangle ../lib/eval/harness.mlpl
+def u:eval_report(report) {
+  "Print a run summary with its provenance; returns the report unchanged so it composes.";
+  print("  problems:", report.total);
+  print("  correct: ", report.correct);
+  print("  accuracy:", round(report.accuracy * 1000) / 10, "percent");
+  print("  elapsed: ", round(report.elapsed_ms), "ms");
+  print("  build:   ", report.provenance.build);
+  print("  template:", report.provenance.template, "extraction:", report.provenance.mode, "decoding:", report.provenance.decoding);
+  report
+}
+#+end_src
+
+* What this adds up to
+
+Reading in order, the document has built: a scanner layer that replaces a
+regular-expression engine, extraction of a boxed answer, a thirteen-rule
+normalizer, exact rational arithmetic, a recursive-descent evaluator, a
+grader that is total on malformed input, a dataset loader that validates
+before it returns, and a harness that measures any responder with provenance
+attached.
+
+Two runnable checks exercise all of it. =just verifier-demo= narrates the
+pipeline over committed fixtures with a stand-in responder, and scores it
+under both extraction modes to show the difference between a training reward
+and a base-model measurement. =just math500-self-grade= is the honest one: it
+grades all 500 answers of the real evaluation set against themselves and a
+constant wrong answer, and reports 500 of 500 correct with no false
+positives.
+
+What is deliberately absent is as important. There is no symbolic
+simplification, so =2x + 3x= and =5x= do not match. There is no regular
+expression anywhere. There is no model yet: nothing in this document
+generates a single token. The next saga builds the tokenizer, and the one
+after it the transformer forward pass, at which point the responder the
+harness calls stops being a stub.

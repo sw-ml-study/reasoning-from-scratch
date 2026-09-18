@@ -33,8 +33,10 @@ ledger, and removes the workaround where the plan allows.
 ## R2. Differentiable `softmax(a, axis)`
 
 - Probe: `grad-softmax-axis`.
-- Today: the eager two-argument form works; on the tape "softmax expects 1
-  arguments, got 2".
+- Status: shipped in upstream commit 363391a6 on 2026-09-17; the probe
+  passes.
+- Before the fix: the eager two-argument form worked; on the tape it failed
+  with "softmax expects 1 arguments, got 2".
 - Requested: the axis form on the tape with the same backward as the
   one-argument form, for any rank.
 - Acceptance: gradient of `reduce_add(softmax(x, 1) * mask)` on a `[2, 3]`
@@ -44,8 +46,11 @@ ledger, and removes the workaround where the plan allows.
 ## R3. Batched `matmul` over leading axes, and a correct error message
 
 - Probe: `matmul-rank3`.
-- Today: rank-3 operands fail with "index has 3 components but array has
-  rank 2", which names the wrong problem.
+- Status: the error message shipped in commit fdb5e675 on 2026-09-16;
+  rank-3 operands are now rejected with an actionable message. The batched
+  operation itself is still open and the probe still expects failure.
+- Before that fix: rank-3 operands failed with "index has 3 components but
+  array has rank 2", which named the wrong problem.
 - Requested: `matmul` on `[..., m, k] x [..., k, n]` with broadcasting of
   the leading axes, differentiable; until then, an error that says
   `matmul` accepts rank-2 operands only.

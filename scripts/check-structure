@@ -9,7 +9,7 @@ for path in AGENTS.md COPYRIGHT LICENSE README.md justfile mlplunit.conf \
     docs/data-and-models.md docs/demo-extensions-requests.md \
     docs/demo-mlpl-libraries-requests.md \
     docs/feature-homes.md docs/how-base-becomes-reasoning.md docs/licensing.md \
-    docs/plan.md docs/sagas.md \
+    docs/plan.md docs/reasoning.org docs/sagas.md \
     docs/sw-mlpl-blockers.md docs/sw-mlpl-requests.md \
     docs/verifier-contract.md; do
     if [ ! -f "$repo_dir/$path" ]; then

@@ -2,6 +2,15 @@ schema = "sw-ml-study.reasoning-components"
 version = 1
 
 [[component]]
+id = "DOC"
+slug = "literate-document"
+chapter = 3
+source = "docs/reasoning.org"
+test = "scripts/check-tangle"
+documentation = "docs/reasoning.org"
+status = "accepted"
+
+[[component]]
 id = "TEXT"
 slug = "text-scanners"
 chapter = 3

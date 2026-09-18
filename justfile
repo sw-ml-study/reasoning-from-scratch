@@ -29,6 +29,10 @@ math500-self-grade:
 fetch-math500:
     ./scripts/fetch-math500
 
+# Prove docs/reasoning.org tangles back to every committed library source.
+tangle:
+    ./scripts/check-tangle
+
 # Narrated verifier and harness walk-through over committed fixtures.
 verifier-demo:
     ./scripts/run-verifier-demo

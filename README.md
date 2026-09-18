@@ -90,9 +90,13 @@ over any responder function, one JSONL record per problem, CSV metrics, and
 provenance on every report. `just verifier-demo` walks the whole pipeline
 over committed fixtures with a stand-in responder and no model.
 
-Saga 1 has one step left, a literate org-mode document built with `ob-mlpl`
-whose tangled output must match the committed sources byte for byte.
-Nothing yet generates text.
+Saga 1 is complete. [`docs/reasoning.org`](docs/reasoning.org) is a literate
+reading of every library above, written for `ob-mlpl`: prose before each of
+its 52 source blocks, three runnable self-contained examples, and a gate
+check that tangles the document and compares all eight sources byte for
+byte, so the prose can never describe code that no longer exists.
+
+Saga 2 is next, the tokenizer. Nothing yet generates text.
 
 ## Build and check
 
