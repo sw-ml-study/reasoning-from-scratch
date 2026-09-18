@@ -1,0 +1,9 @@
+number = 3
+slug = "chat-templates-and-eos"
+status = "pending"
+description = "Implement decoding and the chat templates in lib/tokenizer/template.mlpl (pre..."
+role = "production"
+context_files = []
+created_at = "2026-09-17T19:02:47"
+task_type = "mlpl-library"
+commits = []

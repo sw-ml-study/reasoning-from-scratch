@@ -8,27 +8,29 @@ Full step prompts live in `.agentrail/steps/`; the outline is in
 
 ## Complete: Saga 1, `foundation-and-verifier`
 
+Nine steps, archived under `.agentrail-archive/`. Delivered the repository
+foundation, the core/library/extension decision rule and per-repository
+request documents, twenty-one capability probes with drift detection, the
+dataset loader, the text scanners, boxed extraction, the thirteen-rule
+normalizer, exact-rational arithmetic, the bounded expression evaluator,
+grading, the evaluation harness, a narrated demo, and the literate
+`docs/reasoning.org` with a tangle check. Evidence: 45 tests, and all 500
+MATH-500 reference answers grading against themselves with no false
+positives.
+
+## Active: Saga 2, `tokenizer`
+
 | # | Step | Status |
 |---|---|---|
-| 1 | `foundation` | done in the planning session |
-| 2 | `feature-home-triage` | done: core versus library versus extension rule and handoffs |
-| 3 | `capability-probes` | done: 21 probes under `probes/`, declared in `catalog/probes.tsv`, run by `just capabilities` and the gate |
-| 4 | `request-documents` | done: per-repository ask documents |
-| 5 | `math-data-loader` | done: `lib/eval/data.mlpl`, fixtures, `just fetch-math500`; ledger reconciled to build 0dfa3eae |
-| 6 | `boxed-extraction-and-normalization` | done: `lib/text/`, `lib/verify/extract.mlpl`, `lib/verify/normalize.mlpl`, 23 tests |
-| 7 | `expression-equivalence` | done: exact rationals, bounded evaluator, grading; 500 of 500 MATH-500 answers self-grade |
-| 8 | `evaluation-harness` | done: prompt template, responder loop, JSONL records, CSV metrics, provenance, narrated demo |
-| 9 | `literate-org-document` | done: `docs/reasoning.org`, 52 blocks, tangles back to all 8 sources |
+| 1 | `tokenizer-json-import` | pending |
+| 2 | `bpe-reference-in-mlpl` | pending |
+| 3 | `chat-templates-and-eos` | pending |
+| 4 | `extension-parity-and-throughput` | pending, gated on `../demo-extensions` |
 
-Acceptance: `just check` runs a complete, tested verifier and evaluation
-harness without any model, and the capability ledger contains only measured
-claims.
-
-## Queued: Saga 2, `tokenizer`
-
-Import `tokenizer.json`, write the MLPL reference byte-level BPE on a
-synthetic fixture, write the chat templates, hand the production encoder to
-`../demo-extensions` as a Rust extension, and prove parity and throughput.
+The production encoder is a Rust extension requested from
+`../demo-extensions`; this repository owns the MLPL reference encoder on a
+synthetic fixture, the chat templates, and the parity tests. Step 4 stops
+with an honest unavailable result if the extension has not landed.
 
 ## Queued: Saga 3, `model-and-generation`
 
