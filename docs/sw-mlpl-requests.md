@@ -9,6 +9,23 @@ Nothing here authorizes a change from this repository. Status as of
 2026-09-16: the upstream owner reports the autograd, dtype, and literal
 items as in progress.
 
+## Status summary, 2026-09-18
+
+Upstream closed its `reasoning-from-scratch-numerics` saga having shipped
+every autograd, dtype, and lexer item below, plus a crash fix for a scalar
+combined with an empty array that this repository reported separately. Two
+core asks remain open and are **not** in the upstream queue, so they are
+restated here:
+
+| Open ask | Why it matters | Where it bites |
+|---|---|---|
+| R3, batched rank-3 `matmul` | only the error message shipped; the operation itself did not | grouped-query attention in Saga 3 must loop over sixteen heads per layer instead of one batched call |
+| R10, record lookup that does not scale with record size | newly measured and filed during the tokenizer work | the reference tokenizer costs 34 ms per vocabulary lookup, which is why the production encoder is a native extension |
+
+Also queued upstream, not blocking: `pow` with a general constant exponent,
+behind an autograd crate refactor. The remaining items on this page are
+library or extension work and are tracked in their own documents.
+
 Verification protocol for every item: when the fix lands, `just
 capabilities` reports DRIFT on the named probe; the reconciling step flips
 the expectation in `catalog/probes.tsv`, re-pins the build commit in the
