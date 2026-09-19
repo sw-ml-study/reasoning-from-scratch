@@ -38,7 +38,7 @@ with an honest unavailable result if the extension has not landed.
 |---|---|---|
 | 1 | `qwen3-forward-tiny` | done: RMSNorm, RoPE, grouped-query attention, SwiGLU, seven property tests |
 | 2 | `kv-cache-generation` | done: prefill and step, bit-identical to recomputation, greedy loop |
-| 3 | `safetensors-header` | pending |
+| 3 | `safetensors-header` | done: vendored reader, name mapping, whole-checkpoint validation against the real file |
 | 4 | `bf16-tensor-decode` | pending, gated on upstream R11 |
 | 5 | `real-model-smoke` | pending, follows step 4 |
 | 6 | `math500-baseline` | pending, follows step 5 |

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Generate a tiny safetensors checkpoint under the ignored out/ tree, shaped
+# exactly like the real one but at the tiny configuration and with
+# single-byte tensors, so the validator can be tested without the 1.19 GB
+# download and without committing a binary.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mkdir -p "$repo_root/out/fixtures"
+exec "$repo_root/scripts/run-mlpl-demo" demos/make_safetensors_fixture.mlpl

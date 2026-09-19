@@ -73,15 +73,25 @@ prefix `u:sth_`. Saga 3 step 1 vendors this by pinned revision rather than
 re-deriving the reader, and confines its own work to bf16 decoding, the
 Hugging Face name mapping, and tied embeddings.
 
-Two things that step will report back, as consumer evidence rather than
-requests:
+**Consumer evidence, reported 2026-09-19.** Both questions are answered.
 
-- whether the installer's pinned-revision and hash-lock flow works from a
-  repository that is not `demo-extensions`, which is the second-consumer
-  evidence that repository wanted;
-- whether the header reader's budgets suit a 1.19 GB file whose header is a
-  few tens of kilobytes but whose tensor directory names several hundred
-  tensors.
+- The pinned-revision install and hash lock work from a second consumer
+  repository. `install-library --install --library safetensors-header
+  --dest .` produced `swml.lock.toml` at revision `5739383`, and
+  `--check` verifies the recorded hash. No changes needed.
+- The budgets need raising for a production checkpoint, but only by the
+  caller. The defaults of 1 MiB of header and 65,536 elements are below what
+  Qwen3-0.6B requires: its header is 35,248 bytes, which fits, but its 310
+  tensors carry far more than 65,536 JSON elements. This repository passes
+  `max_header_bytes` of 2 MiB and `max_elements` of 262,144 and the reader
+  then handles the file without complaint, reporting 310 tensors and
+  596,049,920 parameters. Suggestion rather than request: mention a
+  production-scale example in the library's documentation, since the
+  defaults silently suit only small files.
+- One field-name note for anyone else consuming it: the record uses `table`
+  and `names`, not `tensors`, and `table` is an array rather than a record,
+  so `has_field` on it is an error. `u:sth_tensor(header, name)` is the
+  lookup to use.
 
 ### Original request
 

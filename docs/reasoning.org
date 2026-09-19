@@ -3903,6 +3903,375 @@ def u:gen_greedy(config, model, prompt_ids, max_new, stop_id) {
 }
 #+end_src
 
+** lib/safetensors/names.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-safetensors-names-mlpl
+:END:
+
+A checkpoint is a flat map from published tensor names to byte spans. This
+file is the translation between those names and the module structure the
+forward pass expects, and it opens no file: it is pure string work, so it can
+be read and tested without a gigabyte of weights present.
+
+The published convention stores a projection as output by input, while the
+forward pass multiplies a positions-by-width block on its left. Every
+projection is therefore transposed on load and every one-dimensional gain is
+not, which is recorded in the load plan rather than left for the caller to
+remember.
+
+Pure string work, and the dependency it needs loaded first.
+
+#+begin_src mlpl :tangle ../lib/safetensors/names.mlpl
+# Mapping Hugging Face tensor names onto this project's module structure, and the tied-embedding rule. Requires lib/text/text.mlpl included first. Pure string work: no file is opened here.
+#+end_src
+
+Names are data. An unknown role yields an empty suffix and then a
+classified error, rather than a string that looks plausible and matches
+nothing in the file.
+
+#+begin_src mlpl :tangle ../lib/safetensors/names.mlpl
+def u:st_layer_prefix(layer) {
+  "The published prefix for one decoder layer's tensors.";
+  str_concat("model.layers.", str_concat(to_string(layer), "."))
+}
+
+def u:st_role_suffix(role) {
+  "The published suffix for each weight this project needs, or the empty string for an unknown role. Names are data, so a typo becomes an empty lookup rather than a silent mismatch.";
+  if str_eq(role, "wq") {
+    "self_attn.q_proj.weight"
+  } else {
+    if str_eq(role, "wk") {
+      "self_attn.k_proj.weight"
+    } else {
+      if str_eq(role, "wv") {
+        "self_attn.v_proj.weight"
+      } else {
+        if str_eq(role, "wo") {
+          "self_attn.o_proj.weight"
+        } else {
+          if str_eq(role, "qn") {
+            "self_attn.q_norm.weight"
+          } else {
+            if str_eq(role, "kn") {
+              "self_attn.k_norm.weight"
+            } else {
+              if str_eq(role, "n1") {
+                "input_layernorm.weight"
+              } else {
+                if str_eq(role, "n2") {
+                  "post_attention_layernorm.weight"
+                } else {
+                  if str_eq(role, "gate") {
+                    "mlp.gate_proj.weight"
+                  } else {
+                    if str_eq(role, "up") {
+                      "mlp.up_proj.weight"
+                    } else {
+                      if str_eq(role, "down") {
+                        "mlp.down_proj.weight"
+                      } else {
+                        ""
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+#+end_src
+
+One layer weight's published name, or an error naming the role.
+
+#+begin_src mlpl :tangle ../lib/safetensors/names.mlpl
+def u:st_layer_name(layer, role) {
+  "The published name of one layer weight, or an error naming the unknown role.";
+  suffix = u:st_role_suffix(role);
+  if str_eq(suffix, "") {
+    err({kind: "unknown_role", message: str_concat("no such layer weight: ", role)})
+  } else {
+    ok(str_concat(u:st_layer_prefix(layer), suffix))
+  }
+}
+#+end_src
+
+The three tensors outside the layer stack. The output head is listed here
+even though this model does not have one, because its *absence* is what
+signals tied embeddings.
+
+#+begin_src mlpl :tangle ../lib/safetensors/names.mlpl
+def u:st_embedding_name() {
+  "The token embedding table.";
+  "model.embed_tokens.weight"
+}
+
+def u:st_final_norm_name() {
+  "The normalization gain applied after the last layer.";
+  "model.norm.weight"
+}
+
+def u:st_output_head_name() {
+  "The separate output projection, present only when the model does not tie its embeddings.";
+  "lm_head.weight"
+}
+#+end_src
+
+Qwen3-0.6B ties its output head to its embedding table, so the checkpoint
+contains no `lm_head.weight` at all and the forward pass transposes the
+embedding instead. Detecting that by absence is exactly right: a checkpoint
+either ships the tensor or it does not.
+
+#+begin_src mlpl :tangle ../lib/safetensors/names.mlpl
+def u:st_tied(header) {
+  "1 when the checkpoint ties its output head to the embedding table, which is true when no separate output tensor is present. Qwen3-0.6B ties them, so the forward pass must transpose the embedding rather than look for a tensor that does not exist.";
+  if is_err(u:sth_tensor(header, u:st_output_head_name())) {
+    1
+  } else {
+    0
+  }
+}
+#+end_src
+
+What each weight should look like at a given configuration. Stating this
+independently of the file is the point: a checkpoint that disagrees is caught
+at load time by comparison, rather than halfway through a matrix product by
+a shape error.
+
+#+begin_src mlpl :tangle ../lib/safetensors/names.mlpl
+def u:st_expected_shape(config, role) {
+  "The shape this project expects for one layer weight, so a checkpoint that disagrees is caught at load time rather than in the middle of a matrix product. Published projections are stored transposed, as output by input.";
+  span = config.heads * config.head_dim;
+  shared = config.kv_heads * config.head_dim;
+  if str_eq(role, "wq") {
+    [span, config.emb]
+  } else {
+    if str_eq(role, "wk") {
+      [shared, config.emb]
+    } else {
+      if str_eq(role, "wv") {
+        [shared, config.emb]
+      } else {
+        if str_eq(role, "wo") {
+          [config.emb, span]
+        } else {
+          if str_eq(role, "qn") {
+            [config.head_dim]
+          } else {
+            if str_eq(role, "kn") {
+              [config.head_dim]
+            } else {
+              if str_eq(role, "n1") {
+                [config.emb]
+              } else {
+                if str_eq(role, "n2") {
+                  [config.emb]
+                } else {
+                  if str_eq(role, "gate") {
+                    [config.hidden, config.emb]
+                  } else {
+                    if str_eq(role, "up") {
+                      [config.hidden, config.emb]
+                    } else {
+                      if str_eq(role, "down") {
+                        [config.emb, config.hidden]
+                      } else {
+                        []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+#+end_src
+
+** lib/safetensors/plan.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-safetensors-plan-mlpl
+:END:
+
+Validation before decoding. Given a header and a configuration, this checks
+that every tensor the model needs exists with the right dtype and shape, and
+produces a plan saying where each one lives. No tensor data is read here at
+all.
+
+That split is forced rather than chosen. Decoding the weights needs a bulk
+byte-to-array conversion that the language does not have, filed upstream as
+R11, so the step that reads tensor data is blocked. Everything up to that
+point is not, and this file is that everything: on the real checkpoint it
+validates all 310 tensors and arrives at 596,049,920 parameters by counting
+from the configuration, which is exactly what the file's own header reports.
+
+The header reader itself is vendored from `../demo-mlpl-libraries` at a
+pinned revision with a hash lock, rather than rewritten here.
+
+The vendored reader and the three local modules this builds on.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+# Validating a checkpoint against a configuration before any tensor data is read: every expected tensor present, with the expected dtype and shape, and a load plan naming where each one lives. Requires vendor/swml/lib/safetensors-header/header.mlpl, lib/text/text.mlpl, lib/qwen3/qwen3.mlpl, and lib/safetensors/names.mlpl included first.
+#+end_src
+
+The budgets are larger than the library's defaults because a real
+checkpoint names several hundred tensors in a header of tens of kilobytes.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_open(path, options) {
+  "Read and validate a checkpoint's header. The budgets are larger than the library's defaults because a real checkpoint names several hundred tensors in a header of tens of kilobytes.";
+  u:sth_inspect(path, {max_header_bytes: u:eval_data_opt(options, "max_header_bytes", 2097152), max_elements: u:eval_data_opt(options, "max_elements", 262144), max_depth: 8})
+}
+#+end_src
+
+One tensor's directory entry.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_entry(header, name) {
+  "One tensor's directory entry, or an error naming the tensor.";
+  u:sth_tensor(header, name)
+}
+#+end_src
+
+Shape comparison is exact in both rank and extent, so a transposed shape is
+a disagreement rather than a near miss.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_shapes_agree(actual, expected) {
+  "1 when a tensor's stored shape matches what the configuration expects.";
+  if tally(actual) - tally(expected) {
+    0
+  } else {
+    1 - gt(reduce(:max, abs(actual - expected)), 0)
+  }
+}
+#+end_src
+
+Three distinct failures, each naming the tensor and reporting what was
+found: absent, wrong dtype, wrong shape. A caller can tell a checkpoint for a
+different model from a checkpoint in a different precision.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_check_tensor(header, name, expected_shape, expected_dtype) {
+  "Require one tensor to exist with the expected dtype and shape, reporting which of the three failed.";
+  found = u:st_entry(header, name);
+  if is_err(found) {
+    err({kind: "missing_tensor", name: name, message: str_concat("the checkpoint has no tensor named ", name)})
+  } else {
+    entry = unwrap(found);
+    if str_eq(entry.dtype, expected_dtype) {
+      if u:st_shapes_agree(entry.shape, expected_shape) {
+        ok(entry)
+      } else {
+        err({kind: "shape", name: name, message: str_concat("unexpected shape for ", name), expected: expected_shape, actual: entry.shape})
+      }
+    } else {
+      err({kind: "dtype", name: name, message: str_concat("unexpected dtype for ", name), expected: expected_dtype, actual: entry.dtype})
+    }
+  }
+}
+#+end_src
+
+Every weight of one layer, returning the parameters it contributes so the
+total can be built up rather than trusted.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_check_layer(header, config, layer, dtype) {
+  "Require every weight of one decoder layer, returning the number of parameters it contributes.";
+  roles = ["wq", "wk", "wv", "wo", "qn", "kn", "n1", "n2", "gate", "up", "down"];
+  count = list_len(roles);
+  parameters = 0;
+  i = 0;
+  failure = ok(1);
+  while lt(i, count) {
+    role = unwrap(list_get(roles, i));
+    name = u:st_layer_name(layer, role)?;
+    checked = u:st_check_tensor(header, name, u:st_expected_shape(config, role), dtype);
+    if is_err(checked) {
+      failure = checked;
+      i = count
+    } else {
+      parameters = parameters + unwrap(checked).parameters;
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(parameters)
+  }
+}
+#+end_src
+
+The whole checkpoint. The parameter count it returns is derived from the
+configuration and the stored shapes independently of the header's own count,
+so agreement between the two is evidence that the name mapping is right for
+every tensor rather than merely for the ones anybody looked at.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_check_model(header, config, dtype) {
+  "Validate a whole checkpoint against a configuration: the embedding table, the final normalization gain, every layer, and the tied-head rule. Returns a summary rather than any tensor data.";
+  embedding = u:st_check_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?;
+  final_norm = u:st_check_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?;
+  tied = u:st_tied(header);
+  head_parameters = if tied {
+    0
+  } else {
+    unwrap(u:st_check_tensor(header, u:st_output_head_name(), [config.vocab, config.emb], dtype))?.parameters
+  };
+  parameters = embedding.parameters + final_norm.parameters + head_parameters;
+  layer = 0;
+  failure = ok(1);
+  while lt(layer, config.layers) {
+    checked = u:st_check_layer(header, config, layer, dtype);
+    if is_err(checked) {
+      failure = checked;
+      layer = config.layers
+    } else {
+      parameters = parameters + unwrap(checked);
+      layer = layer + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok({tied: tied, parameters: parameters, tensors: header.tensor_count, dtype: dtype, bytes: header.tensor_bytes})
+  }
+}
+#+end_src
+
+Where one weight lives, and whether the forward pass must transpose it.
+This is the handoff to the decoding step: everything it needs except the
+bytes themselves.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_load_plan(header, config, layer, role) {
+  "Where one layer weight lives in the file: its byte span, its stored shape, and whether the forward pass must transpose it. Published projections are stored as output by input, while the forward pass multiplies a positions-by-width block on the left, so every projection is transposed on load and the two normalization gains are not.";
+  name = u:st_layer_name(layer, role)?;
+  entry = u:st_entry(header, name)?;
+  ok({name: name, role: role, start: entry.start, end: entry.end, shape: entry.shape, dtype: entry.dtype, parameters: entry.parameters, transpose: gt(tally(entry.shape), 1)})
+}
+#+end_src
+
+One line for a narrated run.
+
+#+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl
+def u:st_summary_text(summary) {
+  "One line describing a validated checkpoint.";
+  str_concat(to_string(summary.tensors), str_concat(" tensors, ", str_concat(to_string(summary.parameters), str_concat(" parameters, ", str_concat(summary.dtype, if summary.tied {
+              ", tied output head"
+            } else {
+              ", separate output head"
+            })))))
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -3913,7 +4282,8 @@ before it returns, a harness that measures any responder with provenance
 attached, the import that turns a six-megabyte tokenizer document into
 tables a byte-level encoder can use, the encoder itself, the decoding and
 prompt conventions that surround it, the decoder forward pass those ids
-will run through, and cached generation over it.
+will run through, cached generation over it, and the checkpoint validation
+that will eventually feed it real weights.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it

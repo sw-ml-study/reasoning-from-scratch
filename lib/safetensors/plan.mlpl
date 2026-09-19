@@ -1,0 +1,111 @@
+# Validating a checkpoint against a configuration before any tensor data is read: every expected tensor present, with the expected dtype and shape, and a load plan naming where each one lives. Requires vendor/swml/lib/safetensors-header/header.mlpl, lib/text/text.mlpl, lib/qwen3/qwen3.mlpl, and lib/safetensors/names.mlpl included first.
+
+def u:st_open(path, options) {
+  "Read and validate a checkpoint's header. The budgets are larger than the library's defaults because a real checkpoint names several hundred tensors in a header of tens of kilobytes.";
+  u:sth_inspect(path, {max_header_bytes: u:eval_data_opt(options, "max_header_bytes", 2097152), max_elements: u:eval_data_opt(options, "max_elements", 262144), max_depth: 8})
+}
+
+def u:st_entry(header, name) {
+  "One tensor's directory entry, or an error naming the tensor.";
+  u:sth_tensor(header, name)
+}
+
+def u:st_shapes_agree(actual, expected) {
+  "1 when a tensor's stored shape matches what the configuration expects.";
+  if tally(actual) - tally(expected) {
+    0
+  } else {
+    1 - gt(reduce(:max, abs(actual - expected)), 0)
+  }
+}
+
+def u:st_check_tensor(header, name, expected_shape, expected_dtype) {
+  "Require one tensor to exist with the expected dtype and shape, reporting which of the three failed.";
+  found = u:st_entry(header, name);
+  if is_err(found) {
+    err({kind: "missing_tensor", name: name, message: str_concat("the checkpoint has no tensor named ", name)})
+  } else {
+    entry = unwrap(found);
+    if str_eq(entry.dtype, expected_dtype) {
+      if u:st_shapes_agree(entry.shape, expected_shape) {
+        ok(entry)
+      } else {
+        err({kind: "shape", name: name, message: str_concat("unexpected shape for ", name), expected: expected_shape, actual: entry.shape})
+      }
+    } else {
+      err({kind: "dtype", name: name, message: str_concat("unexpected dtype for ", name), expected: expected_dtype, actual: entry.dtype})
+    }
+  }
+}
+
+def u:st_check_layer(header, config, layer, dtype) {
+  "Require every weight of one decoder layer, returning the number of parameters it contributes.";
+  roles = ["wq", "wk", "wv", "wo", "qn", "kn", "n1", "n2", "gate", "up", "down"];
+  count = list_len(roles);
+  parameters = 0;
+  i = 0;
+  failure = ok(1);
+  while lt(i, count) {
+    role = unwrap(list_get(roles, i));
+    name = u:st_layer_name(layer, role)?;
+    checked = u:st_check_tensor(header, name, u:st_expected_shape(config, role), dtype);
+    if is_err(checked) {
+      failure = checked;
+      i = count
+    } else {
+      parameters = parameters + unwrap(checked).parameters;
+      i = i + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok(parameters)
+  }
+}
+
+def u:st_check_model(header, config, dtype) {
+  "Validate a whole checkpoint against a configuration: the embedding table, the final normalization gain, every layer, and the tied-head rule. Returns a summary rather than any tensor data.";
+  embedding = u:st_check_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?;
+  final_norm = u:st_check_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?;
+  tied = u:st_tied(header);
+  head_parameters = if tied {
+    0
+  } else {
+    unwrap(u:st_check_tensor(header, u:st_output_head_name(), [config.vocab, config.emb], dtype))?.parameters
+  };
+  parameters = embedding.parameters + final_norm.parameters + head_parameters;
+  layer = 0;
+  failure = ok(1);
+  while lt(layer, config.layers) {
+    checked = u:st_check_layer(header, config, layer, dtype);
+    if is_err(checked) {
+      failure = checked;
+      layer = config.layers
+    } else {
+      parameters = parameters + unwrap(checked);
+      layer = layer + 1
+    }
+  };
+  if is_err(failure) {
+    failure
+  } else {
+    ok({tied: tied, parameters: parameters, tensors: header.tensor_count, dtype: dtype, bytes: header.tensor_bytes})
+  }
+}
+
+def u:st_load_plan(header, config, layer, role) {
+  "Where one layer weight lives in the file: its byte span, its stored shape, and whether the forward pass must transpose it. Published projections are stored as output by input, while the forward pass multiplies a positions-by-width block on the left, so every projection is transposed on load and the two normalization gains are not.";
+  name = u:st_layer_name(layer, role)?;
+  entry = u:st_entry(header, name)?;
+  ok({name: name, role: role, start: entry.start, end: entry.end, shape: entry.shape, dtype: entry.dtype, parameters: entry.parameters, transpose: gt(tally(entry.shape), 1)})
+}
+
+def u:st_summary_text(summary) {
+  "One line describing a validated checkpoint.";
+  str_concat(to_string(summary.tensors), str_concat(" tensors, ", str_concat(to_string(summary.parameters), str_concat(" parameters, ", str_concat(summary.dtype, if summary.tied {
+              ", tied output head"
+            } else {
+              ", separate output head"
+            })))))
+}

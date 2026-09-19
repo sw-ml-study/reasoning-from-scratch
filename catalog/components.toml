@@ -119,13 +119,22 @@ documentation = "docs/demo-extensions-requests.md"
 status = "blocked"
 
 [[component]]
-id = "ST"
-slug = "safetensors"
+id = "STN"
+slug = "tensor-names"
 chapter = 2
-source = "lib/safetensors/safetensors.mlpl"
+source = "lib/safetensors/names.mlpl"
 test = "tests/test_safetensors.mlpl"
 documentation = "docs/data-and-models.md"
-status = "planned"
+status = "accepted"
+
+[[component]]
+id = "ST"
+slug = "checkpoint-validation"
+chapter = 2
+source = "lib/safetensors/plan.mlpl"
+test = "tests/test_safetensors.mlpl"
+documentation = "docs/data-and-models.md"
+status = "accepted"
 
 [[component]]
 id = "QWEN"

@@ -1,0 +1,99 @@
+# Checkpoint validation contract: tensor naming, expected shapes, the tied-head rule, whole-model validation, load plans, and every way a checkpoint can disagree with a configuration.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+
+def u:st_test_path() {
+  "The generated fixture, which scripts/generate-safetensors-fixture writes into the ignored output tree.";
+  "out/fixtures/tiny-checkpoint.safetensors"
+}
+
+def u:st_test_header() {
+  "Open the generated fixture.";
+  u:st_open(u:st_test_path(), {})
+}
+
+@test {name: "published names are built from layer and role", tags: ["safetensors", "names"]}
+def u:test_st_names() {
+  "Each weight this project needs maps to one published tensor name, and an unknown role is refused rather than guessed.";
+  u:assert_text_eq(u:st_layer_name(0, "wq")?, "model.layers.0.self_attn.q_proj.weight", "query projection")?;
+  u:assert_text_eq(u:st_layer_name(27, "down")?, "model.layers.27.mlp.down_proj.weight", "a late layer's down projection")?;
+  u:assert_text_eq(u:st_layer_name(3, "n2")?, "model.layers.3.post_attention_layernorm.weight", "the second normalization")?;
+  u:assert_text_eq(u:st_layer_name(1, "qn")?, "model.layers.1.self_attn.q_norm.weight", "the per-head query gain")?;
+  u:assert_text_eq(err_message(u:st_layer_name(0, "nonsense")).kind, "unknown_role", "an unknown role")?;
+  u:assert_text_eq(u:st_embedding_name(), "model.embed_tokens.weight", "the embedding table")?;
+  u:assert_text_eq(u:st_final_norm_name(), "model.norm.weight", "the final gain")
+}
+
+@test {name: "expected shapes follow the configuration", tags: ["safetensors", "shapes"]}
+def u:test_st_shapes() {
+  "Projections are stored as output by input, so the query projection is as wide as all heads together and the key projection only as wide as the shared ones.";
+  config = u:qwen_config_tiny();
+  u:assert_true(equal(u:st_expected_shape(config, "wq"), [config.heads * config.head_dim, config.emb]), "query projection")?;
+  u:assert_true(equal(u:st_expected_shape(config, "wk"), [config.kv_heads * config.head_dim, config.emb]), "key projection is narrower")?;
+  u:assert_true(equal(u:st_expected_shape(config, "wo"), [config.emb, config.heads * config.head_dim]), "output projection is the transpose")?;
+  u:assert_true(equal(u:st_expected_shape(config, "gate"), [config.hidden, config.emb]), "gate projection expands")?;
+  u:assert_true(equal(u:st_expected_shape(config, "down"), [config.emb, config.hidden]), "down projection contracts")?;
+  u:assert_true(equal(u:st_expected_shape(config, "n1"), [config.emb]), "a normalization gain is one-dimensional")?;
+  u:assert_eq(tally(u:st_expected_shape(config, "nonsense")), 0, "an unknown role has no shape")
+}
+
+@test {name: "the fixture validates against the tiny configuration", tags: ["safetensors", "validate"]}
+def u:test_st_validate_fixture() {
+  "Every expected tensor is present with the expected dtype and shape, and the parameter count is derived rather than trusted.";
+  header = u:st_test_header()?;
+  config = u:qwen_config_tiny();
+  u:assert_eq(header.tensor_count, 24, "two layers of eleven weights plus the embedding and the final gain")?;
+  summary = u:st_check_model(header, config, "U8")?;
+  u:assert_eq(summary.tied, 1, "the fixture ties its output head")?;
+  u:assert_eq(summary.parameters, header.parameter_count, "the parameters counted from the configuration match the file")?;
+  u:assert_text_eq(summary.dtype, "U8", "the dtype is reported back")?;
+  u:assert_eq(u:text_contains(u:st_summary_text(summary), "tied output head"), 1, "the summary says so")
+}
+
+@test {name: "a checkpoint that disagrees is refused by reason", tags: ["safetensors", "errors"]}
+def u:test_st_disagreement() {
+  "Missing, wrongly typed, and wrongly shaped tensors are three different failures, and each names the tensor.";
+  header = u:st_test_header()?;
+  config = u:qwen_config_tiny();
+  missing = u:st_check_tensor(header, "not.a.tensor", [1], "U8");
+  u:assert_text_eq(err_message(missing).kind, "missing_tensor", "missing")?;
+  u:assert_text_eq(err_message(missing).name, "not.a.tensor", "and names it")?;
+  wrong_dtype = u:st_check_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], "BF16");
+  u:assert_text_eq(err_message(wrong_dtype).kind, "dtype", "wrong dtype")?;
+  u:assert_text_eq(err_message(wrong_dtype).actual, "U8", "and reports what it found")?;
+  wrong_shape = u:st_check_tensor(header, u:st_embedding_name(), [2, 2], "U8");
+  u:assert_text_eq(err_message(wrong_shape).kind, "shape", "wrong shape")?;
+  u:assert_true(equal(err_message(wrong_shape).actual, [config.vocab, config.emb]), "and reports the stored shape")?;
+  u:assert_text_eq(err_message(u:st_check_model(header, u:qwen_config_06b(), "U8")).kind, "shape", "the wrong configuration entirely is a shape failure")
+}
+
+@test {name: "a load plan names where a tensor lives and whether it needs transposing", tags: ["safetensors", "plan"]}
+def u:test_st_load_plan() {
+  "The plan carries a byte span rather than data, and records that projections are stored transposed relative to how the forward pass multiplies them.";
+  header = u:st_test_header()?;
+  config = u:qwen_config_tiny();
+  plan = u:st_load_plan(header, config, 1, "down")?;
+  u:assert_text_eq(plan.name, "model.layers.1.mlp.down_proj.weight", "the published name")?;
+  u:assert_true(equal(plan.shape, [config.emb, config.hidden]), "the stored shape")?;
+  u:assert_eq(plan.parameters, config.emb * config.hidden, "the parameter count")?;
+  u:assert_eq(plan.end - plan.start, plan.parameters, "one byte per value at this dtype")?;
+  u:assert_eq(plan.transpose, 1, "a projection is transposed on load")?;
+  gain = u:st_load_plan(header, config, 0, "n1")?;
+  u:assert_eq(gain.transpose, 0, "a one-dimensional gain is not")?;
+  u:assert_err(u:st_load_plan(header, config, 0, "nonsense"), "an unknown role has no plan")
+}
+
+@test {name: "shape comparison is exact", tags: ["safetensors", "shapes"]}
+def u:test_st_shape_comparison() {
+  "Differing rank and differing extent are both disagreements.";
+  u:assert_eq(u:st_shapes_agree([2, 3], [2, 3]), 1, "equal shapes")?;
+  u:assert_eq(u:st_shapes_agree([2, 3], [3, 2]), 0, "transposed is not equal")?;
+  u:assert_eq(u:st_shapes_agree([2, 3], [2]), 0, "different rank")?;
+  u:assert_eq(u:st_shapes_agree([4], [4]), 1, "equal one-dimensional shapes")
+}
+
+u:run_registered_tests()

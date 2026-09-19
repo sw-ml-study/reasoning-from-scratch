@@ -81,7 +81,11 @@ def u:st_output_head_name() {
 
 def u:st_tied(header) {
   "1 when the checkpoint ties its output head to the embedding table, which is true when no separate output tensor is present. Qwen3-0.6B ties them, so the forward pass must transpose the embedding rather than look for a tensor that does not exist.";
-  1 - has_field(header.table, u:st_output_head_name())
+  if is_err(u:sth_tensor(header, u:st_output_head_name())) {
+    1
+  } else {
+    0
+  }
 }
 
 def u:st_expected_shape(config, role) {

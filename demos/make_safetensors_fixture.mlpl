@@ -1,0 +1,69 @@
+# Write a tiny safetensors checkpoint for the validator's tests: the real layout at the tiny configuration, with one-byte tensors so no float encoding is needed. Output goes to the ignored out/ tree and is never committed.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+
+def u:fixture_dims(shape) {
+  "A shape rendered as the JSON list a safetensors directory entry carries.";
+  if tally(shape) - 1 {
+    str_concat(to_string(at(shape, 0)), str_concat(",", to_string(at(shape, 1))))
+  } else {
+    to_string(at(shape, 0))
+  }
+}
+
+def u:fixture_values(shape) {
+  "Number of values a shape holds.";
+  if tally(shape) - 1 {
+    at(shape, 0) * at(shape, 1)
+  } else {
+    at(shape, 0)
+  }
+}
+
+def u:fixture_entry(name, shape, start) {
+  "One directory entry, which records the tensor's dtype, shape, and byte span.";
+  count = u:fixture_values(shape);
+  str_concat("\"", str_concat(name, str_concat("\":{\"dtype\":\"U8\",\"shape\":[", str_concat(u:fixture_dims(shape), str_concat("],\"data_offsets\":[", str_concat(to_string(start), str_concat(",", str_concat(to_string(start + count), "]}"))))))))
+}
+
+def u:fixture_header(config) {
+  "The whole directory: the embedding table, the final gain, and every layer weight, in the order the loader expects them.";
+  roles = ["wq", "wk", "wv", "wo", "qn", "kn", "n1", "n2", "gate", "up", "down"];
+  embedding = [config.vocab, config.emb];
+  text = u:fixture_entry(u:st_embedding_name(), embedding, 0);
+  offset = u:fixture_values(embedding);
+  text = str_concat(text, str_concat(",", u:fixture_entry(u:st_final_norm_name(), [config.emb], offset)));
+  offset = offset + config.emb;
+  layer = 0;
+  while lt(layer, config.layers) {
+    i = 0;
+    while lt(i, list_len(roles)) {
+      shape = u:st_expected_shape(config, unwrap(list_get(roles, i)));
+      text = str_concat(text, str_concat(",", u:fixture_entry(unwrap(u:st_layer_name(layer, unwrap(list_get(roles, i)))), shape, offset)));
+      offset = offset + u:fixture_values(shape);
+      i = i + 1
+    };
+    layer = layer + 1
+  };
+  {text: str_concat("{", str_concat(text, "}")), data_values: offset}
+}
+
+def u:fixture_length_prefix(length) {
+  "The eight-byte little-endian header length that opens a safetensors file.";
+  [mod(length, 256), mod(floor(length / 256), 256), mod(floor(length / 65536), 256), mod(floor(length / 16777216), 256), 0, 0, 0, 0]
+}
+
+config = u:qwen_config_tiny()
+header = u:fixture_header(config)
+header_bytes = tokenize_bytes(header.text)
+data = mod(range(header.data_values) * 7 + 11, 251)
+path = "out/fixtures/tiny-checkpoint.safetensors"
+written = write_bytes(path, concat(concat(u:fixture_length_prefix(tally(header_bytes)), header_bytes), data))
+print("wrote", path)
+print("  header bytes:", tally(header_bytes), " data bytes:", header.data_values, " total:", 8 + tally(header_bytes) + header.data_values)
+if is_err(written) {
+  written
+} else {
+  ok(header.data_values)
+}

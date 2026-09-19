@@ -1,6 +1,6 @@
 number = 3
 slug = "safetensors-header"
-status = "pending"
+status = "in-progress"
 description = "Vendor safetensors-header 0.1.0 from ../demo-mlpl-libraries by pinned revisio..."
 role = "production"
 context_files = []
