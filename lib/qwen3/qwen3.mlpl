@@ -1,0 +1,132 @@
+# The Qwen3 decoder forward pass in whole-array operations: RMSNorm, split-halves RoPE, grouped-query attention with QK-norm, SwiGLU, and the pre-norm residual block. Requires lib/text/text.mlpl included first. Written without element indexing wherever possible, because reaching into a container copies it; the per-head attention loop is the one exception and it is what upstream request R3 would remove.
+
+def u:qwen_config_tiny() {
+  "A tiny configuration used for exact property tests: small enough to reason about, shaped exactly like the real one.";
+  {vocab: 32, emb: 16, layers: 2, heads: 4, kv_heads: 2, head_dim: 4, hidden: 32, rope_base: 1000000, eps: 0.000001, context: 16}
+}
+
+def u:qwen_config_06b() {
+  "The published Qwen3-0.6B configuration, as data. Nothing here loads it; the forward pass is the same function at either size.";
+  {vocab: 151936, emb: 1024, layers: 28, heads: 16, kv_heads: 8, head_dim: 128, hidden: 3072, rope_base: 1000000, eps: 0.000001, context: 40960}
+}
+
+def u:qwen_last_axis(x) {
+  "Index of an array's last axis.";
+  tally(shape(x)) - 1
+}
+
+def u:qwen_keepdim_shape(x) {
+  "The shape of an array with its last axis replaced by one, so a per-row reduction can be broadcast back over it.";
+  s = shape(x);
+  n = tally(s);
+  concat(compress(1 - eq(range(n), n - 1), s), 1)
+}
+
+def u:qwen_rms_norm(x, scale, eps) {
+  "Root-mean-square normalization over the last axis, scaled by a learned gain. No mean is subtracted, which is what distinguishes this from layer normalization.";
+  axis = u:qwen_last_axis(x);
+  width = at(shape(x), axis);
+  mean_square = reduce(:add, x * x, axis) / width;
+  x / reshape(sqrt(mean_square + eps), u:qwen_keepdim_shape(x)) * scale
+}
+
+def u:qwen_rope_tables(head_dim, base, context) {
+  "Cosine and sine tables for rotary position embedding, computed once per configuration. Frequencies fall geometrically across half the head, and each table is that half repeated, which is what the split-halves rotation expects.";
+  half = head_dim / 2;
+  inverse_frequency = exp(0 - 2 * range(half) / head_dim * log(base));
+  angles = matmul(reshape(range(context), [context, 1]), reshape(inverse_frequency, [1, half]));
+  {cos: concat(cos(angles), cos(angles), 1), sin: concat(sin(angles), sin(angles), 1)}
+}
+
+def u:qwen_first_half_mask(head_dim) {
+  "Mask selecting the first half of a head's features.";
+  lt(range(head_dim), head_dim / 2)
+}
+
+def u:qwen_apply_rope(x, tables, offset) {
+  "Rotate a [positions, head_dim] block by its position angles. The rotation pairs each feature with the one half a head away, so the first half is negated into the second.";
+  positions = at(shape(x), 0);
+  head_dim = at(shape(x), 1);
+  rows = range(positions) + offset;
+  first = u:qwen_first_half_mask(head_dim);
+  rotated = concat(0 - compress(1 - first, x, 1), compress(first, x, 1), 1);
+  x * gather_rows(tables.cos, rows) + rotated * gather_rows(tables.sin, rows)
+}
+
+def u:qwen_causal_mask(positions, offset) {
+  "A [queries, keys] matrix that is one where a query may attend to a key and zero where it may not. With an offset the queries are the last rows of a longer sequence, which is what a cached step needs.";
+  rows = reshape(range(positions) + offset, [positions, 1]);
+  columns = reshape(range(positions + offset), [1, positions + offset]);
+  1 - lt(rows, columns)
+}
+
+def u:qwen_attention_head(query, key, value, head_dim, offset) {
+  "One attention head over already-rotated queries and keys: scaled dot products, causal masking, row-wise softmax, and the value average.";
+  scores = matmul(query, transpose(key)) / sqrt(head_dim);
+  allowed = u:qwen_causal_mask(at(shape(query), 0), offset);
+  matmul(softmax(scores * allowed - 1000000000 * (1 - allowed)), value)
+}
+
+def u:qwen_attention(config, weights, tables, x, offset) {
+  "Grouped-query attention. Queries and keys are normalized per head before rotation, several query heads share each key and value head, and the heads are concatenated before the output projection.";
+  positions = at(shape(x), 0);
+  head_dim = config.head_dim;
+  group = config.heads / config.kv_heads;
+  queries = u:qwen_rms_norm(reshape(matmul(x, weights.wq), [positions, config.heads, head_dim]), weights.qn, config.eps);
+  keys = u:qwen_rms_norm(reshape(matmul(x, weights.wk), [positions, config.kv_heads, head_dim]), weights.kn, config.eps);
+  values = reshape(matmul(x, weights.wv), [positions, config.kv_heads, head_dim]);
+  context = 0;
+  head = 0;
+  while lt(head, config.heads) {
+    shared = floor(head / group);
+    rotated_query = u:qwen_apply_rope(take(queries, 1, head), tables, offset);
+    rotated_key = u:qwen_apply_rope(take(keys, 1, shared), tables, 0);
+    piece = u:qwen_attention_head(rotated_query, rotated_key, take(values, 1, shared), head_dim, offset);
+    context = if head {
+      concat(context, piece, 1)
+    } else {
+      piece
+    };
+    head = head + 1
+  };
+  matmul(context, weights.wo)
+}
+
+def u:qwen_feed_forward(weights, x) {
+  "SwiGLU: one projection is gated by the sigmoid-weighted other, then projected back.";
+  gated = matmul(x, weights.gate);
+  gated * sigmoid(gated) * matmul(x, weights.up)
+}
+
+def u:qwen_block(config, weights, tables, x, offset) {
+  "One pre-norm residual block: normalize, attend, add; normalize, feed forward, add.";
+  attended = x + u:qwen_attention(config, weights, tables, u:qwen_rms_norm(x, weights.n1, config.eps), offset);
+  attended + matmul(u:qwen_feed_forward(weights, u:qwen_rms_norm(attended, weights.n2, config.eps)), weights.down)
+}
+
+def u:qwen_embed(model, ids) {
+  "Look up the embedding row for each token id.";
+  gather_rows(model.embedding, ids)
+}
+
+def u:qwen_hidden(config, model, ids) {
+  "Run the token ids through every block and the final normalization, returning the hidden states.";
+  tables = model.rope;
+  x = u:qwen_embed(model, ids);
+  layer = 0;
+  while lt(layer, config.layers) {
+    x = u:qwen_block(config, call(model.layer_weights, layer), tables, x, 0);
+    layer = layer + 1
+  };
+  u:qwen_rms_norm(x, model.final_norm, config.eps)
+}
+
+def u:qwen_logits(config, model, ids) {
+  "Hidden states projected onto the vocabulary through the tied embedding matrix, giving one score row per position.";
+  matmul(u:qwen_hidden(config, model, ids), transpose(model.embedding))
+}
+
+def u:qwen_next_logits(config, model, ids) {
+  "The score row for the position after the given sequence, which is what a decoding loop reads.";
+  last_row(u:qwen_logits(config, model, ids))
+}

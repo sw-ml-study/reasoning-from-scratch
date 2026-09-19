@@ -1,0 +1,16 @@
+# A deterministic tiny model: seeded synthetic weights shaped exactly like the real ones, so the forward pass can be tested without loading anything. Requires lib/qwen3/qwen3.mlpl included first.
+
+def u:qwen_tiny_layer_weights(layer) {
+  "Weights for one layer of the tiny model, derived from the layer index so every run is identical. Shapes match the real model's: queries project to all heads, keys and values to the shared heads only.";
+  config = u:qwen_config_tiny();
+  seed = 100 + layer * 17;
+  span = config.heads * config.head_dim;
+  shared = config.kv_heads * config.head_dim;
+  {wq: randn(seed, [config.emb, span]) * 0.2, wk: randn(seed + 1, [config.emb, shared]) * 0.2, wv: randn(seed + 2, [config.emb, shared]) * 0.2, wo: randn(seed + 3, [span, config.emb]) * 0.2, qn: 1 + randn(seed + 4, [config.head_dim]) * 0.05, kn: 1 + randn(seed + 5, [config.head_dim]) * 0.05, n1: 1 + randn(seed + 6, [config.emb]) * 0.05, n2: 1 + randn(seed + 7, [config.emb]) * 0.05, gate: randn(seed + 8, [config.emb, config.hidden]) * 0.2, up: randn(seed + 9, [config.emb, config.hidden]) * 0.2, down: randn(seed + 10, [config.hidden, config.emb]) * 0.2}
+}
+
+def u:qwen_tiny_model() {
+  "The whole tiny model: an embedding table that doubles as the output head, the final normalization gain, precomputed rotation tables, and a reference to the per-layer weight function.";
+  config = u:qwen_config_tiny();
+  {embedding: randn(7, [config.vocab, config.emb]) * 0.2, final_norm: 1 + randn(8, [config.emb]) * 0.05, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: :u:qwen_tiny_layer_weights}
+}

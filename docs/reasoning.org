@@ -3401,6 +3401,298 @@ def u:tok_think_ids(tables) {
 }
 #+end_src
 
+** lib/qwen3/qwen3.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-qwen3-qwen3-mlpl
+:END:
+
+The model itself, and the first code here that could not be an extension:
+every operation below has to sit on the autograd tape, because reinforcement
+learning in a later saga differentiates through all of it.
+
+Two measurements dictate the style. Whole-array arithmetic is fast, at 1.28 ms
+for a thousand-by-thousand matrix-vector product, while reaching into a
+container copies it, at 0.97 ms for a single element of a million-element
+array. So nothing here indexes inside a loop, with one exception that is
+forced: attention must be computed per head because `matmul` accepts only
+rank-2 operands, and that exception is precisely what upstream request R3
+would remove.
+
+The tiny configuration is not a toy version of the model. It is the same
+functions at a smaller width, so a property that holds here is a property of
+the code the real weights will run through.
+
+The module comment states the indexing rule and the one exception.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+# The Qwen3 decoder forward pass in whole-array operations: RMSNorm, split-halves RoPE, grouped-query attention with QK-norm, SwiGLU, and the pre-norm residual block. Requires lib/text/text.mlpl included first. Written without element indexing wherever possible, because reaching into a container copies it; the per-head attention loop is the one exception and it is what upstream request R3 would remove.
+#+end_src
+
+Both configurations are data, and the forward pass never branches on which
+one it has. The tiny one is small enough to reason about by hand; the other
+is the published Qwen3-0.6B shape.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_config_tiny() {
+  "A tiny configuration used for exact property tests: small enough to reason about, shaped exactly like the real one.";
+  {vocab: 32, emb: 16, layers: 2, heads: 4, kv_heads: 2, head_dim: 4, hidden: 32, rope_base: 1000000, eps: 0.000001, context: 16}
+}
+
+def u:qwen_config_06b() {
+  "The published Qwen3-0.6B configuration, as data. Nothing here loads it; the forward pass is the same function at either size.";
+  {vocab: 151936, emb: 1024, layers: 28, heads: 16, kv_heads: 8, head_dim: 128, hidden: 3072, rope_base: 1000000, eps: 0.000001, context: 40960}
+}
+#+end_src
+
+Normalization works over the last axis at any rank, so it needs the shape
+with that axis replaced by one in order to broadcast a per-row result back
+over the rows. Building that shape from `shape(x)` is what these two helpers
+do, and it is why the same normalization serves both a
+`[positions, width]` block and a `[positions, heads, head_dim]` one.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_last_axis(x) {
+  "Index of an array's last axis.";
+  tally(shape(x)) - 1
+}
+
+def u:qwen_keepdim_shape(x) {
+  "The shape of an array with its last axis replaced by one, so a per-row reduction can be broadcast back over it.";
+  s = shape(x);
+  n = tally(s);
+  concat(compress(1 - eq(range(n), n - 1), s), 1)
+}
+#+end_src
+
+Root-mean-square normalization. No mean is subtracted, which is the
+difference from layer normalization and the reason it is cheaper: one
+reduction, one square root, one scale.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_rms_norm(x, scale, eps) {
+  "Root-mean-square normalization over the last axis, scaled by a learned gain. No mean is subtracted, which is what distinguishes this from layer normalization.";
+  axis = u:qwen_last_axis(x);
+  width = at(shape(x), axis);
+  mean_square = reduce(:add, x * x, axis) / width;
+  x / reshape(sqrt(mean_square + eps), u:qwen_keepdim_shape(x)) * scale
+}
+#+end_src
+
+Rotary position embedding encodes a token's position by rotating its query
+and key vectors, with the rotation angle growing linearly in position and
+falling geometrically across the head. The tables are built once per
+configuration. Each is its half repeated, because the rotation pairs feature
+*i* with feature *i + head_dim/2* rather than with its neighbour.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_rope_tables(head_dim, base, context) {
+  "Cosine and sine tables for rotary position embedding, computed once per configuration. Frequencies fall geometrically across half the head, and each table is that half repeated, which is what the split-halves rotation expects.";
+  half = head_dim / 2;
+  inverse_frequency = exp(0 - 2 * range(half) / head_dim * log(base));
+  angles = matmul(reshape(range(context), [context, 1]), reshape(inverse_frequency, [1, half]));
+  {cos: concat(cos(angles), cos(angles), 1), sin: concat(sin(angles), sin(angles), 1)}
+}
+#+end_src
+
+Splitting a head in half is a `compress` along the last axis, which keeps
+the operation whole-array. The rotation then negates the second half into the
+first, which is the split-halves convention the published weights expect; the
+interleaved convention would produce different numbers from the same
+weights.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_first_half_mask(head_dim) {
+  "Mask selecting the first half of a head's features.";
+  lt(range(head_dim), head_dim / 2)
+}
+
+def u:qwen_apply_rope(x, tables, offset) {
+  "Rotate a [positions, head_dim] block by its position angles. The rotation pairs each feature with the one half a head away, so the first half is negated into the second.";
+  positions = at(shape(x), 0);
+  head_dim = at(shape(x), 1);
+  rows = range(positions) + offset;
+  first = u:qwen_first_half_mask(head_dim);
+  rotated = concat(0 - compress(1 - first, x, 1), compress(first, x, 1), 1);
+  x * gather_rows(tables.cos, rows) + rotated * gather_rows(tables.sin, rows)
+}
+#+end_src
+
+A token may attend to itself and to everything before it. The offset
+argument is what a cached decoding step needs: one query row against all the
+keys accumulated so far.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_causal_mask(positions, offset) {
+  "A [queries, keys] matrix that is one where a query may attend to a key and zero where it may not. With an offset the queries are the last rows of a longer sequence, which is what a cached step needs.";
+  rows = reshape(range(positions) + offset, [positions, 1]);
+  columns = reshape(range(positions + offset), [1, positions + offset]);
+  1 - lt(rows, columns)
+}
+#+end_src
+
+One head. Scores are scaled by the square root of the head dimension so
+their variance does not grow with width, disallowed positions are pushed far
+negative before the softmax rather than after, and the result is a convex
+combination of value vectors. The tests check that directly: give every
+position the same value and the output must be that value.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_attention_head(query, key, value, head_dim, offset) {
+  "One attention head over already-rotated queries and keys: scaled dot products, causal masking, row-wise softmax, and the value average.";
+  scores = matmul(query, transpose(key)) / sqrt(head_dim);
+  allowed = u:qwen_causal_mask(at(shape(query), 0), offset);
+  matmul(softmax(scores * allowed - 1000000000 * (1 - allowed)), value)
+}
+#+end_src
+
+Grouped-query attention. Queries get their own head each, keys and values
+are shared between several, which is what makes the key-value cache small
+enough to be worth keeping. Both are normalized per head *before* rotation,
+which is the order the published weights were trained with.
+
+The loop over heads is the one place this file indexes, and the comment in
+the module header explains why.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_attention(config, weights, tables, x, offset) {
+  "Grouped-query attention. Queries and keys are normalized per head before rotation, several query heads share each key and value head, and the heads are concatenated before the output projection.";
+  positions = at(shape(x), 0);
+  head_dim = config.head_dim;
+  group = config.heads / config.kv_heads;
+  queries = u:qwen_rms_norm(reshape(matmul(x, weights.wq), [positions, config.heads, head_dim]), weights.qn, config.eps);
+  keys = u:qwen_rms_norm(reshape(matmul(x, weights.wk), [positions, config.kv_heads, head_dim]), weights.kn, config.eps);
+  values = reshape(matmul(x, weights.wv), [positions, config.kv_heads, head_dim]);
+  context = 0;
+  head = 0;
+  while lt(head, config.heads) {
+    shared = floor(head / group);
+    rotated_query = u:qwen_apply_rope(take(queries, 1, head), tables, offset);
+    rotated_key = u:qwen_apply_rope(take(keys, 1, shared), tables, 0);
+    piece = u:qwen_attention_head(rotated_query, rotated_key, take(values, 1, shared), head_dim, offset);
+    context = if head {
+      concat(context, piece, 1)
+    } else {
+      piece
+    };
+    head = head + 1
+  };
+  matmul(context, weights.wo)
+}
+#+end_src
+
+SwiGLU: one projection is gated by the sigmoid-weighted other. The width
+expands to the hidden size and the block projects it back.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_feed_forward(weights, x) {
+  "SwiGLU: one projection is gated by the sigmoid-weighted other, then projected back.";
+  gated = matmul(x, weights.gate);
+  gated * sigmoid(gated) * matmul(x, weights.up)
+}
+#+end_src
+
+Pre-norm residual: normalize, attend, add; normalize, feed forward, add.
+Normalizing before rather than after each sublayer is what keeps the residual
+path clean enough to train deep.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_block(config, weights, tables, x, offset) {
+  "One pre-norm residual block: normalize, attend, add; normalize, feed forward, add.";
+  attended = x + u:qwen_attention(config, weights, tables, u:qwen_rms_norm(x, weights.n1, config.eps), offset);
+  attended + matmul(u:qwen_feed_forward(weights, u:qwen_rms_norm(attended, weights.n2, config.eps)), weights.down)
+}
+#+end_src
+
+Token ids become rows of the embedding table, which `gather_rows` does in
+one call and which is differentiable, so the embedding trains.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_embed(model, ids) {
+  "Look up the embedding row for each token id.";
+  gather_rows(model.embedding, ids)
+}
+#+end_src
+
+Every block in order, then the final normalization. The per-layer weights
+arrive through a function reference rather than a data structure, because the
+language has no list of records; the tiny model answers it from a literal and
+a loader can answer it from anywhere.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_hidden(config, model, ids) {
+  "Run the token ids through every block and the final normalization, returning the hidden states.";
+  tables = model.rope;
+  x = u:qwen_embed(model, ids);
+  layer = 0;
+  while lt(layer, config.layers) {
+    x = u:qwen_block(config, call(model.layer_weights, layer), tables, x, 0);
+    layer = layer + 1
+  };
+  u:qwen_rms_norm(x, model.final_norm, config.eps)
+}
+#+end_src
+
+The tied output head: the embedding matrix transposed. Qwen3-0.6B ties
+them, so there is no separate output tensor in the checkpoint at all.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_logits(config, model, ids) {
+  "Hidden states projected onto the vocabulary through the tied embedding matrix, giving one score row per position.";
+  matmul(u:qwen_hidden(config, model, ids), transpose(model.embedding))
+}
+#+end_src
+
+The last row, which is the only one a decoding loop reads.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_next_logits(config, model, ids) {
+  "The score row for the position after the given sequence, which is what a decoding loop reads.";
+  last_row(u:qwen_logits(config, model, ids))
+}
+#+end_src
+
+** lib/qwen3/tiny.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-qwen3-tiny-mlpl
+:END:
+
+Weights that are deterministic without being loaded. Every array is seeded
+from its layer index, so the model is identical on every run and in every
+checkout, and the shapes are the real ones: queries project to all heads,
+keys and values only to the shared ones.
+
+The module needs the forward pass for its configuration.
+
+#+begin_src mlpl :tangle ../lib/qwen3/tiny.mlpl
+# A deterministic tiny model: seeded synthetic weights shaped exactly like the real ones, so the forward pass can be tested without loading anything. Requires lib/qwen3/qwen3.mlpl included first.
+#+end_src
+
+One layer's weights. This function is what the forward pass calls through
+its function reference, so the same forward pass will later be fed by a
+safetensors loader without changing a line.
+
+#+begin_src mlpl :tangle ../lib/qwen3/tiny.mlpl
+def u:qwen_tiny_layer_weights(layer) {
+  "Weights for one layer of the tiny model, derived from the layer index so every run is identical. Shapes match the real model's: queries project to all heads, keys and values to the shared heads only.";
+  config = u:qwen_config_tiny();
+  seed = 100 + layer * 17;
+  span = config.heads * config.head_dim;
+  shared = config.kv_heads * config.head_dim;
+  {wq: randn(seed, [config.emb, span]) * 0.2, wk: randn(seed + 1, [config.emb, shared]) * 0.2, wv: randn(seed + 2, [config.emb, shared]) * 0.2, wo: randn(seed + 3, [span, config.emb]) * 0.2, qn: 1 + randn(seed + 4, [config.head_dim]) * 0.05, kn: 1 + randn(seed + 5, [config.head_dim]) * 0.05, n1: 1 + randn(seed + 6, [config.emb]) * 0.05, n2: 1 + randn(seed + 7, [config.emb]) * 0.05, gate: randn(seed + 8, [config.emb, config.hidden]) * 0.2, up: randn(seed + 9, [config.emb, config.hidden]) * 0.2, down: randn(seed + 10, [config.hidden, config.emb]) * 0.2}
+}
+#+end_src
+
+The whole model: an embedding table that doubles as the output head, the
+final gain, the rotation tables, and the reference to the function above.
+
+#+begin_src mlpl :tangle ../lib/qwen3/tiny.mlpl
+def u:qwen_tiny_model() {
+  "The whole tiny model: an embedding table that doubles as the output head, the final normalization gain, precomputed rotation tables, and a reference to the per-layer weight function.";
+  config = u:qwen_config_tiny();
+  {embedding: randn(7, [config.vocab, config.emb]) * 0.2, final_norm: 1 + randn(8, [config.emb]) * 0.05, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: :u:qwen_tiny_layer_weights}
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -3409,8 +3701,9 @@ normalizer, exact rational arithmetic, a recursive-descent evaluator, a
 grader that is total on malformed input, a dataset loader that validates
 before it returns, a harness that measures any responder with provenance
 attached, the import that turns a six-megabyte tokenizer document into
-tables a byte-level encoder can use, the encoder itself, and the decoding and
-prompt conventions that surround it.
+tables a byte-level encoder can use, the encoder itself, the decoding and
+prompt conventions that surround it, and the decoder forward pass those ids
+will run through.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it

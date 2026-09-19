@@ -132,9 +132,18 @@ id = "QWEN"
 slug = "qwen3-forward"
 chapter = 2
 source = "lib/qwen3/qwen3.mlpl"
-test = "tests/test_qwen3.mlpl"
+test = "tests/test_qwen3_forward.mlpl"
 documentation = "docs/architecture.md"
-status = "planned"
+status = "accepted"
+
+[[component]]
+id = "TINY"
+slug = "tiny-model"
+chapter = 2
+source = "lib/qwen3/tiny.mlpl"
+test = "tests/test_qwen3_forward.mlpl"
+documentation = "docs/architecture.md"
+status = "accepted"
 
 [[component]]
 id = "GEN"

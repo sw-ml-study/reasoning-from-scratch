@@ -1,0 +1,126 @@
+# Forward-pass contract, stated as properties rather than golden numbers: normalization invariants, rotation invariants, causality, shape agreement, and determinism.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/qwen3/tiny.mlpl";
+
+def u:fwd_row_rms(x, row) {
+  "Root mean square of one row of a rank-2 array.";
+  r = take(x, 0, row);
+  sqrt(mean(r * r))
+}
+
+def u:fwd_row_norm(x, row) {
+  "Euclidean norm of one row of a rank-2 array.";
+  r = take(x, 0, row);
+  sqrt(reduce(:add, r * r))
+}
+
+@test {name: "normalization gives every row unit root-mean-square", tags: ["qwen3", "norm"]}
+def u:test_fwd_rms_norm() {
+  "With a unit gain the output rows have unit root mean square, at rank two and rank three, and the gain scales the result exactly.";
+  config = u:qwen_config_tiny();
+  x = randn(1, [3, 16]) * 5;
+  unit = u:qwen_rms_norm(x, fill([16], 1), config.eps);
+  u:assert_approx(u:fwd_row_rms(unit, 0), 1, 0.00001, "first row")?;
+  u:assert_approx(u:fwd_row_rms(unit, 2), 1, 0.00001, "last row")?;
+  doubled = u:qwen_rms_norm(x, fill([16], 2), config.eps);
+  u:assert_approx(u:fwd_row_rms(doubled, 0), 2, 0.00001, "the gain scales the output")?;
+  cube = randn(2, [3, 4, 4]) * 5;
+  normed = u:qwen_rms_norm(cube, fill([4], 1), config.eps);
+  u:assert_shape(normed, [3, 4, 4], "rank three keeps its shape")?;
+  head = take(normed, 1, 0);
+  u:assert_approx(u:fwd_row_rms(head, 0), 1, 0.00001, "each head row is normalized independently")
+}
+
+@test {name: "rotation preserves length and is the identity at the first position", tags: ["qwen3", "rope"]}
+def u:test_fwd_rope() {
+  "Rotary embedding turns a vector without stretching it, and position zero rotates by nothing.";
+  config = u:qwen_config_tiny();
+  tables = u:qwen_rope_tables(config.head_dim, config.rope_base, config.context);
+  u:assert_shape(tables.cos, [config.context, config.head_dim], "cosine table shape")?;
+  x = randn(3, [4, config.head_dim]);
+  rotated = u:qwen_apply_rope(x, tables, 0);
+  u:assert_approx(u:fwd_row_norm(rotated, 0), u:fwd_row_norm(x, 0), 0.00001, "the first row is unchanged in length")?;
+  u:assert_approx(u:fwd_row_norm(rotated, 3), u:fwd_row_norm(x, 3), 0.00001, "a later row keeps its length")?;
+  u:assert_approx(take(rotated, 0, 0), take(x, 0, 0), 0.00001, "position zero is the identity")?;
+  u:assert_true(gt(reduce(:max, abs(take(rotated, 0, 1) - take(x, 0, 1))), 0.01), "a later position actually rotates")?;
+  shifted = u:qwen_apply_rope(take(x, 0, 1) * fill([1, config.head_dim], 1), tables, 1);
+  u:assert_approx(shifted, take(rotated, 0, 1) * fill([1, config.head_dim], 1), 0.00001, "rotating with an offset matches rotating in place")
+}
+
+@test {name: "the causal mask admits the past and refuses the future", tags: ["qwen3", "mask"]}
+def u:test_fwd_causal_mask() {
+  "The mask is lower triangular without an offset, and with one it describes the last rows of a longer sequence.";
+  mask = u:qwen_causal_mask(3, 0);
+  u:assert_shape(mask, [3, 3], "square without an offset")?;
+  u:assert_true(equal(mask, [[1, 0, 0], [1, 1, 0], [1, 1, 1]]), "lower triangular")?;
+  offset = u:qwen_causal_mask(1, 2);
+  u:assert_shape(offset, [1, 3], "one query over three keys")?;
+  u:assert_true(equal(offset, [[1, 1, 1]]), "a cached step may attend to everything before it")
+}
+
+@test {name: "an attention head averages only over the past", tags: ["qwen3", "attention"]}
+def u:test_fwd_attention_head() {
+  "With identical values every output equals that value, and with increasing values no output can exceed its own position.";
+  config = u:qwen_config_tiny();
+  query = randn(4, [4, config.head_dim]);
+  key = randn(5, [4, config.head_dim]);
+  same = fill([4, 2], 3);
+  averaged = u:qwen_attention_head(query, key, same, config.head_dim, 0);
+  u:assert_shape(averaged, [4, 2], "output shape")?;
+  u:assert_approx(averaged, fill([4, 2], 3), 0.00001, "a convex combination of one value is that value")?;
+  increasing = reshape(range(4), [4, 1]);
+  bounded = u:qwen_attention_head(query, key, increasing, config.head_dim, 0);
+  u:assert_approx(at(flatten(bounded), 0), 0, 0.00001, "the first position can only see itself")?;
+  u:assert_true(1 - gt(at(flatten(bounded), 1), 1), "the second position cannot exceed its own value")?;
+  u:assert_true(1 - gt(at(flatten(bounded), 3), 3), "the last position cannot exceed its own value")
+}
+
+@test {name: "every stage keeps the documented shape", tags: ["qwen3", "shapes"]}
+def u:test_fwd_shapes() {
+  "Embedding, attention, feed forward, block, hidden states, and logits all agree at their boundaries.";
+  config = u:qwen_config_tiny();
+  model = u:qwen_tiny_model();
+  weights = call(model.layer_weights, 0);
+  u:assert_shape(weights.wq, [config.emb, config.heads * config.head_dim], "query projection")?;
+  u:assert_shape(weights.wk, [config.emb, config.kv_heads * config.head_dim], "key projection is narrower")?;
+  ids = [1, 2, 3];
+  x = u:qwen_embed(model, ids);
+  u:assert_shape(x, [3, config.emb], "embedding")?;
+  u:assert_shape(u:qwen_attention(config, weights, model.rope, x, 0), [3, config.emb], "attention output")?;
+  u:assert_shape(u:qwen_feed_forward(weights, x), [3, config.hidden], "feed-forward inner width")?;
+  u:assert_shape(u:qwen_block(config, weights, model.rope, x, 0), [3, config.emb], "block output")?;
+  u:assert_shape(u:qwen_hidden(config, model, ids), [3, config.emb], "hidden states")?;
+  u:assert_shape(u:qwen_logits(config, model, ids), [3, config.vocab], "logits")?;
+  u:assert_shape(u:qwen_next_logits(config, model, ids), [config.vocab], "the next-position row")
+}
+
+@test {name: "a prefix keeps its logits when the sequence grows", tags: ["qwen3", "causality"]}
+def u:test_fwd_prefix_invariance() {
+  "This is the whole-model statement of causality: appending tokens cannot change the scores already produced for earlier positions.";
+  config = u:qwen_config_tiny();
+  model = u:qwen_tiny_model();
+  short = u:qwen_logits(config, model, [5, 9, 2]);
+  long = u:qwen_logits(config, model, [5, 9, 2, 7, 1]);
+  u:assert_approx(take(long, 0, 0), take(short, 0, 0), 0.000001, "first position")?;
+  u:assert_approx(take(long, 0, 1), take(short, 0, 1), 0.000001, "second position")?;
+  u:assert_approx(take(long, 0, 2), take(short, 0, 2), 0.000001, "third position")?;
+  u:assert_approx(u:qwen_next_logits(config, model, [5, 9, 2]), take(short, 0, 2), 0.000001, "the next-position row is the last row")
+}
+
+@test {name: "the model is deterministic and its logits are finite", tags: ["qwen3", "determinism"]}
+def u:test_fwd_determinism() {
+  "Two runs agree exactly, different inputs disagree, and nothing overflows.";
+  config = u:qwen_config_tiny();
+  model = u:qwen_tiny_model();
+  first = u:qwen_logits(config, model, [3, 1, 4]);
+  second = u:qwen_logits(config, model, [3, 1, 4]);
+  u:assert_true(equal(first, second), "two runs agree exactly")?;
+  other = u:qwen_logits(config, model, [3, 1, 5]);
+  u:assert_true(gt(reduce(:max, abs(other - first)), 0.000001), "a different token changes the scores")?;
+  u:assert_true(1 - gt(reduce(:max, abs(first)), 1000), "no score has run away")?;
+  single = u:qwen_logits(config, model, [0]);
+  u:assert_shape(single, [1, config.vocab], "a one-token sequence works")
+}
+
+u:run_registered_tests()

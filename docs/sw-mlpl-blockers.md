@@ -129,6 +129,20 @@ measured evidence behind the decision recorded in `feature-homes.md`: the
 reference encoder proves the algorithm, and the native extension in
 `../demo-extensions` is the production path.
 
+## Forward pass (measured 2026-09-18, tiny configuration)
+
+| Quantity | Value |
+|---|---|
+| full forward, 4 tokens, 2 layers, width 16 | 1.39 ms |
+| full forward, 8 tokens | 2.3 ms |
+| one attention layer, 8 tokens, 4 heads | 0.52 ms |
+| one per-head slice at this size | 0.007 ms |
+
+At the tiny size a head slice is cheap because the array is small; the cost
+of slicing follows the array's size, so the same loop over a
+`[T, 16, 128]` tensor in the real model is where request R3 bites. The
+forward pass is otherwise whole-array throughout.
+
 ## Performance (measured by `matmul-throughput`)
 
 | Operation | Time |

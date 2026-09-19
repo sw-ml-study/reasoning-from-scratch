@@ -36,7 +36,7 @@ with an honest unavailable result if the extension has not landed.
 
 | # | Step | Status |
 |---|---|---|
-| 1 | `qwen3-forward-tiny` | pending |
+| 1 | `qwen3-forward-tiny` | done: RMSNorm, RoPE, grouped-query attention, SwiGLU, seven property tests |
 | 2 | `kv-cache-generation` | pending |
 | 3 | `safetensors-header` | pending |
 | 4 | `bf16-tensor-decode` | pending, gated on upstream R11 |
