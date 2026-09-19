@@ -1,9 +1,10 @@
 number = 2
 slug = "kv-cache-generation"
-status = "pending"
+status = "completed"
 description = "Implement KV-cache generation in lib/generate/ (prefix u:gen_): a per-layer k..."
 role = "production"
 context_files = []
 created_at = "2026-09-18T16:43:33"
+completed_at = "2026-09-18T17:52:57"
 task_type = "mlpl-library"
-commits = []
+commits = ["4c4f7d7d431bafaa45872f78bf88a5c90773e691"]
