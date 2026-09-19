@@ -130,3 +130,54 @@ def u:qwen_next_logits(config, model, ids) {
   "The score row for the position after the given sequence, which is what a decoding loop reads.";
   last_row(u:qwen_logits(config, model, ids))
 }
+
+def u:qwen_attention_cached(config, weights, tables, x, past_keys, past_values, offset) {
+  "Attention over a key and value history. The new positions' keys are rotated at their own offset and appended to what came before; past keys were rotated when they were new, so they are never touched again. Returns the output together with the extended history.";
+  positions = at(shape(x), 0);
+  head_dim = config.head_dim;
+  group = config.heads / config.kv_heads;
+  queries = u:qwen_rms_norm(reshape(matmul(x, weights.wq), [positions, config.heads, head_dim]), weights.qn, config.eps);
+  fresh_keys = u:qwen_rms_norm(reshape(matmul(x, weights.wk), [positions, config.kv_heads, head_dim]), weights.kn, config.eps);
+  fresh_values = reshape(matmul(x, weights.wv), [positions, config.kv_heads, head_dim]);
+  rotated_keys = 0;
+  shared = 0;
+  while lt(shared, config.kv_heads) {
+    piece = reshape(u:qwen_apply_rope(take(fresh_keys, 1, shared), tables, offset), [positions, 1, head_dim]);
+    rotated_keys = if shared {
+      concat(rotated_keys, piece, 1)
+    } else {
+      piece
+    };
+    shared = shared + 1
+  };
+  keys = if offset {
+    concat(past_keys, rotated_keys, 0)
+  } else {
+    rotated_keys
+  };
+  values = if offset {
+    concat(past_values, fresh_values, 0)
+  } else {
+    fresh_values
+  };
+  context = 0;
+  head = 0;
+  while lt(head, config.heads) {
+    source = floor(head / group);
+    piece = u:qwen_attention_head(u:qwen_apply_rope(take(queries, 1, head), tables, offset), take(keys, 1, source), take(values, 1, source), head_dim, offset);
+    context = if head {
+      concat(context, piece, 1)
+    } else {
+      piece
+    };
+    head = head + 1
+  };
+  {out: matmul(context, weights.wo), keys: keys, values: values}
+}
+
+def u:qwen_block_cached(config, weights, tables, x, past_keys, past_values, offset) {
+  "One residual block over a key and value history, returning the block output and the extended history.";
+  attended = u:qwen_attention_cached(config, weights, tables, u:qwen_rms_norm(x, weights.n1, config.eps), past_keys, past_values, offset);
+  residual = x + attended.out;
+  {out: residual + matmul(u:qwen_feed_forward(weights, u:qwen_rms_norm(residual, weights.n2, config.eps)), weights.down), keys: attended.keys, values: attended.values}
+}

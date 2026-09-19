@@ -1,0 +1,6 @@
+#!/bin/sh
+# Narrated cached generation on the tiny model. No weights, no downloads.
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$repo_root/scripts/run-mlpl-demo" demos/generation_demo.mlpl

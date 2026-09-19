@@ -41,6 +41,10 @@ tokenizer-parity:
 tangle:
     ./scripts/check-tangle
 
+# Narrated cached generation on the tiny model.
+generation-demo:
+    ./scripts/run-generation-demo
+
 # Narrated verifier and harness walk-through over committed fixtures.
 verifier-demo:
     ./scripts/run-verifier-demo

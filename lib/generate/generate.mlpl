@@ -1,0 +1,91 @@
+# Cached autoregressive generation: a per-layer key and value history, prefill followed by one token per step, and greedy decoding. Requires lib/text/text.mlpl and lib/qwen3/qwen3.mlpl included first.
+
+def u:gen_stack_layer(stack, layer_state, layer) {
+  "Append one layer's history to the stacked cache, which holds every layer in one array because the language has no list of records.";
+  s = shape(layer_state);
+  piece = reshape(layer_state, concat([1], s));
+  if layer {
+    concat(stack, piece, 0)
+  } else {
+    piece
+  }
+}
+
+def u:gen_run(config, model, ids, cache, offset) {
+  "Run a sequence through every layer, extending the cache. With no offset this is a prefill over the whole prompt; with one it is a single step over the tokens already seen. Returns the next-position scores and the new cache.";
+  tables = model.rope;
+  x = u:qwen_embed(model, ids);
+  keys = 0;
+  values = 0;
+  layer = 0;
+  while lt(layer, config.layers) {
+    past_keys = if offset {
+      take(cache.keys, 0, layer)
+    } else {
+      0
+    };
+    past_values = if offset {
+      take(cache.values, 0, layer)
+    } else {
+      0
+    };
+    state = u:qwen_block_cached(config, call(model.layer_weights, layer), tables, x, past_keys, past_values, offset);
+    x = state.out;
+    keys = u:gen_stack_layer(keys, state.keys, layer);
+    values = u:gen_stack_layer(values, state.values, layer);
+    layer = layer + 1
+  };
+  logits = matmul(u:qwen_rms_norm(x, model.final_norm, config.eps), transpose(model.embedding));
+  {logits: last_row(logits), cache: {keys: keys, values: values}, length: offset + tally(ids)}
+}
+
+def u:gen_prefill(config, model, ids) {
+  "Run a whole prompt once, keeping every layer's keys and values.";
+  u:gen_run(config, model, ids, 0, 0)
+}
+
+def u:gen_step(config, model, state, id) {
+  "Feed one accepted token, extending the cache by one position and returning the next scores.";
+  u:gen_run(config, model, [id], state.cache, state.length)
+}
+
+def u:gen_cached_length(state) {
+  "Number of positions the cache holds.";
+  state.length
+}
+
+def u:gen_argmax_id(logits) {
+  "The highest-scoring token id, which is what greedy decoding picks.";
+  argmax(logits)
+}
+
+def u:gen_greedy(config, model, prompt_ids, max_new, stop_id) {
+  "Greedy decoding: prefill the prompt, then repeatedly take the highest-scoring token and feed it back. Stops at the stop id, which is not included, or at the token budget.";
+  if tally(prompt_ids) {
+    state = u:gen_prefill(config, model, prompt_ids);
+    generated = [];
+    produced = 0;
+    running = 1;
+    while running {
+      next_id = u:gen_argmax_id(state.logits);
+      if next_id - stop_id {
+        generated = concat(generated, next_id);
+        produced = produced + 1;
+        if lt(produced, max_new) {
+          state = u:gen_step(config, model, state, next_id)
+        } else {
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    ok({ids: generated, count: tally(generated), stopped: if tally(generated) - max_new {
+          "stop token"
+        } else {
+          "budget"
+        }})
+  } else {
+    err({kind: "empty_prompt", message: "generation needs at least one prompt token"})
+  }
+}

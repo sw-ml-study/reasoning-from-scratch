@@ -152,7 +152,7 @@ chapter = 2
 source = "lib/generate/generate.mlpl"
 test = "tests/test_generate.mlpl"
 documentation = "docs/book-map.md"
-status = "planned"
+status = "accepted"
 
 [[component]]
 id = "SCALE"

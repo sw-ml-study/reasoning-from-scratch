@@ -3651,6 +3651,65 @@ def u:qwen_next_logits(config, model, ids) {
 }
 #+end_src
 
+The same attention, over a history. Only the new positions' keys are rotated,
+because past keys were rotated when they were new and rotation is a property
+of a token's position, not of when it is read. Everything else is the
+uncached function, which is deliberate: two implementations of attention
+would be two chances to disagree, and the tests check they do not.
+
+#+begin_src mlpl :tangle ../lib/qwen3/qwen3.mlpl
+def u:qwen_attention_cached(config, weights, tables, x, past_keys, past_values, offset) {
+  "Attention over a key and value history. The new positions' keys are rotated at their own offset and appended to what came before; past keys were rotated when they were new, so they are never touched again. Returns the output together with the extended history.";
+  positions = at(shape(x), 0);
+  head_dim = config.head_dim;
+  group = config.heads / config.kv_heads;
+  queries = u:qwen_rms_norm(reshape(matmul(x, weights.wq), [positions, config.heads, head_dim]), weights.qn, config.eps);
+  fresh_keys = u:qwen_rms_norm(reshape(matmul(x, weights.wk), [positions, config.kv_heads, head_dim]), weights.kn, config.eps);
+  fresh_values = reshape(matmul(x, weights.wv), [positions, config.kv_heads, head_dim]);
+  rotated_keys = 0;
+  shared = 0;
+  while lt(shared, config.kv_heads) {
+    piece = reshape(u:qwen_apply_rope(take(fresh_keys, 1, shared), tables, offset), [positions, 1, head_dim]);
+    rotated_keys = if shared {
+      concat(rotated_keys, piece, 1)
+    } else {
+      piece
+    };
+    shared = shared + 1
+  };
+  keys = if offset {
+    concat(past_keys, rotated_keys, 0)
+  } else {
+    rotated_keys
+  };
+  values = if offset {
+    concat(past_values, fresh_values, 0)
+  } else {
+    fresh_values
+  };
+  context = 0;
+  head = 0;
+  while lt(head, config.heads) {
+    source = floor(head / group);
+    piece = u:qwen_attention_head(u:qwen_apply_rope(take(queries, 1, head), tables, offset), take(keys, 1, source), take(values, 1, source), head_dim, offset);
+    context = if head {
+      concat(context, piece, 1)
+    } else {
+      piece
+    };
+    head = head + 1
+  };
+  {out: matmul(context, weights.wo), keys: keys, values: values}
+}
+
+def u:qwen_block_cached(config, weights, tables, x, past_keys, past_values, offset) {
+  "One residual block over a key and value history, returning the block output and the extended history.";
+  attended = u:qwen_attention_cached(config, weights, tables, u:qwen_rms_norm(x, weights.n1, config.eps), past_keys, past_values, offset);
+  residual = x + attended.out;
+  {out: residual + matmul(u:qwen_feed_forward(weights, u:qwen_rms_norm(residual, weights.n2, config.eps)), weights.down), keys: attended.keys, values: attended.values}
+}
+#+end_src
+
 ** lib/qwen3/tiny.mlpl
 :PROPERTIES:
 :CUSTOM_ID: lib-qwen3-tiny-mlpl
@@ -3693,6 +3752,157 @@ def u:qwen_tiny_model() {
 }
 #+end_src
 
+** lib/generate/generate.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-generate-generate-mlpl
+:END:
+
+Generation with a key and value cache. The idea is simple: a token's keys
+and values never change once computed, so recomputing the whole sequence for
+every new token is waste. Keep them, and each step costs one position instead
+of all of them.
+
+What makes it worth writing carefully is that a cache is an optimization, so
+it must be exact. The test that matters is not that it is fast but that its
+scores are *identical* to recomputing from scratch, and they are: the measured
+difference is zero, not small.
+
+The honest result on cost, at the tiny configuration, is that caching is not
+yet a saving. Eight cached steps take 14.4 ms against 13.6 ms to recompute,
+because reading the stacked cache copies it. That is the same container cost
+filed as R10, and the saving only appears once sequences and widths are large
+enough to outweigh it.
+
+The module needs the scanners and the model.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+# Cached autoregressive generation: a per-layer key and value history, prefill followed by one token per step, and greedy decoding. Requires lib/text/text.mlpl and lib/qwen3/qwen3.mlpl included first.
+#+end_src
+
+Every layer's history lives in one stacked array, because the language has
+no list of records. This is the same constraint that made the forward pass
+take its per-layer weights through a function reference, solved differently
+because a cache is built up rather than looked up.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+def u:gen_stack_layer(stack, layer_state, layer) {
+  "Append one layer's history to the stacked cache, which holds every layer in one array because the language has no list of records.";
+  s = shape(layer_state);
+  piece = reshape(layer_state, concat([1], s));
+  if layer {
+    concat(stack, piece, 0)
+  } else {
+    piece
+  }
+}
+#+end_src
+
+One pass through every layer, extending the cache. With no offset it is a
+prefill over a whole prompt; with an offset it is a single step. The two are
+the same function because the causal mask already took an offset, which is
+why that argument existed before there was anything to use it.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+def u:gen_run(config, model, ids, cache, offset) {
+  "Run a sequence through every layer, extending the cache. With no offset this is a prefill over the whole prompt; with one it is a single step over the tokens already seen. Returns the next-position scores and the new cache.";
+  tables = model.rope;
+  x = u:qwen_embed(model, ids);
+  keys = 0;
+  values = 0;
+  layer = 0;
+  while lt(layer, config.layers) {
+    past_keys = if offset {
+      take(cache.keys, 0, layer)
+    } else {
+      0
+    };
+    past_values = if offset {
+      take(cache.values, 0, layer)
+    } else {
+      0
+    };
+    state = u:qwen_block_cached(config, call(model.layer_weights, layer), tables, x, past_keys, past_values, offset);
+    x = state.out;
+    keys = u:gen_stack_layer(keys, state.keys, layer);
+    values = u:gen_stack_layer(values, state.values, layer);
+    layer = layer + 1
+  };
+  logits = matmul(u:qwen_rms_norm(x, model.final_norm, config.eps), transpose(model.embedding));
+  {logits: last_row(logits), cache: {keys: keys, values: values}, length: offset + tally(ids)}
+}
+#+end_src
+
+The two entry points the loop alternates between.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+def u:gen_prefill(config, model, ids) {
+  "Run a whole prompt once, keeping every layer's keys and values.";
+  u:gen_run(config, model, ids, 0, 0)
+}
+
+def u:gen_step(config, model, state, id) {
+  "Feed one accepted token, extending the cache by one position and returning the next scores.";
+  u:gen_run(config, model, [id], state.cache, state.length)
+}
+#+end_src
+
+How many positions are held, which is also the offset the next step needs.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+def u:gen_cached_length(state) {
+  "Number of positions the cache holds.";
+  state.length
+}
+#+end_src
+
+Greedy decoding picks the highest-scoring token. Sampling, temperature, and
+nucleus filtering arrive in the next saga; this is the deterministic
+baseline they are measured against.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+def u:gen_argmax_id(logits) {
+  "The highest-scoring token id, which is what greedy decoding picks.";
+  argmax(logits)
+}
+#+end_src
+
+The loop. The stop id ends the run without being emitted, so a caller can
+decode the result directly, and the budget bounds it either way. An empty
+prompt is an error rather than a guess: there is nothing to condition on.
+
+#+begin_src mlpl :tangle ../lib/generate/generate.mlpl
+def u:gen_greedy(config, model, prompt_ids, max_new, stop_id) {
+  "Greedy decoding: prefill the prompt, then repeatedly take the highest-scoring token and feed it back. Stops at the stop id, which is not included, or at the token budget.";
+  if tally(prompt_ids) {
+    state = u:gen_prefill(config, model, prompt_ids);
+    generated = [];
+    produced = 0;
+    running = 1;
+    while running {
+      next_id = u:gen_argmax_id(state.logits);
+      if next_id - stop_id {
+        generated = concat(generated, next_id);
+        produced = produced + 1;
+        if lt(produced, max_new) {
+          state = u:gen_step(config, model, state, next_id)
+        } else {
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    ok({ids: generated, count: tally(generated), stopped: if tally(generated) - max_new {
+          "stop token"
+        } else {
+          "budget"
+        }})
+  } else {
+    err({kind: "empty_prompt", message: "generation needs at least one prompt token"})
+  }
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -3702,8 +3912,8 @@ grader that is total on malformed input, a dataset loader that validates
 before it returns, a harness that measures any responder with provenance
 attached, the import that turns a six-megabyte tokenizer document into
 tables a byte-level encoder can use, the encoder itself, the decoding and
-prompt conventions that surround it, and the decoder forward pass those ids
-will run through.
+prompt conventions that surround it, the decoder forward pass those ids
+will run through, and cached generation over it.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it

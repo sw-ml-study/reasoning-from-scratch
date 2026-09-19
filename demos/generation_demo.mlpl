@@ -1,0 +1,55 @@
+# Narrated cached generation on the tiny model: the cache is an optimization, not an approximation, and here is what it costs and saves.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/qwen3/tiny.mlpl";
+include "lib/generate/generate.mlpl";
+
+print("WHAT THIS SHOWS -- autoregressive generation with a key and value cache, on a deterministic tiny model whose weights are seeded rather than loaded.")
+print("")
+print("BOUNDARY -- every stage is sw-MLPL: the forward pass, the cache, and the decoding loop. The interpreter supplies matrix products, softmax, and array reshaping.")
+print("")
+config = u:qwen_config_tiny()
+model = u:qwen_tiny_model()
+prompt = [5, 9, 2]
+print("STAGE 1 -- the cache must agree with full recomputation exactly")
+state = u:gen_prefill(config, model, prompt)
+print("  prompt positions cached:", u:gen_cached_length(state), " stacked key shape:", shape(state.cache.keys))
+print("  largest difference from recomputing the whole prompt:", reduce(:max, abs(state.logits - u:qwen_next_logits(config, model, prompt))))
+after = u:gen_step(config, model, state, 7)
+print("  after feeding one more token, largest difference:", reduce(:max, abs(after.logits - u:qwen_next_logits(config, model, concat(prompt, 7)))))
+print("")
+print("STAGE 2 -- what the cache costs and saves")
+cached_start = clock_ms()
+steps = 0
+walk = state
+while steps - 8 {
+  walk = u:gen_step(config, model, walk, 3);
+  steps = steps + 1
+}
+cached_ms = clock_ms() - cached_start
+recompute_start = clock_ms()
+grown = prompt
+steps = 0
+while steps - 8 {
+  grown = concat(grown, 3);
+  u:qwen_next_logits(config, model, grown);
+  steps = steps + 1
+}
+recompute_ms = clock_ms() - recompute_start
+print("  eight cached steps:      ", round(cached_ms * 100) / 100, "ms")
+print("  eight full recomputations:", round(recompute_ms * 100) / 100, "ms")
+print("  cached tokens per second:", round(8000 / cached_ms), " ratio cached to recomputed:", round(cached_ms / recompute_ms * 100) / 100)
+print("")
+print("STAGE 3 -- greedy decoding")
+budgeted = unwrap(u:gen_greedy(config, model, prompt, 6, 0 - 1))
+print("  six tokens with no stop id:", budgeted.ids, "reason:", budgeted.stopped)
+first_id = u:gen_argmax_id(state.logits)
+halted = unwrap(u:gen_greedy(config, model, prompt, 6, first_id))
+print("  same prompt, stopping at the token it would have produced first:", halted.count, "tokens, reason:", halted.stopped)
+print("")
+print("INTERPRETATION -- the differences above are exactly zero, so the cache is an optimization and not an approximation. At this size it is not yet an optimization at all: the two timings above are close, and the cached path can be the slower one, because reading the stacked cache copies it and these sequences are far too short for the arithmetic it saves to pay that back. The saving grows with sequence length and with model width, both of which are tiny here. The repeated output is expected: these weights are random, not trained.")
+if reduce(:max, abs(after.logits - u:qwen_next_logits(config, model, concat(prompt, 7)))) {
+  err("the cache disagreed with recomputation")
+} else {
+  ok(budgeted.count)
+}

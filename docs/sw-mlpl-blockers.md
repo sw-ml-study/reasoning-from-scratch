@@ -143,6 +143,22 @@ of slicing follows the array's size, so the same loop over a
 `[T, 16, 128]` tensor in the real model is where request R3 bites. The
 forward pass is otherwise whole-array throughout.
 
+## Cached generation (measured 2026-09-18, tiny configuration)
+
+| Quantity | Value |
+|---|---|
+| eight cached steps after a three-token prompt | 14.4 ms |
+| eight full recomputations of the growing sequence | 13.6 ms |
+| cached tokens per second | about 555 |
+
+The cached scores are bit-identical to recomputation, so the cache is
+correct. It is not yet faster. Reading the stacked per-layer cache copies it,
+which is the same cost recorded under R10, and at width 16 with two layers
+the arithmetic it saves does not pay that back. The saving grows with both
+sequence length and model width, so this comparison should be repeated at the
+real configuration; it is not evidence that caching is useless, only that at
+this size it buys nothing.
+
 ## Performance (measured by `matmul-throughput`)
 
 | Operation | Time |

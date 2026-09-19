@@ -1,0 +1,85 @@
+# Cached generation contract: the cache grows as expected, cached scores equal full recomputation exactly, and greedy decoding honours its stop id and budget.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/qwen3/tiny.mlpl";
+include "lib/generate/generate.mlpl";
+
+def u:gen_test_model() {
+  "The deterministic tiny model.";
+  u:qwen_tiny_model()
+}
+
+@test {name: "prefill records every layer and position", tags: ["generate", "cache"]}
+def u:test_gen_prefill_shape() {
+  "The stacked cache holds one entry per layer, each covering every prompt position and every shared head.";
+  config = u:qwen_config_tiny();
+  state = u:gen_prefill(config, u:gen_test_model(), [5, 9, 2]);
+  u:assert_shape(state.logits, [config.vocab], "the next-position scores")?;
+  u:assert_eq(u:gen_cached_length(state), 3, "three positions cached")?;
+  u:assert_shape(state.cache.keys, [config.layers, 3, config.kv_heads, config.head_dim], "stacked keys")?;
+  u:assert_shape(state.cache.values, [config.layers, 3, config.kv_heads, config.head_dim], "stacked values")
+}
+
+@test {name: "cached scores equal full recomputation exactly", tags: ["generate", "cache", "equality"]}
+def u:test_gen_matches_recomputation() {
+  "This is the only property that matters for a cache: it must be an optimization, not an approximation. The difference is zero, not merely small.";
+  config = u:qwen_config_tiny();
+  model = u:gen_test_model();
+  prompt = [5, 9, 2];
+  state = u:gen_prefill(config, model, prompt);
+  u:assert_true(equal(state.logits, u:qwen_next_logits(config, model, prompt)), "prefill matches")?;
+  after_one = u:gen_step(config, model, state, 7);
+  u:assert_true(equal(after_one.logits, u:qwen_next_logits(config, model, [5, 9, 2, 7])), "one step matches")?;
+  after_two = u:gen_step(config, model, after_one, 1);
+  u:assert_true(equal(after_two.logits, u:qwen_next_logits(config, model, [5, 9, 2, 7, 1])), "two steps match")?;
+  u:assert_eq(u:gen_cached_length(after_two), 5, "the cache grew by one per step")
+}
+
+@test {name: "a single-token prompt caches and steps", tags: ["generate", "cache", "boundary"]}
+def u:test_gen_single_token() {
+  "The shortest possible prompt exercises the empty-history path.";
+  config = u:qwen_config_tiny();
+  model = u:gen_test_model();
+  state = u:gen_prefill(config, model, [4]);
+  u:assert_eq(u:gen_cached_length(state), 1, "one position")?;
+  u:assert_true(equal(state.logits, u:qwen_next_logits(config, model, [4])), "scores match")?;
+  stepped = u:gen_step(config, model, state, 6);
+  u:assert_true(equal(stepped.logits, u:qwen_next_logits(config, model, [4, 6])), "the step matches")
+}
+
+@test {name: "greedy decoding respects the budget", tags: ["generate", "greedy"]}
+def u:test_gen_budget() {
+  "With a stop id the model will not produce, generation runs to the budget and reports why it stopped.";
+  config = u:qwen_config_tiny();
+  model = u:gen_test_model();
+  result = u:gen_greedy(config, model, [5, 9, 2], 4, 0 - 1)?;
+  u:assert_eq(result.count, 4, "four tokens produced")?;
+  u:assert_text_eq(result.stopped, "budget", "stopped on the budget")?;
+  single = u:gen_greedy(config, model, [5], 1, 0 - 1)?;
+  u:assert_eq(single.count, 1, "a budget of one produces one token")
+}
+
+@test {name: "greedy decoding stops at the stop id without emitting it", tags: ["generate", "greedy", "stop"]}
+def u:test_gen_stop_token() {
+  "The stop id ends the run and is not part of the output, which is what lets a caller decode the result directly.";
+  config = u:qwen_config_tiny();
+  model = u:gen_test_model();
+  state = u:gen_prefill(config, model, [5, 9, 2]);
+  predicted = u:gen_argmax_id(state.logits);
+  stopped = u:gen_greedy(config, model, [5, 9, 2], 10, predicted)?;
+  u:assert_eq(stopped.count, 0, "stopping immediately produces nothing")?;
+  u:assert_text_eq(stopped.stopped, "stop token", "and says so")?;
+  free = u:gen_greedy(config, model, [5, 9, 2], 10, 0 - 1)?;
+  u:assert_eq(free.count, 10, "without that stop id the same prompt runs to the budget")
+}
+
+@test {name: "an empty prompt is an error", tags: ["generate", "errors"]}
+def u:test_gen_empty_prompt() {
+  "There is nothing to condition on, so this is reported rather than guessed at.";
+  config = u:qwen_config_tiny();
+  outcome = u:gen_greedy(config, u:gen_test_model(), [], 4, 0 - 1);
+  u:assert_err(outcome, "empty prompt rejected")?;
+  u:assert_text_eq(err_message(outcome).kind, "empty_prompt", "error kind")
+}
+
+u:run_registered_tests()
