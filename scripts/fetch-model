@@ -3,8 +3,7 @@
 # tree. Opt-in: never part of `just check`. Prints provenance, checks the
 # published byte sizes, and refuses to overwrite existing files.
 #
-# The weights themselves (model.safetensors, 1,192,135,096 bytes) are a
-# separate, much larger download added by the saga step that needs them.
+# Pass --weights to also fetch model.safetensors (1,192,135,096 bytes).
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -39,3 +38,8 @@ fetch() {
 
 fetch tokenizer.json 7031645
 fetch config.json 0
+
+if [ "${1:-}" = "--weights" ]; then
+    echo "  fetching the weights; this is 1.19 GB and takes a while"
+    fetch model.safetensors 1192135096
+fi

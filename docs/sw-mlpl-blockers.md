@@ -78,7 +78,7 @@ workaround), **missing** (a step is blocked or must stop with an honest
 | iterate a string list with `for` | missing | `for-string-list`: rejected | library idiom: `while` with `list_get` |
 | scientific-notation literals | supported since 2a774891 | `scientific-literal`: `1e-4` evaluates to `0.0001` | shipped upstream (RS5); earlier builds lexed it as `1`, `e`, `- 4` |
 | regular expressions | not needed | no probe | scanners in `lib/text/`; pre-tokenization lives in the tokenizer extension |
-| `tokenizer.json` import | missing | no builtin (documentation) | extension in `../demo-extensions`; MLPL reference on fixtures |
+| `tokenizer.json` import | delivered as an extension | `just tokenizer-parity` on 2026-09-18: the native `hftok` extension encodes all six fixture expectations to ids identical to the MLPL reference, and faster. It refuses the real Qwen3 vocabulary because that file declares an NFC normalizer | the MLPL reference ignores the declared normalizer, which is a divergence recorded in the verifier of tokenizer behaviour; for ASCII mathematics NFC is the identity |
 
 ## Generation and sampling
 

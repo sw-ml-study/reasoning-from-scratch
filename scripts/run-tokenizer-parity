@@ -34,6 +34,11 @@ if [ -z "$library" ]; then
 fi
 
 echo "  extension:   $library"
+# Load by explicit path. Name-based lookup expects libhftok.dylib, but the
+# crate builds as libmlpl_extension_hftok.dylib; loading by path is the
+# documented alternative and avoids depending on the artifact's name.
 MLPL_EXTENSION_PATH=$(dirname "$library")
-export MLPL_EXTENSION_PATH
+HFTOK_LIBRARY=$library
+REPO_ROOT=$repo_root
+export MLPL_EXTENSION_PATH HFTOK_LIBRARY REPO_ROOT
 exec "$repo_root/scripts/run-mlpl-demo" demos/tokenizer_parity.mlpl

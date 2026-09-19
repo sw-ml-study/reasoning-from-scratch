@@ -1,0 +1,384 @@
+# Bounded safetensors header reader: exact length decode, two budgeted reads, and validated tensor records.
+def u:sth_option(opts, name, fallback) {
+  "Return the named option from opts or fallback when the field is absent.";
+  if has_field(opts, name) {
+    unwrap(record_get(opts, name))
+  } else {
+    fallback
+  }
+}
+
+def u:sth_budgets(opts) {
+  "Resolve the header, JSON, and parameter budgets from opts with documented defaults.";
+  {
+    max_header_bytes: u:sth_option(opts, "max_header_bytes", 1048576),
+    max_depth: u:sth_option(opts, "max_depth", 8),
+    max_elements: u:sth_option(opts, "max_elements", 65536),
+    max_parameters: u:sth_option(opts, "max_parameters", 9007199254740991)
+  }
+}
+
+def u:sth_error(kind, cause, path, name) {
+  "Build the structured error every reader function returns.";
+  err({kind: kind, cause: cause, path: path, name: name})
+}
+
+def u:sth_retag(result, path, name) {
+  "Attach the path and tensor name to an error produced by a lower-level check.";
+  if is_err(result) {
+    payload = err_message(result);
+    u:sth_error(payload.kind, payload.cause, path, name)
+  } else {
+    result
+  }
+}
+
+def u:sth_is_exact_integer(value) {
+  "Return 1 when value is a scalar exact integer within the f64 exact domain.";
+  if eq(rank(value), 0) {
+    eq(value, floor(value)) * (1 - gt(abs(value), 9007199254740991))
+  } else {
+    0
+  }
+}
+
+def u:sth_decode_length(prefix, max_header_bytes) {
+  "Decode an eight-byte little-endian u64 prefix exactly, rejecting any value over max_header_bytes before multiplying.";
+  if (1 - eq(rank(prefix), 1)) + (1 - eq(tally(prefix), 8)) {
+    u:sth_error("sth-prefix", "header length prefix must contain exactly eight bytes", "", "")
+  } else {
+    if (1 - u:sth_is_exact_integer(max_header_bytes)) + lt(max_header_bytes, 2) {
+      u:sth_error("sth-length", "header budget must be an exact integer from 2 through 2^53-1", "", "")
+    } else {
+      index = 0;
+      multiplier = 1;
+      total = 0;
+      failure = ok(0);
+      while lt(index, 8) * is_ok(failure) {
+        byte = take(prefix, 0, index);
+        if (1 - eq(byte, floor(byte))) + lt(byte, 0) + gt(byte, 255) {
+          failure = u:sth_error("sth-length", "header length prefix contains a non-byte value", "", "")
+        } else {
+          allowed = floor((max_header_bytes - total) / multiplier);
+          if gt(byte, allowed) {
+            failure = u:sth_error("sth-length", "declared header length exceeds the header budget", "", "")
+          } else {
+            total = total + byte * multiplier;
+            multiplier = multiplier * 256
+          }
+        };
+        index = index + 1
+      };
+      if is_err(failure) {
+        failure
+      } else {
+        ok(total)
+      }
+    }
+  }
+}
+
+def u:sth_read_header(path, opts) {
+  "Read only the prefix and the declared header of a safetensors file with file_size and two bounded reads.";
+  budgets = u:sth_budgets(opts);
+  size = file_size(path);
+  if is_err(size) {
+    u:sth_error("sth-read", err_message(size), path, "")
+  } else {
+    if lt(unwrap(size), 8) {
+      u:sth_error("sth-prefix", "file is shorter than the eight-byte header prefix", path, "")
+    } else {
+      prefix = read_bytes(path, 0, 8);
+      if is_err(prefix) {
+        u:sth_error("sth-read", err_message(prefix), path, "")
+      } else {
+        length = u:sth_retag(u:sth_decode_length(unwrap(prefix), budgets.max_header_bytes), path, "")?;
+        if lt(unwrap(size), 8 + length) {
+          u:sth_error("sth-truncated", "file ends inside its declared header", path, "")
+        } else {
+          header = read_bytes(path, 8, length);
+          if is_err(header) {
+            u:sth_error("sth-read", err_message(header), path, "")
+          } else {
+            if 1 - eq(tally(unwrap(header)), length) {
+              u:sth_error("sth-truncated", "bounded header read returned fewer bytes than declared", path, "")
+            } else {
+              ok({file_size: unwrap(size), header_length: length, header_bytes: unwrap(header), data_bytes: unwrap(size) - 8 - length, path: path})
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:sth_dtype_width(dtype) {
+  "Return the byte width of one byte-aligned safetensors dtype, or an sth-tensor error.";
+  if str_eq(dtype, "F64") + str_eq(dtype, "I64") + str_eq(dtype, "U64") {
+    ok(8)
+  } else {
+    if str_eq(dtype, "F32") + str_eq(dtype, "I32") + str_eq(dtype, "U32") {
+      ok(4)
+    } else {
+      if str_eq(dtype, "F16") + str_eq(dtype, "BF16") + str_eq(dtype, "I16") + str_eq(dtype, "U16") {
+        ok(2)
+      } else {
+        if str_eq(dtype, "I8") + str_eq(dtype, "U8") + str_eq(dtype, "BOOL") {
+          ok(1)
+        } else {
+          u:sth_error("sth-tensor", str_concat(str_concat("unsupported or sub-byte dtype \"", dtype), "\""), "", "")
+        }
+      }
+    }
+  }
+}
+
+def u:sth_shape_product(shape, max_parameters) {
+  "Multiply non-negative exact dimensions within max_parameters, rejecting before any inexact product.";
+  if (1 - eq(rank(shape), 1)) {
+    u:sth_error("sth-tensor", "shape must be a rank-one numeric array", "", "")
+  } else {
+    index = 0;
+    product = 1;
+    failure = ok(0);
+    while lt(index, tally(shape)) * is_ok(failure) {
+      dimension = take(shape, 0, index);
+      if (1 - eq(dimension, floor(dimension))) + lt(dimension, 0) {
+        failure = u:sth_error("sth-tensor", "shape dimensions must be non-negative exact integers", "", "")
+      } else {
+        if eq(product, 0) + eq(dimension, 0) {
+          product = 0
+        } else {
+          if gt(dimension, floor(max_parameters / product)) {
+            failure = u:sth_error("sth-tensor", "parameter count exceeds max_parameters", "", "")
+          } else {
+            product = product * dimension
+          }
+        }
+      };
+      index = index + 1
+    };
+    if is_err(failure) {
+      failure
+    } else {
+      ok(product)
+    }
+  }
+}
+
+def u:sth_validate_metadata(metadata) {
+  "Require __metadata__ to be a record whose values are all strings.";
+  if 1 - str_eq(type_of(metadata), "record") {
+    u:sth_error("sth-metadata", "__metadata__ must be a JSON object", "", "")
+  } else {
+    keys = record_keys(metadata);
+    index = 0;
+    failure = ok(1);
+    while lt(index, list_len(keys)) * is_ok(failure) {
+      value = unwrap(record_get(metadata, unwrap(list_get(keys, index))));
+      if 1 - str_eq(type_of(value), "string") {
+        failure = u:sth_error("sth-metadata", "__metadata__ values must be strings", "", "")
+      } else {
+        0
+      };
+      index = index + 1
+    };
+    failure
+  }
+}
+
+def u:sth_validate_tensor(name, entry, data_bytes, max_parameters) {
+  "Validate one tensor entry and return its name, dtype, shape, data_offsets, start, end, parameters, and width.";
+  if eq(str_len(name), 0) {
+    u:sth_error("sth-tensor", "tensor names must not be empty", "", name)
+  } else {
+    if 1 - str_eq(type_of(entry), "record") {
+      u:sth_error("sth-tensor", "tensor entry must be a JSON object", "", name)
+    } else {
+      if 1 - equal(record_keys(entry), ["data_offsets", "dtype", "shape"]) {
+        u:sth_error("sth-tensor", "tensor entry must contain exactly data_offsets, dtype, and shape", "", name)
+      } else {
+        dtype = unwrap(record_get(entry, "dtype"));
+        shape = unwrap(record_get(entry, "shape"));
+        offsets = unwrap(record_get(entry, "data_offsets"));
+        if 1 - str_eq(type_of(dtype), "string") {
+          u:sth_error("sth-tensor", "dtype must be a string", "", name)
+        } else {
+          if (1 - str_eq(type_of(shape), "array")) + (1 - str_eq(type_of(offsets), "array")) {
+            u:sth_error("sth-tensor", "shape and data_offsets must be numeric arrays", "", name)
+          } else {
+            if (1 - eq(rank(offsets), 1)) + (1 - eq(tally(offsets), 2)) {
+              u:sth_error("sth-tensor", "data_offsets must contain exactly two numbers", "", name)
+            } else {
+              start = take(offsets, 0, 0);
+              ending = take(offsets, 0, 1);
+              if (1 - eq(start, floor(start))) + (1 - eq(ending, floor(ending))) + lt(start, 0) + lt(ending, start) + gt(ending, data_bytes) {
+                u:sth_error("sth-tensor", "data_offsets are invalid or outside the data buffer", "", name)
+              } else {
+                width = u:sth_retag(u:sth_dtype_width(dtype), "", name)?;
+                parameters = u:sth_retag(u:sth_shape_product(shape, max_parameters), "", name)?;
+                if gt(parameters, floor(max_parameters / width)) {
+                  u:sth_error("sth-tensor", "tensor byte count exceeds max_parameters", "", name)
+                } else {
+                  if 1 - eq(ending - start, parameters * width) {
+                    u:sth_error("sth-tensor", "shape and dtype disagree with data_offsets", "", name)
+                  } else {
+                    ok({name: name, dtype: dtype, shape: shape, data_offsets: offsets, start: start, end: ending, parameters: parameters, width: width})
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:sth_names_text(keys) {
+  "Render the tensor keys (every key except __metadata__) as a JSON array text of quoted names.";
+  text = "[";
+  count = 0;
+  index = 0;
+  while lt(index, list_len(keys)) {
+    key = unwrap(list_get(keys, index));
+    if str_eq(key, "__metadata__") {
+      0
+    } else {
+      separator = if gt(count, 0) {
+        ","
+      } else {
+        ""
+      };
+      text = str_concat(str_concat(text, separator), unwrap(to_json(key)));
+      count = count + 1
+    };
+    index = index + 1
+  };
+  str_concat(text, "]")
+}
+
+def u:sth_parse_header(raw, opts) {
+  "Decode and validate the header bytes of a raw read record, discovering tensors in sorted name order.";
+  budgets = u:sth_budgets(opts);
+  path = u:sth_option(raw, "path", "");
+  decoded = parse_json(decode_bytes(raw.header_bytes), {max_depth: budgets.max_depth, max_bytes: budgets.max_header_bytes, max_elements: budgets.max_elements});
+  if is_err(decoded) {
+    u:sth_error("sth-json", err_message(decoded), path, "")
+  } else {
+    entries = unwrap(decoded);
+    if 1 - str_eq(type_of(entries), "record") {
+      u:sth_error("sth-json", "header root must be a JSON object", path, "")
+    } else {
+      keys = record_keys(entries);
+      index = 0;
+      rows = [];
+      tensor_count = 0;
+      parameter_count = 0;
+      tensor_bytes = 0;
+      metadata = {};
+      metadata_present = 0;
+      failure = ok(0);
+      while lt(index, list_len(keys)) * is_ok(failure) {
+        name = unwrap(list_get(keys, index));
+        value = unwrap(record_get(entries, name));
+        if str_eq(name, "__metadata__") {
+          checked = u:sth_retag(u:sth_validate_metadata(value), path, "");
+          if is_err(checked) {
+            failure = checked
+          } else {
+            metadata = value;
+            metadata_present = 1
+          }
+        } else {
+          row = u:sth_retag(u:sth_validate_tensor(name, value, raw.data_bytes, budgets.max_parameters), path, name);
+          if is_err(row) {
+            failure = row
+          } else {
+            tensor = unwrap(row);
+            rows = concat(rows, [tensor.start, tensor.end, tensor.parameters, tensor.width]);
+            tensor_count = tensor_count + 1;
+            parameter_count = parameter_count + tensor.parameters;
+            tensor_bytes = tensor_bytes + tensor.end - tensor.start
+          }
+        };
+        index = index + 1
+      };
+      if is_err(failure) {
+        failure
+      } else {
+        names = if gt(tensor_count, 0) {
+          unwrap(parse_json(u:sth_names_text(keys)))
+        } else {
+          str_split("", "")
+        };
+        ok({
+            file_size: raw.file_size,
+            header_length: raw.header_length,
+            data_bytes: raw.data_bytes,
+            path: path,
+            names: names,
+            tensor_count: tensor_count,
+            parameter_count: parameter_count,
+            tensor_bytes: tensor_bytes,
+            metadata: metadata,
+            metadata_present: metadata_present,
+            table: reshape(rows, [tensor_count, 4]),
+            entries: entries,
+            budgets: budgets
+          })
+      }
+    }
+  }
+}
+
+def u:sth_check_layout(header) {
+  "Require the offset-sorted tensor ranges to cover the data buffer exactly, without overlap or holes.";
+  if eq(header.tensor_count, 0) {
+    if eq(header.data_bytes, 0) {
+      ok(1)
+    } else {
+      u:sth_error("sth-layout", "data buffer is non-empty but the header has no tensors", header.path, "")
+    }
+  } else {
+    ordered = gather_rows(header.table, grade_up(take(header.table, 1, 0)));
+    index = 0;
+    previous_end = 0;
+    failure = ok(1);
+    while lt(index, header.tensor_count) * is_ok(failure) {
+      row = take(ordered, 0, index);
+      if 1 - eq(take(row, 0, 0), previous_end) {
+        failure = u:sth_error("sth-layout", "tensor ranges overlap or leave a hole", header.path, "")
+      } else {
+        previous_end = take(row, 0, 1)
+      };
+      index = index + 1
+    };
+    if is_err(failure) {
+      failure
+    } else {
+      if eq(previous_end, header.data_bytes) {
+        ok(1)
+      } else {
+        u:sth_error("sth-layout", "tensor ranges do not cover the complete data buffer", header.path, "")
+      }
+    }
+  }
+}
+
+def u:sth_inspect(path, opts) {
+  "Read, parse, and layout-check a safetensors header from a path under opts budgets.";
+  raw = u:sth_read_header(path, opts)?;
+  header = u:sth_parse_header(raw, opts)?;
+  u:sth_check_layout(header)?;
+  ok(header)
+}
+
+def u:sth_tensor(header, name) {
+  "Return the validated record for one tensor name from a parsed header, or an sth-missing error.";
+  if str_eq(name, "__metadata__") + (1 - has_field(header.entries, name)) {
+    u:sth_error("sth-missing", str_concat(str_concat("no tensor named \"", name), "\""), header.path, name)
+  } else {
+    u:sth_retag(u:sth_validate_tensor(name, unwrap(record_get(header.entries, name)), header.data_bytes, header.budgets.max_parameters), header.path, name)
+  }
+}

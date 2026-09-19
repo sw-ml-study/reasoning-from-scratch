@@ -1,0 +1,11 @@
+schema_version = 1
+repository = "git@github.com:sw-ml-study/demo-mlpl-libraries.git"
+revision = "573938385a39c999d67b28004f6cbce030fc61ec"
+[[libraries]]
+name = "safetensors-header"
+version = "0.1.0"
+entry = "lib/safetensors-header/header.mlpl"
+manifest_sha256 = "62e68478d0b4778874ffb3fb488913347c472b1811b0db9762dd9a264a3f23ff"
+[[libraries.files]]
+path = "lib/safetensors-header/header.mlpl"
+sha256 = "d392ce069839bdb0dab948f07e73083bb8b8fe3dab26468418ef46c3d73e0051"

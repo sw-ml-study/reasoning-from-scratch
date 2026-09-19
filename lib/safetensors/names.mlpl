@@ -1,0 +1,136 @@
+# Mapping Hugging Face tensor names onto this project's module structure, and the tied-embedding rule. Requires lib/text/text.mlpl included first. Pure string work: no file is opened here.
+
+def u:st_layer_prefix(layer) {
+  "The published prefix for one decoder layer's tensors.";
+  str_concat("model.layers.", str_concat(to_string(layer), "."))
+}
+
+def u:st_role_suffix(role) {
+  "The published suffix for each weight this project needs, or the empty string for an unknown role. Names are data, so a typo becomes an empty lookup rather than a silent mismatch.";
+  if str_eq(role, "wq") {
+    "self_attn.q_proj.weight"
+  } else {
+    if str_eq(role, "wk") {
+      "self_attn.k_proj.weight"
+    } else {
+      if str_eq(role, "wv") {
+        "self_attn.v_proj.weight"
+      } else {
+        if str_eq(role, "wo") {
+          "self_attn.o_proj.weight"
+        } else {
+          if str_eq(role, "qn") {
+            "self_attn.q_norm.weight"
+          } else {
+            if str_eq(role, "kn") {
+              "self_attn.k_norm.weight"
+            } else {
+              if str_eq(role, "n1") {
+                "input_layernorm.weight"
+              } else {
+                if str_eq(role, "n2") {
+                  "post_attention_layernorm.weight"
+                } else {
+                  if str_eq(role, "gate") {
+                    "mlp.gate_proj.weight"
+                  } else {
+                    if str_eq(role, "up") {
+                      "mlp.up_proj.weight"
+                    } else {
+                      if str_eq(role, "down") {
+                        "mlp.down_proj.weight"
+                      } else {
+                        ""
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:st_layer_name(layer, role) {
+  "The published name of one layer weight, or an error naming the unknown role.";
+  suffix = u:st_role_suffix(role);
+  if str_eq(suffix, "") {
+    err({kind: "unknown_role", message: str_concat("no such layer weight: ", role)})
+  } else {
+    ok(str_concat(u:st_layer_prefix(layer), suffix))
+  }
+}
+
+def u:st_embedding_name() {
+  "The token embedding table.";
+  "model.embed_tokens.weight"
+}
+
+def u:st_final_norm_name() {
+  "The normalization gain applied after the last layer.";
+  "model.norm.weight"
+}
+
+def u:st_output_head_name() {
+  "The separate output projection, present only when the model does not tie its embeddings.";
+  "lm_head.weight"
+}
+
+def u:st_tied(header) {
+  "1 when the checkpoint ties its output head to the embedding table, which is true when no separate output tensor is present. Qwen3-0.6B ties them, so the forward pass must transpose the embedding rather than look for a tensor that does not exist.";
+  1 - has_field(header.table, u:st_output_head_name())
+}
+
+def u:st_expected_shape(config, role) {
+  "The shape this project expects for one layer weight, so a checkpoint that disagrees is caught at load time rather than in the middle of a matrix product. Published projections are stored transposed, as output by input.";
+  span = config.heads * config.head_dim;
+  shared = config.kv_heads * config.head_dim;
+  if str_eq(role, "wq") {
+    [span, config.emb]
+  } else {
+    if str_eq(role, "wk") {
+      [shared, config.emb]
+    } else {
+      if str_eq(role, "wv") {
+        [shared, config.emb]
+      } else {
+        if str_eq(role, "wo") {
+          [config.emb, span]
+        } else {
+          if str_eq(role, "qn") {
+            [config.head_dim]
+          } else {
+            if str_eq(role, "kn") {
+              [config.head_dim]
+            } else {
+              if str_eq(role, "n1") {
+                [config.emb]
+              } else {
+                if str_eq(role, "n2") {
+                  [config.emb]
+                } else {
+                  if str_eq(role, "gate") {
+                    [config.hidden, config.emb]
+                  } else {
+                    if str_eq(role, "up") {
+                      [config.hidden, config.emb]
+                    } else {
+                      if str_eq(role, "down") {
+                        [config.emb, config.hidden]
+                      } else {
+                        []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

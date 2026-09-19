@@ -11,7 +11,43 @@ begins.
 
 ## E1. Hugging Face tokenizer extension (`hftok`)
 
-**State on 2026-09-18: started, not yet loadable.** The directory
+**State on 2026-09-18, second look: built and passing fixture parity.** The
+library loads, and it encodes all six committed fixture expectations to ids
+identical to the MLPL reference, faster than the reference. Four things a
+consumer hit, in the order they were hit, none of them blocking the fixture
+result:
+
+1. **Name-based loading does not find it.** `load_extension("hftok")` looks
+   for `libhftok.dylib`, but the crate builds `libmlpl_extension_hftok.dylib`.
+   Loading by explicit path works and is what the parity runner now does;
+   setting the crate's library name to `hftok` would make the documented
+   name form work too.
+2. **No public facade yet.** The extension registers the private namespace
+   `_hftok`, and there is no `module.mlpl`, so a consumer must call
+   `_hftok:load_path` and `_hftok:encode` directly. The convention in the
+   ABI documentation is that a facade re-exposes these publicly.
+3. **`load` takes a record, `load_path` a string.** Worth stating in the
+   work order rather than discovering; the parity runner uses `load_path`
+   with an absolute path.
+4. **Return shapes are bare, not Results.** `load_extension` returns a
+   string on success but a Result on failure, `load_path` returns a native
+   handle, and `encode` returns an array. A consumer therefore branches on
+   `type_of` rather than `is_ok`, which is worth documenting since every
+   other fallible surface in this ecosystem is Result-shaped.
+
+**The one substantive gap: the real Qwen3 vocabulary is refused** with
+`unsupported normalizer NFC; a normalizer would rewrite text before
+encoding`. The published file declares `"normalizer": {"type": "NFC"}`.
+Refusing rather than silently ignoring it is the right call, and the MLPL
+reference should be held to the same standard: it ignores the normalizer
+today, which is a divergence this repository will document. For the
+prompts this project encodes, which are ASCII mathematics, NFC
+normalization is the identity, so a reasonable resolution is to accept NFC
+and apply it, or to accept it with a documented no-op for input that is
+already normalized. Until then `fixtures/tokenizer/qwen3-goldens.jsonl`
+cannot be checked against the extension.
+
+**Previous state, 2026-09-18 morning: started, not yet loadable.** The directory
 `extensions/hftok/` exists with `Cargo.toml`, `src/lib.rs`,
 `src/tokenizer_file.rs`, `src/file_source.rs`, and a contract test, but no
 `extension.toml` manifest and no built library, so `load_extension("hftok")`

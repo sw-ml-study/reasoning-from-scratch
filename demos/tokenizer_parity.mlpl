@@ -23,18 +23,20 @@ def u:parity_report(label, matched, total, reference_ms, extension_ms) {
 
 print("WHAT THIS SHOWS -- the readable MLPL encoder and the native extension must produce identical token ids. The MLPL encoder is the specification; the extension is the implementation that runs at usable speed.")
 print("")
-namespace = load_extension("hftok")
-if is_err(namespace) {
+print("NOTE -- this calls the extension's private namespace directly. The convention is that a shipped module.mlpl facade re-exposes it publicly; until that exists, the private names are what a consumer can reach.")
+print("")
+namespace = load_extension(unwrap_or(env("HFTOK_LIBRARY"), "hftok"))
+if str_eq(type_of(namespace), "result") {
   print("UNAVAILABLE -- the hftok extension did not load:", err_message(namespace));
   print("The reference encoder remains the path for bounded slices. Work order: docs/demo-extensions-requests.md item E1.");
   err("hftok extension unavailable")
 } else {
-  print("loaded extension namespace:", unwrap(namespace));
-  tiny_handle = hftok:load("fixtures/tokenizer/tiny-tokenizer.json");
-  if is_err(tiny_handle) {
+  print("loaded extension namespace:", namespace);
+  tiny_handle = _hftok:load_path(str_concat(unwrap_or(env("REPO_ROOT"), "."), "/fixtures/tokenizer/tiny-tokenizer.json"));
+  if str_eq(type_of(tiny_handle), "result") {
     err(str_concat("hftok could not load the fixture tokenizer: ", err_message(tiny_handle)))
   } else {
-    handle = unwrap(tiny_handle);
+    handle = tiny_handle;
     tables = unwrap(u:tok_import("fixtures/tokenizer/tiny-tokenizer.json", {}));
     base = unwrap(u:tok_merge_base(tables, 1));
     count = u:tok_merge_count(tables);
@@ -50,10 +52,10 @@ if is_err(namespace) {
       mine = unwrap(u:tok_encode(tables, row.text, base, count));
       reference_ms = reference_ms + clock_ms() - t0;
       t1 = clock_ms();
-      theirs = hftok:encode(handle, row.text);
+      theirs = _hftok:encode(handle, row.text);
       extension_ms = extension_ms + clock_ms() - t1;
-      agree = if is_ok(theirs) {
-        equal(unwrap(theirs), mine) * equal(mine, row.ids)
+      agree = if str_eq(type_of(theirs), "array") {
+        equal(theirs, mine) * equal(mine, row.ids)
       } else {
         0
       };
@@ -68,20 +70,20 @@ if is_err(namespace) {
     goldens = u:parity_cases("fixtures/tokenizer/qwen3-goldens.jsonl");
     golden_total = list_len(goldens);
     if golden_total {
-      real_handle = hftok:load("models/qwen3-0.6b-base/tokenizer.json");
-      if is_err(real_handle) {
+      real_handle = _hftok:load_path(str_concat(unwrap_or(env("REPO_ROOT"), "."), "/models/qwen3-0.6b-base/tokenizer.json"));
+      if str_eq(type_of(real_handle), "result") {
         print("  real vocabulary unavailable:", err_message(real_handle))
       } else {
-        rh = unwrap(real_handle);
+        rh = real_handle;
         golden_matched = 0;
         golden_ms = 0;
         j = 0;
         while lt(j, golden_total) {
           row = unwrap(parse_json(unwrap(list_get(goldens, j))));
           t2 = clock_ms();
-          theirs = hftok:encode(rh, row.text);
+          theirs = _hftok:encode(rh, row.text);
           golden_ms = golden_ms + clock_ms() - t2;
-          if is_ok(theirs) * equal(unwrap(theirs), row.ids) {
+          if str_eq(type_of(theirs), "array") * equal(theirs, row.ids) {
             golden_matched = golden_matched + 1
           } else {
             print("     MISMATCH on", row.text, "expected:", row.ids, "extension:", theirs)
