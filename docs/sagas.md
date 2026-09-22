@@ -62,19 +62,24 @@ bulk decode from a typed byte buffer to an array, which did not ship with
 the `bf16` dtype; the forward pass, generation, and header parsing need
 nothing upstream and come first.
 
-## Queued: Saga 4, `inference-time-scaling`
+## Active: Saga 4, `inference-time-scaling`
 
 Temperature and nucleus sampling, chain-of-thought, self-consistency,
 scoring, and self-refinement, with bounded real-model reports.
 
-Next session: archive the completed `model-and-generation` saga through
-Agentrail, then initialize `inference-time-scaling` from Saga 4 in the plan.
-Its first step is `sampling-primitives`: native mlplunit goldens for
-temperature scaling, top-p with the crossing token retained and weights
-renormalized, seeded categorical draws, and sampled decoding over tiny
-weights. Use three- and ten-token distributions, explicit seeds, unique
-`u:scaling_` functions, and the normal literate/catalog/check gate. Real-model
-reports stay deferred; revisit the bf16 handoff when R11 ships.
+Saga 3 is archived under `.agentrail-archive/model-and-generation-20260922T133630/`.
+
+| # | Step | Status |
+|---|---|---|
+| 1 | `sampling-primitives` | done: ten native tests; temperature, top-p, categorical draws, cached sampled decoding |
+| 2 | `cot-and-self-consistency` | next: prompt suffix and seeded answer voting over stub responders |
+| 3 | `scoring` | planned |
+| 4 | `self-refinement` | planned |
+| 5 | `scaling-report` | real-model runs deferred behind the bf16 handoff |
+
+The [sampling contract](sampling.md) pins threshold boundaries, stable ties,
+seed warmup, and decoding provenance. Cached sampled ids equal an independent
+full-forward loop. All 93 native tests pass; real-model reports remain deferred.
 
 ## Queued: Saga 5, `grpo`
 

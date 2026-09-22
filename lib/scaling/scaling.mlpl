@@ -1,0 +1,195 @@
+# Seeded sampling over vocabulary vectors and the Qwen3 KV cache: temperature, nucleus filtering, categorical inversion, and bounded decoding. Requires lib/text/text.mlpl, lib/qwen3/qwen3.mlpl, and lib/generate/generate.mlpl included first for decoding.
+
+def u:scaling_error(field, message) {
+  "A classified invalid-input result identifying the sampling argument.";
+  err({kind: "sampling_input", field: field, message: message})
+}
+
+def u:scaling_scalar(value, field) {
+  "Validate a finite numeric scalar before arithmetic or control flow.";
+  if str_eq(type_of(value), "array") {
+    if rank(value) {
+      u:scaling_error(field, "expected a scalar")
+    } else {
+      if eq(value - value, 0) {
+        ok(value)
+      } else {
+        u:scaling_error(field, "expected a finite scalar")
+      }
+    }
+  } else {
+    u:scaling_error(field, "expected a numeric scalar")
+  }
+}
+
+def u:scaling_vector(value, field) {
+  "Validate a nonempty finite numeric vector, rejecting matrices and special values.";
+  if str_eq(type_of(value), "array") {
+    if rank(value) - 1 {
+      u:scaling_error(field, "expected a rank-one vector")
+    } else {
+      if tally(value) {
+        if reduce(:and, eq(value - value, 0)) {
+          ok(value)
+        } else {
+          u:scaling_error(field, "expected finite vector entries")
+        }
+      } else {
+        u:scaling_error(field, "expected a nonempty vector")
+      }
+    }
+  } else {
+    u:scaling_error(field, "expected a numeric vector")
+  }
+}
+
+def u:scaling_controls(temperature, top_p) {
+  "Require strictly positive temperature and nucleus mass in (0,1]. Zero temperature is not this API's greedy mode.";
+  t = u:scaling_scalar(temperature, "temperature")?;
+  p = u:scaling_scalar(top_p, "top_p")?;
+  if gt(t, 0) * gt(p, 0) * (1 - gt(p, 1)) {
+    ok(1)
+  } else {
+    u:scaling_error("temperature/top_p", "require temperature > 0 and 0 < top_p <= 1")
+  }
+}
+
+def u:scaling_seed(seed) {
+  "Require a nonnegative exactly representable integer seed, at most 2^53-1.";
+  s = u:scaling_scalar(seed, "seed")?;
+  if eq(s, floor(s)) * (1 - lt(s, 0)) * (1 - gt(s, 9007199254740991)) {
+    ok(s)
+  } else {
+    u:scaling_error("seed", "expected an integer seed between 0 and 2^53-1")
+  }
+}
+
+def u:scaling_temperature(logits, temperature) {
+  "Convert finite logits to probabilities with positive temperature, subtracting the maximum before division to avoid positive overflow.";
+  scores = u:scaling_vector(logits, "logits")?;
+  u:scaling_controls(temperature, 1)?;
+  ok(softmax((scores - reduce(:max, scores)) / temperature))
+}
+
+def u:scaling_normalize(weights) {
+  "Normalize finite nonnegative relative weights with positive mass; scaling by their maximum prevents overflow in the sum.";
+  w = u:scaling_vector(weights, "weights")?;
+  peak = reduce(:max, w);
+  if reduce(:or, lt(w, 0)) {
+    u:scaling_error("weights", "negative weights are not probabilities")
+  } else {
+    if gt(peak, 0) {
+      scaled = w / peak;
+      ok(scaled / reduce_add(scaled))
+    } else {
+      u:scaling_error("weights", "total probability mass must be positive")
+    }
+  }
+}
+
+def u:scaling_gather(vector, ids) {
+  "Reorder a rank-one vector through the rank-two row-gather primitive, without a per-token interpreted loop.";
+  flatten(gather_rows(reshape(vector, [tally(vector), 1]), ids))
+}
+
+def u:scaling_nucleus(weights, top_p) {
+  "Keep the smallest descending-probability prefix reaching top_p, retaining the crossing token; stable ties favor lower ids. Return renormalized probabilities in vocabulary order.";
+  u:scaling_controls(1, top_p)?;
+  probs = u:scaling_normalize(weights)?;
+  if eq(top_p, 1) {
+    ok(probs)
+  } else {
+    order = grade_down(probs);
+    sorted = u:scaling_gather(probs, order);
+    cumulative = running_sum(sorted);
+    before = concat([0], compress(lt(range(tally(sorted)), tally(sorted) - 1), cumulative));
+    kept = sorted * lt(before, top_p);
+    ok(u:scaling_gather(kept / reduce_add(kept), grade_up(order)))
+  }
+}
+
+def u:scaling_pick(weights, uniform) {
+  "Invert a categorical CDF at a supplied uniform in [0,1). Exact boundaries belong to the next positive interval; a rounding shortfall falls back to the last positive entry.";
+  probs = u:scaling_normalize(weights)?;
+  draw = u:scaling_scalar(uniform, "uniform")?;
+  if (1 - lt(draw, 0)) * lt(draw, 1) {
+    above = gt(running_sum(probs), draw);
+    if reduce(:or, above) {
+      ok(argmax(above))
+    } else {
+      ok(reduce(:max, compress(gt(probs, 0), range(tally(probs)))))
+    }
+  } else {
+    u:scaling_error("uniform", "expected 0 <= uniform < 1")
+  }
+}
+
+def u:scaling_draw(weights, seed) {
+  "Draw one categorical token from an explicit seed using the sampling stream's fixed warmup.";
+  uniforms = u:scaling_uniforms(seed, 1)?;
+  u:scaling_pick(weights, at(uniforms, 0))
+}
+
+def u:scaling_uniforms(seed, count) {
+  "Return count seeded uniforms after discarding 16 startup values; raw random's first output is biased toward zero for adjacent small seeds.";
+  s = u:scaling_seed(seed)?;
+  n = u:scaling_scalar(count, "count")?;
+  if eq(n, floor(n)) * (1 - lt(n, 0)) {
+    stream = random(s, [n + 16]);
+    ok(compress(gt(range(n + 16), 15), stream))
+  } else {
+    u:scaling_error("count", "expected a nonnegative integer draw count")
+  }
+}
+
+def u:scaling_decode(config, model, prompt_ids, max_new, stop_id, temperature, top_p, seed) {
+  "Sample with a KV cache and one seeded uniform stream for the entire token budget. Stop ids are excluded, zero budget avoids prefill, and decoding parameters accompany the result.";
+  prompt = u:scaling_vector(prompt_ids, "prompt_ids")?;
+  budget = u:scaling_scalar(max_new, "max_new")?;
+  stop = u:scaling_scalar(stop_id, "stop_id")?;
+  s = u:scaling_seed(seed)?;
+  u:scaling_controls(temperature, top_p)?;
+  if reduce(:and, eq(prompt, floor(prompt)) * (1 - lt(prompt, 0)) * lt(prompt, config.vocab)) {
+    if eq(budget, floor(budget)) * (1 - lt(budget, 0)) {
+      if eq(stop, floor(stop)) * (1 - lt(stop, 0 - 1)) * lt(stop, config.vocab) {
+        positions = tally(prompt) + reduce(:max, [0, budget - 1]);
+        if gt(positions, config.context) {
+          u:scaling_error("max_new", "prompt and generated inputs exceed the context table")
+        } else {
+          generated = [];
+          reason = "budget";
+          if budget {
+            uniforms = u:scaling_uniforms(s, budget)?;
+            state = u:gen_prefill(config, model, prompt);
+            produced = 0;
+            running = 1;
+            while running {
+              probs = u:scaling_temperature(state.logits, temperature)?;
+              nucleus = u:scaling_nucleus(probs, top_p)?;
+              id = u:scaling_pick(nucleus, at(uniforms, produced))?;
+              if id - stop {
+                generated = concat(generated, id);
+                produced = produced + 1;
+                if lt(produced, budget) {
+                  state = u:gen_step(config, model, state, id)
+                } else {
+                  running = 0
+                }
+              } else {
+                reason = "stop token";
+                running = 0
+              }
+            }
+          };
+          ok({ids: generated, count: tally(generated), stopped: reason, seed: s, temperature: temperature, top_p: top_p, max_new: budget, stop_id: stop, sampler: "temperature-top-p-v1"})
+        }
+      } else {
+        u:scaling_error("stop_id", "expected -1 or a vocabulary token id")
+      }
+    } else {
+      u:scaling_error("max_new", "expected a nonnegative integer token budget")
+    }
+  } else {
+    u:scaling_error("prompt_ids", "expected integer ids inside the vocabulary")
+  }
+}

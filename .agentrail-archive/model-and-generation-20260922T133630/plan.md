@@ -142,20 +142,6 @@ the MLPL reference and the extension agreeing on every golden.
 
 ## Saga 3: model loading and generation
 
-Linux migration update, 2026-09-22: an `arch-cuda-revalidation` step was
-inserted after header validation. It restores the fixture gate with isolated
-0.22.0 tools and confirms R11/R3/R10 are still open. CUDA toolkit 13.4 is
-blocked by upstream cudarc compatibility (R12); MLX-specific projections
-below describe the original Apple host. The execution order and actual step
-numbers are in [the saga queue](sagas.md), with reproducible Linux setup in
-[linux-toolchain.md](linux-toolchain.md).
-
-The following bf16 step took its planned unavailable branch: R11 is still
-absent at upstream HEAD `6d784660`. Saga 3 closes with its blocked-real-model
-exit criterion, retaining real-model smoke and baseline as deferred work.
-See [the decoder handoff](bf16-handoff.md) for the acceptance and resume
-conditions. Saga 4's fixture-based methods can start without those runs.
-
 Resequenced on 2026-09-18. The original order began with weight loading,
 which is blocked: the `bf16` dtype shipped upstream but the bulk decode did
 not, and `reinterpret` returns a byte view with no length and no arithmetic,

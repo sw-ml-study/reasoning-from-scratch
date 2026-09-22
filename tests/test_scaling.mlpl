@@ -1,0 +1,153 @@
+# Sampling contract: exact small distributions, inverse-CDF boundaries, seeded replay, and cached decoding with explicit budgets and stop tokens.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/qwen3/tiny.mlpl";
+include "lib/generate/generate.mlpl";
+include "lib/scaling/scaling.mlpl";
+
+@test {name: "temperature probabilities match analytic three-token goldens", tags: ["scaling"]}
+def u:test_scaling_temperature() {
+  "Logarithms of 1, 2, 4 give rational probabilities at temperatures one and one half.";
+  logits = log([1, 2, 4]);
+  u:assert_approx(u:scaling_temperature(logits, 1)?, [1, 2, 4] / 7, 1e-12, "temperature one")?;
+  u:assert_approx(u:scaling_temperature(logits, 0.5)?, [1, 4, 16] / 21, 1e-12, "sharper")?;
+  u:assert_approx(u:scaling_temperature([10000, 10000, 10000], 2)?, [1, 1, 1] / 3, 1e-12, "stable large scores")?;
+  u:assert_eq(u:scaling_temperature([1, 0], 1e-300)?, [1, 0], "very small positive temperature")?;
+  u:assert_approx(u:scaling_temperature(logits + 100, 1)?, [1, 2, 4] / 7, 1e-12, "shift invariant")
+}
+
+@test {name: "nucleus retains the crossing token and restores vocabulary order", tags: ["scaling"]}
+def u:test_scaling_nucleus_three() {
+  "A threshold between cumulative masses retains both the leader and its crossing successor.";
+  u:assert_approx(u:scaling_nucleus([2, 6, 2], 0.7)?, [0.25, 0.75, 0], 1e-12, "crossing token and stable tie")?;
+  u:assert_eq(u:scaling_nucleus([2, 6, 2], 0.1)?, [0, 1, 0], "at least the leader")?;
+  u:assert_approx(u:scaling_nucleus([2, 6, 2], 1)?, [0.2, 0.6, 0.2], 1e-12, "full mass")?;
+  u:assert_eq(u:scaling_nucleus([2, 1, 1], 0.5)?, [1, 0, 0], "exact threshold needs no extra token")
+}
+
+@test {name: "ten-token nucleus goldens cover ties zeros and mass rescaling", tags: ["scaling"]}
+def u:test_scaling_nucleus_ten() {
+  "Descending weights cross 0.5 after 10+9+8+7 and equal weights keep the first ids.";
+  weights = [1, 10, 2, 9, 3, 8, 4, 7, 5, 6];
+  expected = [0, 10, 0, 9, 0, 8, 0, 7, 0, 0] / 34;
+  u:assert_approx(u:scaling_nucleus(weights, 0.5)?, expected, 1e-12, "ten weights")?;
+  u:assert_approx(u:scaling_nucleus(weights * 3, 0.5)?, expected, 1e-12, "relative weights")?;
+  u:assert_eq(u:scaling_nucleus([1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 0.15)?, [0.5, 0.5, 0, 0, 0, 0, 0, 0, 0, 0], "tie ids")?;
+  u:assert_eq(u:scaling_nucleus([0, 0, 7, 0, 0, 0, 0, 0, 0, 0], 1)?, [0, 0, 1, 0, 0, 0, 0, 0, 0, 0], "zero masses")
+}
+
+@test {name: "categorical inversion uses half-open intervals and skips zero mass", tags: ["scaling"]}
+def u:test_scaling_pick() {
+  "Exact dyadic probabilities make boundary ownership independent of rounding.";
+  u:assert_eq(u:scaling_pick([1, 2, 1], 0)?, 0, "left endpoint")?;
+  u:assert_eq(u:scaling_pick([1, 2, 1], 0.25)?, 1, "first boundary")?;
+  u:assert_eq(u:scaling_pick([1, 2, 1], 0.75)?, 2, "second boundary")?;
+  u:assert_eq(u:scaling_pick([0, 1, 0], 0)?, 1, "leading zero")?;
+  u:assert_eq(u:scaling_pick([0, 1, 0], 0.999999)?, 1, "trailing zero")
+}
+
+@test {name: "categorical draws replay from an explicit seed", tags: ["scaling"]}
+def u:test_scaling_seeded() {
+  "A draw is the inverse CDF at the explicit seed's first post-warmup variate.";
+  weights = [1, 2, 1];
+  u:assert_eq(u:scaling_draw(weights, 42)?, u:scaling_draw(weights, 42)?, "repeat seed")?;
+  u:assert_eq(u:scaling_draw(weights, 42)?, u:scaling_pick(weights, at(random(42, [17]), 16))?, "specified random source")?;
+  u:assert_eq(u:scaling_uniforms(42, 0)?, [], "empty stream")?;
+  u:assert_err(u:scaling_uniforms(42, 0 - 1), "negative count")?;
+  u:assert_eq(u:scaling_draw([0, 0, 1], 7)?, 2, "one supported token")
+}
+
+@test {name: "sampling rejects invalid distributions and scalar controls", tags: ["scaling", "errors"]}
+def u:test_scaling_invalid() {
+  "Reject malformed ranks, nonfinite values, zero mass, invalid thresholds, seeds and uniforms.";
+  u:assert_err(u:scaling_temperature([], 1), "empty logits")?;
+  u:assert_err(u:scaling_temperature([1, 2], 0), "zero temperature")?;
+  u:assert_err(u:scaling_temperature([1, 2], [1]), "vector temperature")?;
+  u:assert_err(u:scaling_temperature("text", 1), "text logits")?;
+  u:assert_err(u:scaling_temperature(reshape([1, 2], [1, 2]), 1), "matrix logits")?;
+  u:assert_err(u:scaling_temperature([1, exp(1000)], 1), "infinite logit")?;
+  u:assert_err(u:scaling_temperature([1, exp(1000) - exp(1000)], 1), "NaN logit")?;
+  u:assert_err(u:scaling_temperature([1, 2], 0 - 1), "negative temperature")?;
+  u:assert_err(u:scaling_temperature([1, 2], exp(1000)), "infinite temperature")?;
+  u:assert_err(u:scaling_nucleus([0, 0], 0.5), "zero mass")?;
+  u:assert_err(u:scaling_nucleus([1, 0 - 1], 0.5), "negative mass")?;
+  u:assert_err(u:scaling_nucleus([1, 2], 0), "zero p")?;
+  u:assert_err(u:scaling_nucleus([1, 2], 1.1), "p above one")?;
+  u:assert_err(u:scaling_nucleus([1, 2], exp(1000)), "infinite p")?;
+  u:assert_err(u:scaling_pick([1, 2], 0 - 0.1), "negative uniform")?;
+  u:assert_err(u:scaling_pick([1, 2], 1), "uniform upper endpoint")?;
+  u:assert_err(u:scaling_draw([1, 2], 0 - 1), "negative seed")?;
+  u:assert_err(u:scaling_draw([1, 2], 9007199254740992), "seed beyond exact integer range")?;
+  u:assert_err(u:scaling_draw([1, 2], 0.5), "fractional seed")
+}
+
+@test {name: "large weights normalize without overflow and seed streams preserve prefixes", tags: ["scaling"]}
+def u:test_scaling_numerical_limits() {
+  "Relative normalization is safe near the f64 limit and stream lengths do not alter prior draws.";
+  u:assert_approx(u:scaling_nucleus([1e308, 1e308, 0], 1)?, [0.5, 0.5, 0], 1e-12, "sum overflow avoided")?;
+  u:assert_eq(u:scaling_nucleus([1, 1e-20], 1)?, [1, 1e-20], "p one preserves tiny tail mass")?;
+  short = u:scaling_uniforms(7, 4)?;
+  longer = u:scaling_uniforms(7, 8)?;
+  u:assert_eq(short, compress(lt(range(8), 4), longer), "stream prefix")?;
+  u:assert_eq(u:scaling_uniforms(0, 4)?, u:scaling_uniforms(0, 4)?, "zero seed replay")
+}
+
+@test {name: "adjacent small seeds do not collapse categorical draws", tags: ["scaling", "seed"]}
+def u:test_scaling_seed_diversity() {
+  "A fixed sweep catches the raw generator's biased first output for small integer seeds.";
+  counts = [0, 0, 0];
+  seed = 1;
+  while lt(seed, 257) {
+    id = u:scaling_draw([1, 2, 1], seed)?;
+    counts = counts + eq(range(3), id);
+    seed = seed + 1
+  };
+  u:assert_approx(counts / 256, [0.25, 0.5, 0.25], 0.1, "fixed-seed frequency sanity check")
+}
+
+@test {name: "sampled cached decoding agrees with full recomputation", tags: ["scaling", "generate"]}
+def u:test_scaling_decode() {
+  "An independent full-forward loop uses the documented seed stream and matches cached token ids.";
+  config = u:qwen_config_tiny();
+  model = u:qwen_tiny_model();
+  prompt = [5, 9, 2];
+  uniforms = compress(gt(range(20), 15), random(19, [20]));
+  full = prompt;
+  expected = [];
+  i = 0;
+  while lt(i, 4) {
+    probs = u:scaling_temperature(u:qwen_next_logits(config, model, full), 0.8)?;
+    next_id = u:scaling_pick(u:scaling_nucleus(probs, 0.9)?, at(uniforms, i))?;
+    expected = concat(expected, next_id);
+    full = concat(full, next_id);
+    i = i + 1
+  };
+  result = u:scaling_decode(config, model, prompt, 4, 0 - 1, 0.8, 0.9, 19)?;
+  u:assert_eq(result.ids, expected, "cached sample ids")?;
+  u:assert_eq(result.count, 4, "budget")?;
+  u:assert_text_eq(result.stopped, "budget", "stop reason")?;
+  u:assert_eq(result.seed, 19, "seed recorded")?;
+  u:assert_eq(result.ids, unwrap(u:scaling_decode(config, model, prompt, 4, 0 - 1, 0.8, 0.9, 19)).ids, "replay")
+}
+
+@test {name: "sampled decoding handles zero budget stop ids and invalid prompts", tags: ["scaling", "generate"]}
+def u:test_scaling_decode_boundaries() {
+  "No token is emitted for a zero budget or a sampled stop id; invalid controls fail before model access.";
+  config = u:qwen_config_tiny();
+  model = u:qwen_tiny_model();
+  empty = u:scaling_decode(config, 0, [5], 0, 0 - 1, 1, 1, 7)?;
+  u:assert_eq(empty.ids, [], "zero budget avoids model evaluation")?;
+  first = u:scaling_decode(config, model, [5], 1, 0 - 1, 1, 1, 7)?;
+  stopped = u:scaling_decode(config, model, [5], 4, at(first.ids, 0), 1, 1, 7)?;
+  u:assert_eq(stopped.count, 0, "stop excluded")?;
+  u:assert_text_eq(stopped.stopped, "stop token", "stop reason")?;
+  u:assert_err(u:scaling_decode(config, 0, [], 1, 0 - 1, 1, 1, 7), "empty prompt")?;
+  u:assert_err(u:scaling_decode(config, 0, [config.vocab], 1, 0 - 1, 1, 1, 7), "bad token")?;
+  u:assert_err(u:scaling_decode(config, 0, [0.5], 1, 0 - 1, 1, 1, 7), "fractional token")?;
+  u:assert_err(u:scaling_decode(config, 0, [1], 0 - 1, 0 - 1, 1, 1, 7), "negative budget")?;
+  u:assert_err(u:scaling_decode(config, 0, [1], 0.5, 0 - 1, 1, 1, 7), "fractional budget")?;
+  u:assert_err(u:scaling_decode(config, 0, [1], config.context + 1, 0 - 1, 1, 1, 7), "context overflow")?;
+  u:assert_err(u:scaling_decode(config, 0, [1], 1, config.vocab, 1, 1, 7), "bad stop id")
+}
+
+u:run_registered_tests()

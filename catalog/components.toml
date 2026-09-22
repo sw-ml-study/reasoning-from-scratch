@@ -179,12 +179,12 @@ status = "accepted"
 
 [[component]]
 id = "SCALE"
-slug = "inference-time-scaling"
+slug = "sampling-primitives"
 chapter = 4
 source = "lib/scaling/scaling.mlpl"
 test = "tests/test_scaling.mlpl"
-documentation = "docs/book-map.md"
-status = "planned"
+documentation = "docs/sampling.md"
+status = "accepted"
 
 [[component]]
 id = "RL"

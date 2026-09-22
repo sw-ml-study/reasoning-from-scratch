@@ -1,0 +1,16 @@
+# Probe: stable descending grade, whole-array gather/inverse order, prefix sums, seeded uniform range, and a finite-value mask support MLPL sampling. Expected exit 0.
+weights = [2, 6, 2]
+order = grade_down(weights)
+sorted = flatten(gather_rows(reshape(weights, [3, 1]), order))
+restored = flatten(gather_rows(reshape(sorted, [3, 1]), grade_up(order)))
+uniforms = random(42, [4])
+finite_mask = eq([1, exp(1000)] - [1, exp(1000)], 0)
+valid = equal(order, [1, 0, 2]) * equal(restored, weights) * equal(running_sum(sorted), [6, 8, 10])
+valid = valid * equal(uniforms, random(42, [4])) * equal(reduce(:and, gt(uniforms, 0 - 1) * lt(uniforms, 1)), 1)
+valid = valid * equal(finite_mask, [1, 0])
+print("sampling-array-ops: stable order", order, "uniforms", uniforms, "finite mask", finite_mask)
+if valid {
+  ok("sampling array primitives available")
+} else {
+  err("sampling array primitive contract mismatch")
+}

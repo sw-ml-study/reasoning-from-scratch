@@ -40,6 +40,24 @@ not a delivered loader. See [the core handoff](bf16-handoff.md) for exact
 acceptance cases and resume conditions. Real-model smoke/baseline are
 deferred; fixture-based scaling can proceed independently.
 
+## Sampling primitives, measured on Arch build 6d784660
+
+`sampling-array-ops` confirms stable descending grade, inverse permutation
+through a whole-array gather, running sums, deterministic uniforms, and
+finite-value masks. These are **supported** and used by `lib/scaling/`.
+The fixture gate now checks 25 probe outcomes and 93 native tests.
+
+Raw seeded random startup is **awkward**: using the first variate for each
+seed 1–256 selected token 0 in all 256 draws from weights `[1,2,1]`.
+The sampling library discards 16 startup values once per stream; its fixed
+seed-sweep frequencies then satisfy the `[0.25,0.5,0.25]` golden within 0.1.
+This is a library workaround, not a new core blocker or a general PRNG
+quality claim. See [sampling](sampling.md) for the replay contract.
+
+Ten sampling tests also establish exact cached/full-forward sampled-id
+agreement, boundary/error handling, and analytic distribution goldens.
+No real-model inference or new accuracy result is claimed.
+
 ## Historical Apple measurements
 
 Measured against:

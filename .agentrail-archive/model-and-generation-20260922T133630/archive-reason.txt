@@ -1,0 +1,1 @@
+Model saga closed with validated tiny generation and explicit R11-blocked real-weight path; proceeding to fixture-based inference scaling.
