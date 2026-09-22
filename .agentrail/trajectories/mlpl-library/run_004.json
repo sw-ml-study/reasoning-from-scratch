@@ -1,0 +1,11 @@
+{
+  "task_type": "mlpl-library",
+  "state": {
+    "number": 5,
+    "step": "bf16-tensor-decode"
+  },
+  "action": "Re-ran the corrected raw-byte unpack probe, checked upstream HEAD without changing siblings, applied the core-home rule, authored precise acceptance and resumption handoff, ran the fixture gate, and committed named paths. Closed Saga 3 using its explicitly permitted blocked-real-model exit.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-22T13:29:18"
+}
