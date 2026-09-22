@@ -1,6 +1,6 @@
 number = 2
 slug = "cot-and-self-consistency"
-status = "pending"
+status = "in-progress"
 description = "Implement Saga 4 chain-of-thought prompting and self-consistency over the exi..."
 role = "production"
 context_files = []

@@ -1,0 +1,237 @@
+# Self-consistency contract: versioned prompts, normalized boxed voting, explicit seeds, deterministic ties, safe stopping, and auditable abstentions.
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+
+def u:sc_test_options(early) {
+  "Fixture provenance and decoding parameters passed unchanged to the responder.";
+  {build: "fixture-build", model_hash: "synthetic-fixture", early_stop: early, decoding: {temperature: 0.8, top_p: 0.9, max_new: 8, stop_id: 0 - 1, sampler: "temperature-top-p-v1"}}
+}
+
+def u:sc_test_response(prompt, seed, decoding) {
+  "Return authored answers and fail if the runner changes the prompt or decoding arguments.";
+  if u:text_contains(prompt, "intermediate calculations") * eq(decoding.temperature, 0.8) {
+    if eq(seed, 1) {
+      "reasoning: \\boxed{ 2 }"
+    } else {
+      if eq(seed, 2) {
+        "\\boxed{$2$}"
+      } else {
+        "\\boxed{3}"
+      }
+    }
+  } else {
+    99
+  }
+}
+
+def u:sc_test_invalid(prompt, seed, decoding) {
+  "Exercise unboxed, unbalanced, normalized-empty and valid final answers.";
+  if eq(seed, 0) {
+    "the number is 2"
+  } else {
+    if eq(seed, 1) {
+      "\\boxed{2"
+    } else {
+      if eq(seed, 2) {
+        "\\boxed{ $ $ }"
+      } else {
+        "\\boxed{7}"
+      }
+    }
+  }
+}
+
+def u:sc_test_early(prompt, seed, decoding) {
+  "Any call after the third vote is an error, proving early stop avoids the responder.";
+  if lt(seed, 3) {
+    "\\boxed{5}"
+  } else {
+    99
+  }
+}
+
+def u:sc_test_pattern(pattern, prompt, seed, decoding) {
+  "Use each bit of a pattern as one seed-indexed vote for exhaustive stopping checks.";
+  if band(shr(pattern, seed), 1) {
+    "\\boxed{b}"
+  } else {
+    "\\boxed{a}"
+  }
+}
+
+def u:sc_test_broken(prompt, seed, decoding) {
+  "Return the wrong type to exercise callback contract errors.";
+  42
+}
+
+def u:sc_test_throws(prompt, seed, decoding) {
+  "Raise an evaluator error to exercise callback failure capture.";
+  1 + "not a number"
+}
+
+def u:sc_test_result(prompt, seed, decoding) {
+  "A Result-returning callback does not meet the plain-text responder contract.";
+  err("fixture responder failure")
+}
+
+@test {name: "reasoning prompt preserves the problem and has a versioned suffix", tags: ["scaling", "cot"]}
+def u:test_sc_prompt() {
+  "Prompt wording is owned here, while the boxed-answer base template is reused.";
+  prompt = u:scaling_cot_prompt("What is 1+1?")?;
+  u:assert_true(u:text_contains(prompt, "What is 1+1?"), "problem")?;
+  u:assert_true(u:text_contains(prompt, "intermediate calculations"), "reasoning suffix")?;
+  u:assert_true(u:text_contains(prompt, "\\boxed{RESULT}"), "boxed contract")?;
+  u:assert_text_eq(u:scaling_cot_template(), "boxed-cot-v1", "version")?;
+  u:assert_err(u:scaling_cot_prompt(42), "non-string problem")
+}
+
+@test {name: "normalized boxed answers vote and preserve per-draw provenance", tags: ["scaling", "vote"]}
+def u:test_sc_votes() {
+  "Whitespace and dollar delimiters do not split a vote; every consumed seed is reported.";
+  result = u:scaling_consistency("What is 1+1?", :u:sc_test_response, [1, 2, 3], u:sc_test_options(0))?;
+  u:assert_text_eq(result.answer, "2", "winner")?;
+  u:assert_eq(result.votes, 2, "winning count")?;
+  u:assert_eq(result.counts, [2, 1], "ordered counts")?;
+  u:assert_eq(result.majority, 1, "observed majority")?;
+  u:assert_eq(result.tied, 0, "unique leader")?;
+  u:assert_eq(result.used_seeds, [1, 2, 3], "draw order")?;
+  u:assert_text_eq(result.provenance.build, "fixture-build", "build")?;
+  u:assert_text_eq(result.provenance.model_hash, "synthetic-fixture", "model hash")?;
+  u:assert_text_eq(result.provenance.template, "boxed-cot-v1", "template")?;
+  u:assert_eq(result.provenance.decoding, u:sc_test_options(0).decoding, "decoding settings")?;
+  lines = str_split(u:text_trim(result.trace_jsonl), "\n");
+  u:assert_eq(list_len(lines), 3, "trace rows")?;
+  row = parse_json(unwrap(list_get(lines, 1)), {})?;
+  u:assert_eq(row.seed, 2, "trace seed")?;
+  u:assert_text_eq(row.response, "\\boxed{$2$}", "raw response")
+}
+
+@test {name: "ties choose the first observed answer and report every tied key", tags: ["scaling", "vote"]}
+def u:test_sc_tie() {
+  "The winner is determined by occurrence, not lexical or numeric sort order.";
+  result = u:scaling_consistency("problem", :u:sc_test_response, [3, 1], u:sc_test_options(0))?;
+  u:assert_text_eq(result.answer, "3", "first observed")?;
+  u:assert_eq(result.tied, 1, "tie flagged")?;
+  u:assert_eq(result.majority, 0, "tie is no majority")?;
+  u:assert_eq(result.tie_indices, [0, 1], "both keys tied")?;
+  u:assert_text_eq(unwrap(list_get(result.answers, 0)), "3", "stable answer order")
+}
+
+@test {name: "invalid extracted answers abstain but consume seeds and budget", tags: ["scaling", "vote"]}
+def u:test_sc_abstain() {
+  "Malformed and missing boxes cannot become accidental votes for empty text.";
+  result = u:scaling_consistency("problem", :u:sc_test_invalid, [0, 1, 2, 3], u:sc_test_options(0))?;
+  u:assert_eq(result.attempted, 4, "budget consumed")?;
+  u:assert_eq(result.valid, 1, "one vote")?;
+  u:assert_eq(result.rejected, 3, "three abstentions")?;
+  u:assert_text_eq(result.answer, "7", "valid winner")?;
+  rows = str_split(u:text_trim(result.trace_jsonl), "\n");
+  u:assert_text_eq(parse_json(unwrap(list_get(rows, 0)), {})?.reason, "no_boxed", "no box reason")?;
+  u:assert_text_eq(parse_json(unwrap(list_get(rows, 1)), {})?.reason, "unbalanced", "bad brace reason")?;
+  u:assert_text_eq(parse_json(unwrap(list_get(rows, 2)), {})?.reason, "empty_answer", "empty reason")
+}
+
+@test {name: "all abstentions produce an explicit no-answer result", tags: ["scaling", "vote"]}
+def u:test_sc_no_answer() {
+  "No-answer runs are measured outcomes rather than a fabricated winner.";
+  result = u:scaling_consistency("problem", :u:sc_test_invalid, [0, 1, 2], u:sc_test_options(1))?;
+  u:assert_text_eq(result.status, "no_valid_answers", "status")?;
+  u:assert_text_eq(result.answer, "", "no winner")?;
+  u:assert_eq(result.votes, 0, "no votes")?;
+  u:assert_eq(result.tied, 0, "empty is not a tie")?;
+  u:assert_eq(result.attempted, 3, "never stopped without a winner")
+}
+
+@test {name: "certain winners stop before unused responders are called", tags: ["scaling", "vote"]}
+def u:test_sc_early() {
+  "Three identical votes out of five cannot be overtaken even if every remaining vote opposes them.";
+  result = u:scaling_consistency("problem", :u:sc_test_early, [0, 1, 2, 3, 4], u:sc_test_options(1))?;
+  u:assert_eq(result.attempted, 3, "only three callbacks")?;
+  u:assert_eq(result.used_seeds, [0, 1, 2], "consumed seed prefix")?;
+  u:assert_eq(result.planned_seeds, [0, 1, 2, 3, 4], "full seed plan")?;
+  u:assert_eq(result.remaining, 2, "unused budget")?;
+  u:assert_eq(result.early_stopped, 1, "early flag")?;
+  u:assert_text_eq(result.stopped, "certain winner", "reason")
+}
+
+@test {name: "early stopping preserves winners and ties for all four-vote binary patterns", tags: ["scaling", "vote"]}
+def u:test_sc_exhaustive() {
+  "Enumerate sixteen full answer sequences, including a temporary lead that can still end in a tie.";
+  pattern = 0;
+  while lt(pattern, 16) {
+    responder = call(:u:sc_test_pattern, pattern);
+    full = u:scaling_consistency("problem", responder, [0, 1, 2, 3], u:sc_test_options(0))?;
+    early = u:scaling_consistency("problem", responder, [0, 1, 2, 3], u:sc_test_options(1))?;
+    u:assert_text_eq(early.answer, full.answer, "same winner")?;
+    u:assert_eq(early.tied, full.tied, "same tie outcome")?;
+    pattern = pattern + 1
+  };
+  ok(1)
+}
+
+@test {name: "responder contract and evaluator failures abort with seed context", tags: ["scaling", "errors"]}
+def u:test_sc_responder_errors() {
+  "Wrong-type and thrown failures are integration errors, not abstentions.";
+  bad = u:scaling_consistency("problem", :u:sc_test_broken, [1], u:sc_test_options(0));
+  u:assert_err(bad, "wrong type")?;
+  u:assert_eq(err_message(bad).seed, 1, "failure seed")?;
+  u:assert_text_eq(err_message(bad).kind, "self_consistency_responder", "kind")?;
+  u:assert_err(u:scaling_consistency("problem", :u:sc_test_result, [1], u:sc_test_options(0)), "returned Result rejected")?;
+  u:assert_err(u:scaling_consistency("problem", :u:sc_test_throws, [1], u:sc_test_options(0)), "caught evaluator error")
+}
+
+@test {name: "invalid seed plans and options fail before invoking the responder", tags: ["scaling", "errors"]}
+def u:test_sc_inputs() {
+  "Require distinct valid seeds, provenance and boolean early-stop control.";
+  options = u:sc_test_options(0);
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [], options), "empty seed plan")?;
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [1, 1], options), "duplicate seeds")?;
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [0.5], options), "fractional seed")?;
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [0 - 1], options), "negative seed")?;
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [9007199254740992], options), "inexact seed")?;
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [1], {}), "missing provenance")?;
+  invalid = u:scaling_consistency("p", :u:sc_test_throws, [1, 1], options);
+  u:assert_text_eq(err_message(invalid).kind, "sampling_input", "validation precedes callback")?;
+  u:assert_err(u:scaling_consistency("p", :u:sc_test_throws, [1], u:sc_test_options(2)), "invalid early flag")
+}
+
+@test {name: "option validation rejects malformed provenance and decoding settings", tags: ["scaling", "errors"]}
+def u:test_sc_options() {
+  "Incomplete metadata cannot masquerade as a reproducible run.";
+  u:assert_err(u:scaling_sc_options(0), "not a record")?;
+  u:assert_err(u:scaling_sc_options({build: "", model_hash: "x", decoding: u:sc_test_options(0).decoding}), "blank build")?;
+  u:assert_err(u:scaling_sc_options({build: "b", model_hash: 1, decoding: {}}), "non-text hash")?;
+  u:assert_err(u:scaling_sc_options({build: "b", model_hash: "x", decoding: "greedy"}), "non-record decoding")?;
+  u:assert_err(u:scaling_sc_options({build: "b", model_hash: "x", decoding: {temperature: 1, top_p: 1, max_new: 0.5, stop_id: 0 - 1, sampler: "v1"}}), "fractional budget")?;
+  u:assert_err(u:scaling_sc_options({build: "b", model_hash: "x", decoding: {temperature: 0, top_p: 1, max_new: 1, stop_id: 0 - 1, sampler: "v1"}}), "zero temperature")?;
+  u:assert_err(u:scaling_sc_options({build: "b", model_hash: "x", decoding: {temperature: 1, top_p: 1, max_new: 1, stop_id: 0 - 2, sampler: "v1"}}), "bad stop id")?;
+  u:assert_err(u:scaling_sc_options({build: "b", model_hash: "x", decoding: {temperature: 1, top_p: 1, max_new: 1, stop_id: 0, sampler: 3}}), "non-text sampler")
+}
+
+@test {name: "plurality certainty accounts for unseen competitors and abstentions", tags: ["scaling", "vote"]}
+def u:test_sc_certainty() {
+  "The remaining slots can all become one competing answer, including a previously unseen key.";
+  state = {keys: "a", counts: [1]};
+  u:assert_eq(u:scaling_vote_report(state, 1).certain, 0, "unseen answer can tie")?;
+  u:assert_eq(u:scaling_vote_report(state, 0).certain, 1, "abstention exhausting budget can settle leader")?;
+  split = {keys: "a\nb\nc", counts: [3, 1, 1]};
+  u:assert_eq(u:scaling_vote_report(split, 1).certain, 1, "unreachable plurality")?;
+  u:assert_eq(u:scaling_vote_report(split, 2).certain, 0, "runner can still tie")
+}
+
+@test {name: "vote keys use normalized text rather than approximate numeric equivalence", tags: ["scaling", "vote"]}
+def u:test_sc_keys() {
+  "Exact normalized keys avoid nontransitive tolerance-based vote grouping.";
+  u:assert_text_eq(u:scaling_vote_key("\\boxed{ X + Y }")?, "x+y", "case and whitespace")?;
+  u:assert_text_eq(u:scaling_vote_key("\\boxed{ X\n+\tY }")?, "x+y", "internal line separators removed")?;
+  u:assert_text_eq(u:scaling_vote_key("\\boxed{1} then \\boxed{2}")?, "2", "last box")?;
+  u:assert_err(u:scaling_vote_key("\\boxed{1} then \\boxed{2"), "malformed last box")?;
+  u:assert_false(str_eq(u:scaling_vote_key("\\boxed{0.5}")?, u:scaling_vote_key("\\boxed{\\frac{1}{2}}")?), "equivalent numbers may remain separate keys")
+}
+
+u:run_registered_tests()

@@ -58,6 +58,20 @@ Ten sampling tests also establish exact cached/full-forward sampled-id
 agreement, boundary/error handling, and analytic distribution goldens.
 No real-model inference or new accuracy result is claimed.
 
+## Self-consistency, validated on Arch build 6d784660
+
+The versioned reasoning suffix, seed-plan validation, normalized boxed voting,
+first-occurrence ties, abstention audit, and safe early stopping are
+**supported** in MLPL over the existing text and array primitives. No new
+core or extension capability is needed. Twelve native tests include all
+sixteen four-vote binary patterns, comparing early/full winners and ties.
+The gate now covers 105 native tests, 25 probe outcomes, and 18 tangled
+library sources. See [the contract](self-consistency.md).
+
+Evidence is from stub responders only: vote agreement is not correctness,
+and there is no measured MATH-500 improvement. R11 and the real-model/GPU
+constraints above are unchanged.
+
 ## Historical Apple measurements
 
 Measured against:

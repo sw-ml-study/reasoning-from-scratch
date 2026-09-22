@@ -1,0 +1,198 @@
+# Versioned reasoning prompts and self-consistency over seeded text responders: exact normalized boxed votes, first-occurrence ties, abstention traces, and safe stopping. Requires lib/text/text.mlpl, lib/eval/data.mlpl, lib/eval/harness.mlpl, lib/verify/extract.mlpl, lib/verify/normalize.mlpl, and lib/scaling/scaling.mlpl included first.
+
+def u:scaling_cot_template() {
+  "Version of this project's independently worded reasoning suffix over the boxed base template.";
+  "boxed-cot-v1"
+}
+
+def u:scaling_cot_prompt(problem) {
+  "Render the existing boxed-answer prompt and append instructions to explain and check intermediate calculations.";
+  if str_eq(type_of(problem), "string") {
+    if str_len(u:text_trim(problem)) {
+      ok(str_concat(u:eval_render_prompt(problem), "Show the intermediate calculations, check the result, and finish with the final answer in \\boxed{RESULT}.\n"))
+    } else {
+      u:scaling_error("problem", "expected a nonempty problem")
+    }
+  } else {
+    u:scaling_error("problem", "expected problem text")
+  }
+}
+
+def u:scaling_vote_key(response) {
+  "Extract the last well-formed box and normalize its text without whitespace. Empty or unextractable answers abstain; no approximate equivalence grouping is performed.";
+  if str_eq(type_of(response), "string") {
+    boxed = u:verify_last_boxed(response)?;
+    key = u:text_replace_all(u:verify_normalize(boxed), " ", "");
+    key = u:text_replace_all(key, "\t", "");
+    key = u:text_replace_all(key, "\r", "");
+    key = u:text_replace_all(key, "\n", "");
+    if str_len(key) {
+      ok(key)
+    } else {
+      err({kind: "empty_answer", message: "boxed answer is empty after normalization"})
+    }
+  } else {
+    u:scaling_error("response", "expected text before answer extraction")
+  }
+}
+
+def u:scaling_vote_add(state, key) {
+  "Increment one exact key or append it in first-occurrence order. Keys are newline-free normalized strings and counts form a parallel numeric vector.";
+  n = tally(state.counts);
+  keys = str_split(state.keys, "\n");
+  found = 0 - 1;
+  i = 0;
+  while lt(i, n) {
+    if str_eq(unwrap(list_get(keys, i)), key) {
+      found = i;
+      i = n
+    } else {
+      i = i + 1
+    }
+  };
+  if lt(found, 0) {
+    {keys: if n {
+        str_concat(state.keys, str_concat("\n", key))
+      } else {
+        key
+      }, counts: concat(state.counts, 1)}
+  } else {
+    {keys: state.keys, counts: state.counts + eq(range(n), found)}
+  }
+}
+
+def u:scaling_vote_report(state, remaining) {
+  "Report the observed plurality, strict majority of valid votes, tied indices, and whether no allocation of remaining votes can create a tie or change the winner.";
+  n = tally(state.counts);
+  if n {
+    best = reduce(:max, state.counts);
+    ties = compress(eq(state.counts, best), range(n));
+    winner = at(ties, 0);
+    runner = reduce(:max, concat([0], compress(1 - eq(range(n), winner), state.counts)));
+    answers = str_split(state.keys, "\n");
+    {answer: unwrap(list_get(answers, winner)), votes: best, counts: state.counts, answers: answers, tie_indices: ties, tied: gt(tally(ties), 1), majority: gt(best, reduce_add(state.counts) / 2), certain: gt(best, runner + remaining), status: "answer"}
+  } else {
+    {answer: "", votes: 0, counts: [], answers: str_split("", ""), tie_indices: [], tied: 0, majority: 0, certain: 0, status: "no_valid_answers"}
+  }
+}
+
+def u:scaling_sc_seeds(seeds) {
+  "Validate a nonempty plan of distinct nonnegative exact integer seeds; duplicates would repeat a deterministic sample and inflate its vote.";
+  plan = u:scaling_vector(seeds, "seeds")?;
+  if reduce(:and, eq(plan, floor(plan)) * (1 - lt(plan, 0)) * (1 - gt(plan, 9007199254740991))) {
+    n = tally(plan);
+    duplicate = 0;
+    if gt(n, 1) {
+      ordered = u:scaling_gather(plan, grade_up(plan));
+      left = compress(lt(range(n), n - 1), ordered);
+      right = compress(gt(range(n), 0), ordered);
+      duplicate = reduce(:or, eq(left, right))
+    };
+    if duplicate {
+      u:scaling_error("seeds", "each sample must have a distinct seed")
+    } else {
+      ok(plan)
+    }
+  } else {
+    u:scaling_error("seeds", "expected integer seeds between 0 and 2^53-1")
+  }
+}
+
+def u:scaling_sc_field(record, field) {
+  "Read a required option from an already validated record, classifying missing fields as invalid input.";
+  if has_field(record, field) {
+    record_get(record, field)
+  } else {
+    u:scaling_error(field, "required self-consistency option is missing")
+  }
+}
+
+def u:scaling_sc_options(options) {
+  "Require build and model provenance plus explicit sampling controls; validate optional early_stop as zero or one.";
+  if str_eq(type_of(options), "record") {
+    build = u:scaling_sc_field(options, "build")?;
+    model_hash = u:scaling_sc_field(options, "model_hash")?;
+    decoding = u:scaling_sc_field(options, "decoding")?;
+    early = u:scaling_scalar(u:eval_data_opt(options, "early_stop", 0), "early_stop")?;
+    if str_eq(type_of(build), "string") * str_eq(type_of(model_hash), "string") * str_eq(type_of(decoding), "record") {
+      temperature = u:scaling_sc_field(decoding, "temperature")?;
+      top_p = u:scaling_sc_field(decoding, "top_p")?;
+      budget = u:scaling_scalar(u:scaling_sc_field(decoding, "max_new")?, "max_new")?;
+      stop = u:scaling_scalar(u:scaling_sc_field(decoding, "stop_id")?, "stop_id")?;
+      sampler = u:scaling_sc_field(decoding, "sampler")?;
+      u:scaling_controls(temperature, top_p)?;
+      if str_len(u:text_trim(build)) * str_len(u:text_trim(model_hash)) * str_eq(type_of(sampler), "string") {
+        if str_len(u:text_trim(sampler)) * eq(budget, floor(budget)) * (1 - lt(budget, 0)) * eq(stop, floor(stop)) * (1 - lt(stop, 0 - 1)) * (eq(early, 0) + eq(early, 1)) {
+          ok({build: build, model_hash: model_hash, decoding: decoding, early_stop: early})
+        } else {
+          u:scaling_error("options", "invalid sampler, token budget, stop id or early_stop flag")
+        }
+      } else {
+        u:scaling_error("provenance", "build, model_hash and sampler must be nonempty strings")
+      }
+    } else {
+      u:scaling_error("options", "expected string build/model_hash and a decoding record")
+    }
+  } else {
+    u:scaling_error("options", "expected an options record")
+  }
+}
+
+def u:scaling_sc_respond(responder, prompt, seed, decoding, index) {
+  "Call a text responder with explicit seed and decoding settings. Returned non-text values and evaluator failures abort with the sample index and seed.";
+  response = try {
+    ok(call(responder, prompt, seed, decoding))
+  } catch e {
+    err(e.message)
+  };
+  if is_err(response) {
+    err({kind: "self_consistency_responder", index: index, seed: seed, message: err_message(response)})
+  } else {
+    text = unwrap(response);
+    if str_eq(type_of(text), "string") {
+      ok(text)
+    } else {
+      err({kind: "self_consistency_responder", index: index, seed: seed, message: str_concat("expected text, got ", type_of(text))})
+    }
+  }
+}
+
+def u:scaling_consistency(problem, responder, seeds, options) {
+  "Run a seeded responder plan, vote over normalized boxed answers, retain JSONL audit rows, and optionally stop when the current leader is unreachable. Counts describe observed samples, not hypothetical skipped votes.";
+  prompt = u:scaling_cot_prompt(problem)?;
+  plan = u:scaling_sc_seeds(seeds)?;
+  settings = u:scaling_sc_options(options)?;
+  total = tally(plan);
+  state = {keys: "", counts: []};
+  report = u:scaling_vote_report(state, total);
+  trace = "";
+  attempted = 0;
+  valid = 0;
+  early_stopped = 0;
+  while lt(attempted, total) * (1 - early_stopped) {
+    seed = at(plan, attempted);
+    response = u:scaling_sc_respond(responder, prompt, seed, settings.decoding, attempted)?;
+    extracted = u:scaling_vote_key(response);
+    key = "";
+    reason = "";
+    accepted = is_ok(extracted);
+    if accepted {
+      key = unwrap(extracted);
+      state = u:scaling_vote_add(state, key);
+      valid = valid + 1
+    } else {
+      reason = err_message(extracted).kind
+    };
+    row = to_json({index: attempted, seed: seed, response: response, answer: key, accepted: accepted, reason: reason})?;
+    trace = str_concat(trace, str_concat(row, "\n"));
+    attempted = attempted + 1;
+    remaining = total - attempted;
+    report = u:scaling_vote_report(state, remaining);
+    early_stopped = settings.early_stop * report.certain * gt(remaining, 0)
+  };
+  ok({answer: report.answer, votes: report.votes, counts: report.counts, answers: report.answers, tie_indices: report.tie_indices, tied: report.tied, majority: report.majority, certain: report.certain, status: report.status, attempted: attempted, valid: valid, rejected: attempted - valid, remaining: total - attempted, planned_seeds: plan, used_seeds: compress(lt(range(total), attempted), plan), early_stopped: early_stopped, stopped: if early_stopped {
+        "certain winner"
+      } else {
+        "sample budget"
+      }, trace_jsonl: trace, provenance: {build: settings.build, model_hash: settings.model_hash, template: u:scaling_cot_template(), base_template: u:eval_template_id(), voting: "normalized-boxed-v1", decoding: settings.decoding, early_stop: settings.early_stop}})
+}

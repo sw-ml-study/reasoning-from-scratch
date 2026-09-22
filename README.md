@@ -43,8 +43,8 @@ tied embeddings; the previous Apple run validated all 310 tensors in the
 real checkpoint. Tensor data is not yet loaded and there is no real-model
 accuracy result.
 
-The fixture suite has 93 native tests. A clean clone now generates its tiny
-checkpoint fixture automatically. The literate document reproduces all 17
+The fixture suite has 105 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The literate document reproduces all 18
 library sources. Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
@@ -53,8 +53,11 @@ request R11 (`unpack`) is still missing at upstream HEAD `6d784660`.
 [The decoder handoff](docs/bf16-handoff.md) pins reproduction, acceptance,
 and resume conditions. Saga 4 has delivered [sampling primitives](docs/sampling.md):
 temperature, nucleus filtering, seeded categorical draws, and sampled tiny
-generation, with exact cached/full-forward agreement. Self-consistency is
-next. Real loading remains deferred. Batched matmul and container-copy costs remain
+generation, with exact cached/full-forward agreement. It also delivers
+[chain-of-thought prompting and self-consistency](docs/self-consistency.md):
+seeded boxed-answer voting with explicit ties, abstentions, provenance, and
+safe early stopping, tested with stub responders. Scoring is next.
+Real loading remains deferred. Batched matmul and container-copy costs remain
 throughput constraints. The tokenizer extension passed synthetic parity on
 Apple but refused the real vocabulary's NFC normalizer; that extension is
 not installed in this Linux checkout. Remaining scaling methods, GRPO, and

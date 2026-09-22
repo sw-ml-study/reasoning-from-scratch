@@ -187,6 +187,15 @@ documentation = "docs/sampling.md"
 status = "accepted"
 
 [[component]]
+id = "SC"
+slug = "cot-and-self-consistency"
+chapter = 4
+source = "lib/scaling/consistency.mlpl"
+test = "tests/test_scaling_consistency.mlpl"
+documentation = "docs/self-consistency.md"
+status = "accepted"
+
+[[component]]
 id = "RL"
 slug = "grpo"
 chapter = 6

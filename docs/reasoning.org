@@ -4545,6 +4545,259 @@ def u:scaling_decode(config, model, prompt_ids, max_new, stop_id, temperature, t
 }
 #+end_src
 
+** lib/scaling/consistency.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-scaling-consistency-mlpl
+:END:
+
+Chapter 4's self-consistency method samples several responses and votes on
+their short final answers. Here the responder is explicit, the seed plan is
+replayable, and tests use authored responses rather than a real checkpoint.
+The [[file:self-consistency.md][contract]] describes ties, abstentions, and early stopping.
+
+Self-consistency consumes text from a caller-supplied responder. It reuses prompt, extraction, normalization, and numeric validation helpers without adding nested includes.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+# Versioned reasoning prompts and self-consistency over seeded text responders: exact normalized boxed votes, first-occurrence ties, abstention traces, and safe stopping. Requires lib/text/text.mlpl, lib/eval/data.mlpl, lib/eval/harness.mlpl, lib/verify/extract.mlpl, lib/verify/normalize.mlpl, and lib/scaling/scaling.mlpl included first.
+#+end_src
+
+The reasoning suffix has its own version, separate from the existing base prompt version, so both can be recorded in a run.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_cot_template() {
+  "Version of this project's independently worded reasoning suffix over the boxed base template.";
+  "boxed-cot-v1"
+}
+#+end_src
+
+Render the existing boxed-answer template, then add this project's instruction to show intermediate calculations and check the result. Reject empty or non-text problems.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_cot_prompt(problem) {
+  "Render the existing boxed-answer prompt and append instructions to explain and check intermediate calculations.";
+  if str_eq(type_of(problem), "string") {
+    if str_len(u:text_trim(problem)) {
+      ok(str_concat(u:eval_render_prompt(problem), "Show the intermediate calculations, check the result, and finish with the final answer in \\boxed{RESULT}.\n"))
+    } else {
+      u:scaling_error("problem", "expected a nonempty problem")
+    }
+  } else {
+    u:scaling_error("problem", "expected problem text")
+  }
+}
+#+end_src
+
+Only the last well-formed box participates. Apply the verifier normalizer and remove internal whitespace. Exact resulting strings are keys; numeric tolerance is deliberately not used because pairwise approximate equality need not be transitive.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_vote_key(response) {
+  "Extract the last well-formed box and normalize its text without whitespace. Empty or unextractable answers abstain; no approximate equivalence grouping is performed.";
+  if str_eq(type_of(response), "string") {
+    boxed = u:verify_last_boxed(response)?;
+    key = u:text_replace_all(u:verify_normalize(boxed), " ", "");
+    key = u:text_replace_all(key, "\t", "");
+    key = u:text_replace_all(key, "\r", "");
+    key = u:text_replace_all(key, "\n", "");
+    if str_len(key) {
+      ok(key)
+    } else {
+      err({kind: "empty_answer", message: "boxed answer is empty after normalization"})
+    }
+  } else {
+    u:scaling_error("response", "expected text before answer extraction")
+  }
+}
+#+end_src
+
+Store keys in first-occurrence order with parallel counts. Normalized keys contain no newline, so a newline-separated representation is unambiguous. Increment counts with an array mask; append only a new key.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_vote_add(state, key) {
+  "Increment one exact key or append it in first-occurrence order. Keys are newline-free normalized strings and counts form a parallel numeric vector.";
+  n = tally(state.counts);
+  keys = str_split(state.keys, "\n");
+  found = 0 - 1;
+  i = 0;
+  while lt(i, n) {
+    if str_eq(unwrap(list_get(keys, i)), key) {
+      found = i;
+      i = n
+    } else {
+      i = i + 1
+    }
+  };
+  if lt(found, 0) {
+    {keys: if n {
+        str_concat(state.keys, str_concat("\n", key))
+      } else {
+        key
+      }, counts: concat(state.counts, 1)}
+  } else {
+    {keys: state.keys, counts: state.counts + eq(range(n), found)}
+  }
+}
+#+end_src
+
+The observed winner is a plurality. Report a tie explicitly and choose its first-observed key. A winner is certain only when its count exceeds the strongest rival plus every remaining sample slot; an unseen rival has count zero. A strict inequality preserves tie reporting as well as winner identity.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_vote_report(state, remaining) {
+  "Report the observed plurality, strict majority of valid votes, tied indices, and whether no allocation of remaining votes can create a tie or change the winner.";
+  n = tally(state.counts);
+  if n {
+    best = reduce(:max, state.counts);
+    ties = compress(eq(state.counts, best), range(n));
+    winner = at(ties, 0);
+    runner = reduce(:max, concat([0], compress(1 - eq(range(n), winner), state.counts)));
+    answers = str_split(state.keys, "\n");
+    {answer: unwrap(list_get(answers, winner)), votes: best, counts: state.counts, answers: answers, tie_indices: ties, tied: gt(tally(ties), 1), majority: gt(best, reduce_add(state.counts) / 2), certain: gt(best, runner + remaining), status: "answer"}
+  } else {
+    {answer: "", votes: 0, counts: [], answers: str_split("", ""), tie_indices: [], tied: 0, majority: 0, certain: 0, status: "no_valid_answers"}
+  }
+}
+#+end_src
+
+Require a nonempty vector of distinct exact integer seeds. Sorting the plan solely for duplicate detection leaves its original response order intact.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_sc_seeds(seeds) {
+  "Validate a nonempty plan of distinct nonnegative exact integer seeds; duplicates would repeat a deterministic sample and inflate its vote.";
+  plan = u:scaling_vector(seeds, "seeds")?;
+  if reduce(:and, eq(plan, floor(plan)) * (1 - lt(plan, 0)) * (1 - gt(plan, 9007199254740991))) {
+    n = tally(plan);
+    duplicate = 0;
+    if gt(n, 1) {
+      ordered = u:scaling_gather(plan, grade_up(plan));
+      left = compress(lt(range(n), n - 1), ordered);
+      right = compress(gt(range(n), 0), ordered);
+      duplicate = reduce(:or, eq(left, right))
+    };
+    if duplicate {
+      u:scaling_error("seeds", "each sample must have a distinct seed")
+    } else {
+      ok(plan)
+    }
+  } else {
+    u:scaling_error("seeds", "expected integer seeds between 0 and 2^53-1")
+  }
+}
+#+end_src
+
+Required metadata fields produce classified input errors when absent, before calling any responder.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_sc_field(record, field) {
+  "Read a required option from an already validated record, classifying missing fields as invalid input.";
+  if has_field(record, field) {
+    record_get(record, field)
+  } else {
+    u:scaling_error(field, "required self-consistency option is missing")
+  }
+}
+#+end_src
+
+Provenance is required rather than replaced with unknown defaults. Validate build/model labels, the decoding record and its sampling controls, and the optional boolean early-stop flag. The caller remains responsible for truthfully naming its model and build.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_sc_options(options) {
+  "Require build and model provenance plus explicit sampling controls; validate optional early_stop as zero or one.";
+  if str_eq(type_of(options), "record") {
+    build = u:scaling_sc_field(options, "build")?;
+    model_hash = u:scaling_sc_field(options, "model_hash")?;
+    decoding = u:scaling_sc_field(options, "decoding")?;
+    early = u:scaling_scalar(u:eval_data_opt(options, "early_stop", 0), "early_stop")?;
+    if str_eq(type_of(build), "string") * str_eq(type_of(model_hash), "string") * str_eq(type_of(decoding), "record") {
+      temperature = u:scaling_sc_field(decoding, "temperature")?;
+      top_p = u:scaling_sc_field(decoding, "top_p")?;
+      budget = u:scaling_scalar(u:scaling_sc_field(decoding, "max_new")?, "max_new")?;
+      stop = u:scaling_scalar(u:scaling_sc_field(decoding, "stop_id")?, "stop_id")?;
+      sampler = u:scaling_sc_field(decoding, "sampler")?;
+      u:scaling_controls(temperature, top_p)?;
+      if str_len(u:text_trim(build)) * str_len(u:text_trim(model_hash)) * str_eq(type_of(sampler), "string") {
+        if str_len(u:text_trim(sampler)) * eq(budget, floor(budget)) * (1 - lt(budget, 0)) * eq(stop, floor(stop)) * (1 - lt(stop, 0 - 1)) * (eq(early, 0) + eq(early, 1)) {
+          ok({build: build, model_hash: model_hash, decoding: decoding, early_stop: early})
+        } else {
+          u:scaling_error("options", "invalid sampler, token budget, stop id or early_stop flag")
+        }
+      } else {
+        u:scaling_error("provenance", "build, model_hash and sampler must be nonempty strings")
+      }
+    } else {
+      u:scaling_error("options", "expected string build/model_hash and a decoding record")
+    }
+  } else {
+    u:scaling_error("options", "expected an options record")
+  }
+}
+#+end_src
+
+Invoke the callback with prompt, seed, and decoding record. A returned non-text value or evaluator error is an integration failure, with its sample index and seed; it is not an abstaining answer.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_sc_respond(responder, prompt, seed, decoding, index) {
+  "Call a text responder with explicit seed and decoding settings. Returned non-text values and evaluator failures abort with the sample index and seed.";
+  response = try {
+    ok(call(responder, prompt, seed, decoding))
+  } catch e {
+    err(e.message)
+  };
+  if is_err(response) {
+    err({kind: "self_consistency_responder", index: index, seed: seed, message: err_message(response)})
+  } else {
+    text = unwrap(response);
+    if str_eq(type_of(text), "string") {
+      ok(text)
+    } else {
+      err({kind: "self_consistency_responder", index: index, seed: seed, message: str_concat("expected text, got ", type_of(text))})
+    }
+  }
+}
+#+end_src
+
+Each attempted response consumes one seed. Missing, malformed, or normalized-empty boxes abstain and receive a reason in the JSONL trace. Recompute the certainty bound even after an abstention because it reduces the remaining budget. Early-stop reports contain only observed counts and retain the full planned seed vector.
+
+#+begin_src mlpl :tangle ../lib/scaling/consistency.mlpl
+def u:scaling_consistency(problem, responder, seeds, options) {
+  "Run a seeded responder plan, vote over normalized boxed answers, retain JSONL audit rows, and optionally stop when the current leader is unreachable. Counts describe observed samples, not hypothetical skipped votes.";
+  prompt = u:scaling_cot_prompt(problem)?;
+  plan = u:scaling_sc_seeds(seeds)?;
+  settings = u:scaling_sc_options(options)?;
+  total = tally(plan);
+  state = {keys: "", counts: []};
+  report = u:scaling_vote_report(state, total);
+  trace = "";
+  attempted = 0;
+  valid = 0;
+  early_stopped = 0;
+  while lt(attempted, total) * (1 - early_stopped) {
+    seed = at(plan, attempted);
+    response = u:scaling_sc_respond(responder, prompt, seed, settings.decoding, attempted)?;
+    extracted = u:scaling_vote_key(response);
+    key = "";
+    reason = "";
+    accepted = is_ok(extracted);
+    if accepted {
+      key = unwrap(extracted);
+      state = u:scaling_vote_add(state, key);
+      valid = valid + 1
+    } else {
+      reason = err_message(extracted).kind
+    };
+    row = to_json({index: attempted, seed: seed, response: response, answer: key, accepted: accepted, reason: reason})?;
+    trace = str_concat(trace, str_concat(row, "\n"));
+    attempted = attempted + 1;
+    remaining = total - attempted;
+    report = u:scaling_vote_report(state, remaining);
+    early_stopped = settings.early_stop * report.certain * gt(remaining, 0)
+  };
+  ok({answer: report.answer, votes: report.votes, counts: report.counts, answers: report.answers, tie_indices: report.tie_indices, tied: report.tied, majority: report.majority, certain: report.certain, status: report.status, attempted: attempted, valid: valid, rejected: attempted - valid, remaining: total - attempted, planned_seeds: plan, used_seeds: compress(lt(range(total), attempted), plan), early_stopped: early_stopped, stopped: if early_stopped {
+        "certain winner"
+      } else {
+        "sample budget"
+      }, trace_jsonl: trace, provenance: {build: settings.build, model_hash: settings.model_hash, template: u:scaling_cot_template(), base_template: u:eval_template_id(), voting: "normalized-boxed-v1", decoding: settings.decoding, early_stop: settings.early_stop}})
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -4557,7 +4810,9 @@ tables a byte-level encoder can use, the encoder itself, the decoding and
 prompt conventions that surround it, the decoder forward pass those ids
 will run through, cached generation over it, the checkpoint validation
 that will eventually feed it real weights, and seeded temperature/nucleus
-sampling with categorical selection and cached decoding.
+sampling with categorical selection and cached decoding. Versioned reasoning
+prompts and seeded self-consistency add answer voting, explicit abstentions,
+and a stopping bound that preserves the winner and tie outcome.
 
 Two runnable checks exercise all of it. =just verifier-demo= narrates the
 pipeline over committed fixtures with a stand-in responder, and scores it
@@ -4572,4 +4827,4 @@ simplification, so =2x + 3x= and =5x= do not match. There is no regular
 expression anywhere. Tiny synthetic weights generate tokens and prove the
 forward, cache, and sampler contracts, but no real checkpoint data is loaded.
 Bulk bf16 decoding remains unavailable; no tiny-model result is evidence of
-real-model accuracy. Self-consistency and scoring are the next scaling steps.
+real-model accuracy. Scoring and self-refinement are the next scaling steps.
