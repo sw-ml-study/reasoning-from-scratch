@@ -1,0 +1,5 @@
+#!/bin/sh
+# Narrate bounded refinement and best-of-N using authored callbacks.
+set -eu
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$repo_root/scripts/run-mlpl-demo" demos/refinement_demo.mlpl

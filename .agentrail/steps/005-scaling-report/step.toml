@@ -1,0 +1,9 @@
+number = 5
+slug = "scaling-report"
+status = "pending"
+description = "Close Saga 4 with an evidence-based scaling report. Review the completed samp..."
+role = "production"
+context_files = []
+created_at = "2026-09-22T14:23:43"
+task_type = "documentation"
+commits = []

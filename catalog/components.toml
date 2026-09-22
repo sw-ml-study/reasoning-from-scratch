@@ -205,6 +205,15 @@ documentation = "docs/scoring.md"
 status = "accepted"
 
 [[component]]
+id = "REFINE"
+slug = "self-refinement"
+chapter = 5
+source = "lib/scaling/refinement.mlpl"
+test = "tests/test_scaling_refinement.mlpl"
+documentation = "docs/self-refinement.md"
+status = "accepted"
+
+[[component]]
 id = "RL"
 slug = "grpo"
 chapter = 6

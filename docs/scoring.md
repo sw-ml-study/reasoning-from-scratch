@@ -90,6 +90,7 @@ runs in the fixture gate.
 
 Ten native tests cover analytic goldens, numerical extremes, masks, invalid
 shapes/ids, empty answers, entropy, coefficient validation, and causal
-alignment against independent prefix forward calls. The full suite has
-115 tests, 25 expected probe outcomes, and 19 tangled library sources.
+alignment against independent prefix forward calls. See README for current
+full-suite totals. [Self-refinement](self-refinement.md) composes scalar
+scorer callbacks with bounded revision and best-of-N selection.
 Real weights remain subject to [the bf16 handoff](bf16-handoff.md).

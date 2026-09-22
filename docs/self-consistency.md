@@ -95,4 +95,5 @@ With [Linux tool overrides](linux-toolchain.md), run
 `just tests tests/test_scaling_consistency.mlpl` or `just check`.
 See the README for current full-suite totals.
 Real-model work remains subject to [the bf16 handoff](bf16-handoff.md).
-[Scoring](scoring.md) is available; self-refinement follows next.
+[Scoring](scoring.md) and [self-refinement](self-refinement.md) are available;
+ranking and revision do not change this voting contract.

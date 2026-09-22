@@ -1,0 +1,239 @@
+# Seeded refinement and best-of-N contracts on authored callbacks, including rejection, equal-score acceptance, traces, validation and failures.
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/scaling/scoring.mlpl";
+include "lib/scaling/refinement.mlpl";
+
+def u:ref_options() {
+  "Explicit fixture provenance, decoding and scorer configuration.";
+  {build: "fixture-build", model_hash: "authored-responses", decoding: {temperature: 1, top_p: 1, max_new: 32, stop_id: 0 - 1, sampler: "fixture-v1"}, scorer: "fixture-rank-v1", scorer_config: {offset: 0}}
+}
+
+def u:ref_response(prompt, seed, decoding) {
+  "Use seed-indexed fixture responses while checking rejected candidates never become the next incumbent.";
+  if eq(seed, 0) {
+    "initial"
+  } else {
+    if eq(seed, 1) {
+      "Check the arithmetic."
+    } else {
+      if eq(seed, 2) {
+        "better"
+      } else {
+        if eq(seed, 3) {
+          "Check the final answer."
+        } else {
+          if eq(seed, 4) {
+            "worse"
+          } else {
+            if eq(seed, 5) {
+              if u:text_contains(prompt, "better") * (1 - u:text_contains(prompt, "worse")) {
+                "Keep the correction."
+              } else {
+                42
+              }
+            } else {
+              "equal"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:ref_score(problem, response, config) {
+  "Assign analytic candidate scores: initial one, improved and tied three, rejected minus one.";
+  if str_eq(problem, "problem") {
+    config.offset + if str_eq(response, "initial") {
+      1
+    } else {
+      if str_eq(response, "worse") {
+        0 - 1
+      } else {
+        3
+      }
+    }
+  } else {
+    0 / 0
+  }
+}
+
+def u:ref_bad(prompt, seed, decoding) {
+  "Wrong-type responder used to prove validation precedes callbacks.";
+  42
+}
+
+def u:ref_throw(prompt, seed, decoding) {
+  "Raise an evaluator failure rather than return text.";
+  1 + "broken"
+}
+
+def u:ref_empty(prompt, seed, decoding) {
+  "Whitespace-only generated text is a contract failure.";
+  " \n"
+}
+
+def u:ref_bad_score(problem, response, config) {
+  "A NaN cannot become a ranking winner.";
+  0 / 0
+}
+
+def u:ref_throw_score(problem, response, config) {
+  "Raise an evaluator error from a scorer.";
+  1 + "broken"
+}
+
+def u:ref_heuristic_score(problem, response, config) {
+  "Adapt the existing heuristic record to the scalar callback contract.";
+  u:scaling_heuristic(0 - str_len(response), 0, 1, config)?.score
+}
+
+@test {name: "refinement prompts preserve inputs and own their versioned wording", tags: ["scaling", "refinement"]}
+def u:test_ref_prompts() {
+  "Critique and revision delimit the problem, incumbent and feedback without stripping their content.";
+  critique = u:scaling_critique_prompt("problem", "draft")?;
+  revision = u:scaling_revision_prompt("problem", "draft", "feedback")?;
+  u:assert_true(u:text_contains(critique, "problem") * u:text_contains(critique, "draft"), "critique context")?;
+  u:assert_true(u:text_contains(revision, "feedback") * u:text_contains(revision, "\\boxed{RESULT}"), "revision context")?;
+  u:assert_err(u:scaling_critique_prompt("", "draft"), "empty problem")?;
+  u:assert_err(u:scaling_revision_prompt("p", "d", 1), "nontext feedback")
+}
+
+@test {name: "refinement accepts improvements and equal scores but rejects regressions", tags: ["scaling", "refinement"]}
+def u:test_ref_loop() {
+  "Three rounds score 3, -1, 3 against initial 1; a rejected revision cannot contaminate the next prompt.";
+  result = u:scaling_refine("problem", :u:ref_response, :u:ref_score, range(7), u:ref_options())?;
+  u:assert_text_eq(result.response, "equal", "equal score accepted")?;
+  u:assert_eq(result.score, 3, "final score")?;
+  u:assert_eq(result.accepted, 2, "two accepted rounds")?;
+  u:assert_eq(result.rounds, 3, "bounded rounds")?;
+  u:assert_eq(result.used_seeds, range(7), "all generation seeds")?;
+  rows = str_split(u:text_trim(result.trace_jsonl), "\n");
+  u:assert_eq(list_len(rows), 4, "initial plus each round")?;
+  rejected = parse_json(unwrap(list_get(rows, 2)), {})?;
+  u:assert_eq(rejected.accepted, 0, "regression rejected")?;
+  u:assert_text_eq(rejected.candidate, "worse", "rejected text retained")?;
+  u:assert_text_eq(rejected.incumbent, "better", "incumbent retained")?;
+  u:assert_eq(rejected.critique_seed, 3, "critique seed")?;
+  u:assert_eq(rejected.revision_seed, 4, "revision seed")?;
+  u:assert_text_eq(result.provenance.scorer, "fixture-rank-v1", "scorer version")?;
+  u:assert_eq(result.provenance.scorer_config, {offset: 0}, "scorer parameters")?;
+  u:assert_text_eq(result.provenance.template, "boxed-refinement-v1", "prompt version")
+}
+
+@test {name: "one refinement seed means initial generation with no critique", tags: ["scaling", "refinement"]}
+def u:test_ref_zero_rounds() {
+  "The seed plan is the hard generation-call budget, including the initial response.";
+  result = u:scaling_refine("problem", :u:ref_response, :u:ref_score, [0], u:ref_options())?;
+  u:assert_text_eq(result.response, "initial", "initial kept")?;
+  u:assert_eq(result.rounds, 0, "no rounds")?;
+  u:assert_eq(result.accepted, 0, "no revisions")?;
+  u:assert_eq(result.score, 1, "initial scored")
+}
+
+@test {name: "best-of-N keeps first tied maximum and records all candidates", tags: ["scaling", "selection"]}
+def u:test_ref_best() {
+  "Scores 1,3,3,-1 select the first three without treating scores as votes.";
+  result = u:scaling_best_of_n("problem", :u:ref_response, :u:ref_score, [0, 2, 6, 4], u:ref_options())?;
+  u:assert_text_eq(result.response, "better", "first tied best")?;
+  u:assert_eq(result.index, 1, "winning index")?;
+  u:assert_eq(result.seed, 2, "winning seed")?;
+  u:assert_eq(result.scores, [1, 3, 3, 0 - 1], "every score")?;
+  u:assert_eq(result.tie_indices, [1, 2], "tie report")?;
+  u:assert_eq(result.used_seeds, [0, 2, 6, 4], "no early stop")?;
+  u:assert_text_eq(result.provenance.build, "fixture-build", "build retained")?;
+  u:assert_text_eq(result.provenance.model_hash, "authored-responses", "model retained")
+}
+
+@test {name: "best-of-N supports negative scores and the existing heuristic adapter", tags: ["scaling", "selection"]}
+def u:test_ref_negative() {
+  "The first negative score initializes the winner; no implicit zero baseline is allowed.";
+  base = u:ref_options();
+  options = {build: base.build, model_hash: base.model_hash, decoding: base.decoding, scorer: "likelihood-entropy-format-v1", scorer_config: {likelihood: 1, entropy: 0, format: 0}};
+  result = u:scaling_best_of_n("problem", :u:ref_response, :u:ref_heuristic_score, [0, 2, 4], options)?;
+  u:assert_text_eq(result.response, "worse", "shortest text has highest authored score")?;
+  u:assert_eq(result.score, 0 - 5, "negative winning score")
+}
+
+@test {name: "refinement rejects invalid budgets and provenance before generation", tags: ["scaling", "errors"]}
+def u:test_ref_inputs() {
+  "A valid plan contains one initial seed and distinct critique/revision seed pairs.";
+  options = u:ref_options();
+  bad = u:scaling_refine("problem", :u:ref_bad, :u:ref_score, [0, 1], options);
+  u:assert_err(bad, "even seed count")?;
+  u:assert_text_eq(err_message(bad).kind, "sampling_input", "validation before generation")?;
+  u:assert_err(u:scaling_refine("problem", :u:ref_bad, :u:ref_score, [], options), "empty plan")?;
+  u:assert_err(u:scaling_refine("problem", :u:ref_bad, :u:ref_score, [0, 1, 1], options), "duplicate seeds")?;
+  u:assert_err(u:scaling_best_of_n("problem", :u:ref_bad, :u:ref_score, [0.5], options), "fraction seed")?;
+  u:assert_err(u:scaling_best_of_n("problem", :u:ref_bad, :u:ref_score, [0], {}), "missing provenance")?;
+  u:assert_err(u:scaling_rank_options({build: options.build, model_hash: options.model_hash, decoding: options.decoding}), "missing scorer")?;
+  u:assert_err(u:scaling_rank_options({build: options.build, model_hash: options.model_hash, decoding: options.decoding, scorer: " ", scorer_config: {}}), "empty scorer id")?;
+  u:assert_err(u:scaling_rank_options({build: options.build, model_hash: options.model_hash, decoding: options.decoding, scorer: "v1", scorer_config: 3}), "invalid config")
+}
+
+@test {name: "callback failures include the operation and seed", tags: ["scaling", "errors"]}
+def u:test_ref_errors() {
+  "Wrong types, empty text and evaluator errors abort rather than become candidates.";
+  options = u:ref_options();
+  bad = u:scaling_refine("problem", :u:ref_bad, :u:ref_score, [7], options);
+  u:assert_err(bad, "wrong type")?;
+  u:assert_eq(err_message(bad).seed, 7, "failure seed")?;
+  u:assert_text_eq(err_message(bad).stage, "initial", "failure phase")?;
+  u:assert_err(u:scaling_refine("problem", :u:ref_throw, :u:ref_score, [0], options), "thrown responder")?;
+  u:assert_err(u:scaling_best_of_n("problem", :u:ref_empty, :u:ref_score, [0], options), "empty candidate")?;
+  u:assert_err(u:scaling_best_of_n("problem", :u:ref_response, :u:ref_bad_score, [0], options), "nonfinite score")?;
+  u:assert_err(u:scaling_best_of_n("problem", :u:ref_response, :u:ref_throw_score, [0], options), "thrown scorer")
+}
+
+def u:ref_fail_at(failure_seed, prompt, seed, decoding) {
+  "Fail at one declared generation stage while all preceding calls satisfy the text contract.";
+  if eq(seed, failure_seed) {
+    42
+  } else {
+    "initial"
+  }
+}
+
+def u:ref_checked(prompt, seed, decoding) {
+  "Check the exact callback prompt and decoding controls for all three generation stages.";
+  expected = if eq(seed, 0) { u:scaling_cot_prompt("problem")? } else {
+    if eq(seed, 1) { u:scaling_critique_prompt("problem", "initial")? } else {
+      u:scaling_revision_prompt("problem", "initial", "initial")?
+    }
+  };
+  if str_eq(prompt, expected) * eq(decoding.max_new, 32) * eq(decoding.temperature, 1) {
+    "initial"
+  } else {
+    42
+  }
+}
+
+@test {name: "critique and revision failures retain distinct stage context", tags: ["scaling", "errors"]}
+def u:test_ref_stage_errors() {
+  "Late callback failures abort the run rather than returning a partial success.";
+  critique = u:scaling_refine("problem", call(:u:ref_fail_at, 1), :u:ref_score, [0, 1, 2], u:ref_options());
+  revision = u:scaling_refine("problem", call(:u:ref_fail_at, 2), :u:ref_score, [0, 1, 2], u:ref_options());
+  u:assert_err(critique, "critique fails")?;
+  u:assert_err(revision, "revision fails")?;
+  u:assert_text_eq(err_message(critique).stage, "critique", "critique phase")?;
+  u:assert_text_eq(err_message(revision).stage, "revision", "revision phase")?;
+  u:assert_eq(err_message(revision).seed, 2, "revision seed")
+}
+
+@test {name: "refinement replays exactly with explicit prompts and decoding", tags: ["scaling", "refinement"]}
+def u:test_ref_replay() {
+  "Identical plans and deterministic callbacks produce identical traces and preserve the generation settings.";
+  first = u:scaling_refine("problem", :u:ref_checked, :u:ref_score, [0, 1, 2], u:ref_options())?;
+  second = u:scaling_refine("problem", :u:ref_checked, :u:ref_score, [0, 1, 2], u:ref_options())?;
+  u:assert_text_eq(first.trace_jsonl, second.trace_jsonl, "replay")?;
+  u:assert_eq(first.provenance.decoding, u:ref_options().decoding, "controls retained")?;
+  u:assert_eq(first.accepted, 1, "identical score is accepted")
+}
+
+u:run_registered_tests()

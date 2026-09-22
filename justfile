@@ -50,6 +50,10 @@ generation-demo:
 scoring-demo:
     ./scripts/run-scoring-demo
 
+# Narrated best-of-N and bounded refinement over scripted responses.
+refinement-demo:
+    ./scripts/run-refinement-demo
+
 # Narrated verifier and harness walk-through over committed fixtures.
 verifier-demo:
     ./scripts/run-verifier-demo

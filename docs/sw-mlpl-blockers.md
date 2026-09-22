@@ -87,6 +87,21 @@ tangled library sources, plus the narrated `just scoring-demo`. See
 [the scoring contract](scoring.md). Real-model memory, throughput and
 accuracy remain unmeasured and the existing R11/R12 blockers are unchanged.
 
+## Self-refinement, validated on Arch build 6d784660
+
+Bounded critique/revision loops, accept-if-not-worse decisions, and stable
+best-of-N selection are **supported** in MLPL with existing callback, text,
+array and JSON primitives. Nine native tests cover callback contracts,
+explicit seed budgets, scorer provenance, replay, rejection isolation,
+negative scores, ties, heuristic integration and stage-specific errors.
+No new core or extension capability is required for these fixture methods.
+
+The gate now covers 124 native tests, 25 expected probe outcomes and 20
+tangled library sources. `just refinement-demo` shows scripted correction
+and regression decisions with audit rows. See [the contract](self-refinement.md).
+This is not evidence of learned reasoning or real-model improvement; R11,
+R12 and the other real-model constraints above remain unchanged.
+
 ## Historical Apple measurements
 
 Measured against:

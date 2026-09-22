@@ -5026,6 +5026,194 @@ def u:scaling_completion_score(config, model, prompt_ids, answer_ids) {
 }
 #+end_src
 
+** lib/scaling/refinement.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-scaling-refinement-mlpl
+:END:
+
+Chapter 5 motivates critique, revision and independent candidate selection.
+The [[file:self-refinement.md][contract]] defines seed budgets, tie behavior, failure handling and
+scorer provenance. =just refinement-demo= shows scripted decisions; it does
+not measure learned reasoning.
+
+The module composes the existing text, prompt, seed-validation and callback facilities. No interpreter feature or model-specific kernel is added.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+# Seeded bounded self-refinement and best-of-N ranking over text callbacks, with explicit scorer provenance and JSONL traces. Requires lib/text/text.mlpl, lib/eval/data.mlpl, lib/eval/harness.mlpl, lib/scaling/scaling.mlpl and lib/scaling/consistency.mlpl; the latter also declares verifier dependencies.
+#+end_src
+
+Nonblank text validation preserves the exact candidate and critique, so audit rows can reproduce their prompt context.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_rank_text(value, field) {
+  "Require nonblank text while preserving the caller's exact content.";
+  if str_eq(type_of(value), "string") {
+    if str_len(u:text_trim(value)) {
+      ok(value)
+    } else { u:scaling_error(field, "expected nonblank text") }
+  } else { u:scaling_error(field, "expected text") }
+}
+#+end_src
+
+The critique prompt requests specific checks against the current candidate. Its wording is authored here from the chapter 5 method.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_critique_prompt(problem, response) {
+  "Ask for a check of the current candidate in independently authored wording.";
+  problem = u:scaling_rank_text(problem, "problem")?;
+  response = u:scaling_rank_text(response, "response")?;
+  ok(str_concat("Review the proposed solution. Identify specific calculation or reasoning errors and explain how to fix them. If it is sound, say so.\n\nProblem:\n", str_concat(problem, str_concat("\n\nProposed solution:\n", str_concat(response, "\n\nReview:\n")))))
+}
+#+end_src
+
+The revision prompt carries the original problem, current incumbent and critique, and asks for a complete boxed answer.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_revision_prompt(problem, response, critique) {
+  "Request a complete replacement answer, using the current candidate and critique as context.";
+  problem = u:scaling_rank_text(problem, "problem")?;
+  response = u:scaling_rank_text(response, "response")?;
+  critique = u:scaling_rank_text(critique, "critique")?;
+  ok(str_concat("Solve the problem again using the review where it is justified. Check the calculations and write a complete solution ending in \\boxed{RESULT}.\n\nProblem:\n", str_concat(problem, str_concat("\n\nCurrent solution:\n", str_concat(response, str_concat("\n\nReview:\n", str_concat(critique, "\n\nRevised solution:\n")))))))
+}
+#+end_src
+
+Ranking requires the shared generation metadata plus a scorer identity and configuration. Early stopping is rejected because every planned generation contributes to these bounded methods.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_rank_options(options) {
+  "Require the shared generation provenance plus an explicit deterministic scorer id and configuration; these runners never early-stop.";
+  base = u:scaling_sc_options(options)?;
+  scorer = u:scaling_rank_text(u:scaling_sc_field(options, "scorer")?, "scorer")?;
+  config = u:scaling_sc_field(options, "scorer_config")?;
+  if str_eq(type_of(config), "record") * (1 - base.early_stop) {
+    ok({build: base.build, model_hash: base.model_hash, decoding: base.decoding, scorer: scorer, scorer_config: config})
+  } else { u:scaling_error("options", "scorer_config must be a record and early_stop must be zero") }
+}
+#+end_src
+
+The responder wrapper catches evaluator failures and attaches stage, seed and index. Invalid text aborts instead of becoming a candidate.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_rank_respond(responder, prompt, seed, settings, stage, index) {
+  "Capture responder errors and require plain nonblank text, reporting the exact generation stage and seed on failure.";
+  result = try {
+    ok(call(responder, prompt, seed, settings.decoding))
+  } catch e {
+    err(e.message)
+  };
+  if is_ok(result) {
+    result = u:scaling_rank_text(unwrap(result), "response")
+  };
+  if is_err(result) {
+    err({kind: "ranking_responder", stage: stage, index: index, seed: seed, detail: err_message(result)})
+  } else {
+    result
+  }
+}
+#+end_src
+
+The scorer receives the original problem and candidate, not the critique prompt. Finite scalar scores make comparisons defined; the callback is required to be deterministic.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_rank_score(scorer, problem, response, settings, seed, index) {
+  "Call a deterministic scorer on the original problem and candidate with its recorded config; require a finite scalar with higher meaning better.";
+  result = try {
+    ok(call(scorer, problem, response, settings.scorer_config))
+  } catch e {
+    err(e.message)
+  };
+  if is_ok(result) {
+    result = u:scaling_scalar(unwrap(result), "score")
+  };
+  if is_err(result) {
+    err({kind: "ranking_scorer", stage: "score", index: index, seed: seed, detail: err_message(result)})
+  } else {
+    result
+  }
+}
+#+end_src
+
+Provenance retains model, build, decoding, prompt and scorer versions. It describes the run without asserting accuracy.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_rank_provenance(settings, template, method) {
+  "Record model, interpreter, generation settings, prompt versions, method and scorer configuration without claiming correctness or accuracy.";
+  {build: settings.build, model_hash: settings.model_hash, decoding: settings.decoding, template: template, initial_template: u:scaling_cot_template(), base_template: u:eval_template_id(), method: method, scorer: settings.scorer, scorer_config: settings.scorer_config}
+}
+#+end_src
+
+Best-of-N initializes from the first candidate, even for negative scores, and changes winners only on strict improvement. Every candidate stays in the trace and every tied maximum is reported.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_best_of_n(problem, responder, scorer, seeds, options) {
+  "Generate one independent answer per seed on the same prompt, rank every answer, and keep the first maximum with explicit ties and trace rows.";
+  prompt = u:scaling_cot_prompt(problem)?;
+  plan = u:scaling_sc_seeds(seeds)?;
+  settings = u:scaling_rank_options(options)?;
+  scores = [];
+  trace = "";
+  winner = 0;
+  best = 0;
+  response = "";
+  i = 0;
+  while lt(i, tally(plan)) {
+    seed = at(plan, i);
+    candidate = u:scaling_rank_respond(responder, prompt, seed, settings, "candidate", i)?;
+    score = u:scaling_rank_score(scorer, problem, candidate, settings, seed, i)?;
+    selected = eq(i, 0) + gt(score, best);
+    if selected {
+      winner = i;
+      best = score;
+      response = candidate
+    };
+    scores = concat(scores, score);
+    trace = str_concat(trace, str_concat(to_json({index: i, seed: seed, candidate: candidate, score: score, selected: if selected {
+              1
+            } else {
+              0
+            }})?, "\n"));
+    i = i + 1
+  };
+  ok({response: response, score: best, index: winner, seed: at(plan, winner), scores: scores, tie_indices: compress(eq(scores, best), range(tally(plan))), used_seeds: plan, trace_jsonl: trace, provenance: u:scaling_rank_provenance(settings, u:scaling_cot_template(), "best-of-n-first-max-v1")})
+}
+#+end_src
+
+Refinement consumes one initial seed followed by critique/revision pairs. Nonworse replacements become the next incumbent; regressions remain only in the trace. The explicit plan bounds the loop.
+
+#+begin_src mlpl :tangle ../lib/scaling/refinement.mlpl
+def u:scaling_refine(problem, responder, scorer, seeds, options) {
+  "Generate and score an initial answer, then consume critique/revision seed pairs. Accept every nonworse revision; rejected text stays in the trace and never replaces the incumbent.";
+  initial_prompt = u:scaling_cot_prompt(problem)?;
+  plan = u:scaling_sc_seeds(seeds)?;
+  settings = u:scaling_rank_options(options)?;
+  rounds = (tally(plan) - 1) / 2;
+  if eq(rounds, floor(rounds)) {
+    response = u:scaling_rank_respond(responder, initial_prompt, at(plan, 0), settings, "initial", 0)?;
+    score = u:scaling_rank_score(scorer, problem, response, settings, at(plan, 0), 0)?;
+    trace = str_concat(to_json({stage: "initial", seed: at(plan, 0), candidate: response, score: score, incumbent: response, incumbent_score: score})?, "\n");
+    accepted = 0;
+    round = 0;
+    while lt(round, rounds) {
+      critique_seed = at(plan, 1 + 2 * round);
+      revision_seed = at(plan, 2 + 2 * round);
+      critique = u:scaling_rank_respond(responder, u:scaling_critique_prompt(problem, response)?, critique_seed, settings, "critique", round)?;
+      candidate = u:scaling_rank_respond(responder, u:scaling_revision_prompt(problem, response, critique)?, revision_seed, settings, "revision", round)?;
+      candidate_score = u:scaling_rank_score(scorer, problem, candidate, settings, revision_seed, round + 1)?;
+      keep = 1 - lt(candidate_score, score);
+      if keep {
+        response = candidate;
+        score = candidate_score;
+        accepted = accepted + 1
+      };
+      trace = str_concat(trace, str_concat(to_json({stage: "revision", round: round, critique_seed: critique_seed, revision_seed: revision_seed, critique: critique, candidate: candidate, score: candidate_score, accepted: keep, incumbent: response, incumbent_score: score})?, "\n"));
+      round = round + 1
+    };
+    ok({response: response, score: score, rounds: rounds, accepted: accepted, used_seeds: plan, trace_jsonl: trace, provenance: u:scaling_rank_provenance(settings, "boxed-refinement-v1", "accept-if-not-worse-v1")})
+  } else { u:scaling_error("seeds", "expected an initial seed followed by critique/revision seed pairs") }
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -5056,4 +5244,6 @@ expression anywhere. Tiny synthetic weights generate tokens and prove the
 forward, cache, and sampler contracts, but no real checkpoint data is loaded.
 Bulk bf16 decoding remains unavailable; no tiny-model result is evidence of
 real-model accuracy. Stable likelihood and entropy scoring now support
-candidate ranking over fixtures and the tiny model. Self-refinement is next.
+candidate ranking over fixtures and the tiny model. Bounded self-refinement
+and best-of-N now have callback goldens and a scripted demo. Real-model
+scaling measurements remain unavailable pending the decoder handoff.

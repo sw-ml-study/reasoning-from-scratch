@@ -1,0 +1,54 @@
+# Narrated best-of-N and self-refinement using authored response and score fixtures, not a trained model.
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/scaling/refinement.mlpl";
+
+def u:ref_demo_response(prompt, seed, decoding) {
+  "Return scripted generations so the audience can inspect each selection decision.";
+  if eq(seed, 0) {
+    "Draft: \\boxed{3}"
+  } else {
+    if eq(seed, 1) {
+      "Check the addition: 1 plus 1 is 2."
+    } else {
+      if eq(seed, 2) {
+        "Revised: \\boxed{2}"
+      } else {
+        if eq(seed, 3) {
+          "The answer is already correct."
+        } else {
+          "Regression: \\boxed{4}"
+        }
+      }
+    }
+  }
+}
+
+def u:ref_demo_score(problem, response, config) {
+  "Authored fixture score of one for boxed two and zero for other candidates; not a learned judge.";
+  if u:text_contains(response, "\\boxed{2}") {
+    1
+  } else {
+    0
+  }
+}
+
+print("REFINEMENT DEMO -- scripted responses and authored scores, not learned reasoning.")
+print("The MLPL loops control the prompts, seeds, scoring, acceptance and audit trace.\n")
+options = {build: "fixture-demo", model_hash: "scripted-no-model", decoding: {temperature: 1, top_p: 1, max_new: 32, stop_id: 0 - 1, sampler: "scripted-v1"}, scorer: "boxed-two-fixture-v1", scorer_config: {}}
+print("1. Best-of-N compares three independent candidates and keeps the first maximum.")
+best = u:scaling_best_of_n("What is 1+1?", :u:ref_demo_response, :u:ref_demo_score, [0, 2, 4], options)?
+print("   scores:", best.scores, "winning seed:", best.seed, "response:", best.response)
+print("\n2. Refinement accepts the corrected answer and rejects the later regression.")
+refined = u:scaling_refine("What is 1+1?", :u:ref_demo_response, :u:ref_demo_score, [0, 1, 2, 3, 4], options)?
+print("   rounds:", refined.rounds, "accepted revisions:", refined.accepted)
+print("   final response:", refined.response, "score:", refined.score)
+print("\n3. The trace retains rejected candidates, critiques, scores and seeds.")
+print(refined.trace_jsonl)
+print("Real model accuracy and improvement remain unmeasured.")
+ok(1)

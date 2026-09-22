@@ -1,6 +1,6 @@
 number = 4
 slug = "self-refinement"
-status = "pending"
+status = "in-progress"
 description = "Implement Saga 4 self-refinement in lib/scaling/ with unique u:scaling_ funct..."
 role = "production"
 context_files = []
