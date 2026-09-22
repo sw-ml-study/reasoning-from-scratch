@@ -1,9 +1,10 @@
 number = 1
 slug = "sampling-primitives"
-status = "in-progress"
+status = "completed"
 description = "Implement Saga 4 sampling primitives in lib/scaling/scaling.mlpl with unique ..."
 role = "production"
 context_files = []
 created_at = "2026-09-22T13:36:30"
+completed_at = "2026-09-22T13:47:31"
 task_type = "mlpl-library"
-commits = []
+commits = ["b7cf9492814f8f504a4e54424c801d3b7534259d"]
