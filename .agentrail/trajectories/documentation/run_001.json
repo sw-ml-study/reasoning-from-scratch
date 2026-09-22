@@ -1,0 +1,11 @@
+{
+  "task_type": "documentation",
+  "state": {
+    "number": 5,
+    "step": "scaling-report"
+  },
+  "action": "Read-only adjacent and remote revision checks; bounded unpack, CUDA and tokenizer diagnostics; evidence/report and handoff documentation; full fixture pre-commit gate; named-path commit on main.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-22T14:47:43"
+}
