@@ -1,6 +1,6 @@
 number = 5
 slug = "scaling-report"
-status = "pending"
+status = "in-progress"
 description = "Close Saga 4 with an evidence-based scaling report. Review the completed samp..."
 role = "production"
 context_files = []

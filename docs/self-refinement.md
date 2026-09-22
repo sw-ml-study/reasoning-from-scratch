@@ -91,6 +91,6 @@ rejected-candidate isolation, invalid provenance and callback failures in
 initial, critique, revision and scoring phases. The full suite has 124 tests,
 25 expected probe outcomes and 20 tangled library sources.
 
-Real runs remain gated by [the bf16 handoff](bf16-handoff.md). The next step
-is a scaling report that distinguishes implemented fixture methods from
-unavailable real-model measurements.
+Real runs remain gated by [the bf16 handoff](bf16-handoff.md). The
+[scaling report](scaling-report.md) distinguishes implemented fixture methods
+from unavailable real-model measurements. Toy GRPO math follows next.

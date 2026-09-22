@@ -62,8 +62,9 @@ ranking heuristic. `just scoring-demo` narrates these over fixtures and the
 tiny model. [Self-refinement](docs/self-refinement.md) now adds critique/revision
 prompts, bounded accept-if-not-worse rounds, and best-of-N with stable ties
 and complete traces. `just refinement-demo` narrates scripted corrections
-and regressions; it does not demonstrate learned reasoning. The scaling
-report is next.
+and regressions; it does not demonstrate learned reasoning. Saga 4 closes
+with [the scaling report](docs/scaling-report.md): 41 scaling tests and
+explicitly unavailable real-model measurements. Analytic toy GRPO is next.
 Real loading remains deferred. Batched matmul and container-copy costs remain
 throughput constraints. The tokenizer extension passed synthetic parity on
 Apple but refused the real vocabulary's NFC normalizer; that extension is

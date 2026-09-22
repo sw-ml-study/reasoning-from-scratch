@@ -62,10 +62,11 @@ bulk decode from a typed byte buffer to an array, which did not ship with
 the `bf16` dtype; the forward pass, generation, and header parsing need
 nothing upstream and come first.
 
-## Active: Saga 4, `inference-time-scaling`
+## Complete: Saga 4, `inference-time-scaling`
 
 Temperature and nucleus sampling, chain-of-thought, self-consistency,
-scoring, and self-refinement, with bounded real-model reports.
+scoring, and self-refinement are fixture-tested. Real-model measurements
+are explicitly unavailable in [the scaling report](scaling-report.md).
 
 Saga 3 is archived under `.agentrail-archive/model-and-generation-20260922T133630/`.
 
@@ -75,7 +76,7 @@ Saga 3 is archived under `.agentrail-archive/model-and-generation-20260922T13363
 | 2 | `cot-and-self-consistency` | done: versioned suffix, seeded voting, ties, abstentions, audit rows and safe early stop; twelve tests |
 | 3 | `scoring` | done: stable token/answer scores, entropy, explicit heuristic, teacher-forced tiny scoring and narrated demo; ten tests |
 | 4 | `self-refinement` | done: critique/revision prompts, bounded accept-if-not-worse loop, best-of-N, provenance and demo; nine tests |
-| 5 | `scaling-report` | next: report fixture coverage and unavailable real-model measurements; real runs gated by the bf16 handoff |
+| 5 | `scaling-report` | done: fixture evidence and reference comparison; real measurements unavailable; R11, CUDA fallback and absent tokenizer rechecked |
 
 The [sampling contract](sampling.md) pins threshold boundaries, stable ties,
 seed warmup, and decoding provenance. Cached sampled ids equal an independent
@@ -84,13 +85,29 @@ specifies exact normalized vote keys and a stopping bound that preserves
 winners and ties. [Scoring](scoring.md) adds causal answer alignment and an
 auditable heuristic. [Self-refinement](self-refinement.md) retains accepted
 and rejected candidates with explicit seeds and scorer parameters. All 124
-native tests pass; real-model reports remain deferred.
+native tests pass. The report records unavailable real measurements and
+resume conditions; it does not mark real evaluation as completed.
 
 ## Queued: Saga 5, `grpo`
 
 Rewards, advantages, sequence log-probabilities, the policy loss, a toy
 training run, real-model gradient feasibility, bounded training, and the
 chapter 7 stabilizers.
+
+At the next session, archive the completed Saga 4 through Agentrail commands
+and initialize Saga 5. Start with `rl-math-on-toy`: native MLPL goldens for
+boxed-only rewards, unbiased group advantages with epsilon (including
+`[1,1,0,0]` and constant rewards), masked summed sequence log probabilities,
+policy loss, clipped ratios, KL surrogate, entropy, ordered think-tag format
+reward and moving averages. Cover shapes, finite values, empty groups and
+degenerate variance before implementing `lib/rl/` functions. Verify gradients
+on analytic toy cases before reusing eager scoring in a training tape.
+
+The following `tiny-policy-grpo` step must train a small policy on a seeded
+synthetic verifiable task and measure reward before and after updates,
+retaining metrics and checkpoint provenance. No real weights or CUDA are
+needed for these first steps. Keep real-model gradient feasibility and
+training gated by the decoder, tokenizer and measured device/memory limits.
 
 ## Queued: Saga 6, `distillation`
 

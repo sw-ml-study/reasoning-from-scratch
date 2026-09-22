@@ -102,6 +102,23 @@ and regression decisions with audit rows. See [the contract](self-refinement.md)
 This is not evidence of learned reasoning or real-model improvement; R11,
 R12 and the other real-model constraints above remain unchanged.
 
+## Scaling report closeout, 2026-09-22
+
+The [scaling report](scaling-report.md) separates 41 scaling tests from
+unavailable real-model metrics. Adjacent source and a fresh read of remote
+HEAD both remain `6d7846605f27adbadaf17b662b2a984285ec15a3`. On the selected
+CPU build, `unpack-bulk` still exits 1 with unknown function; the CUDA runner
+exits 77 after explicit CPU fallback; tokenizer parity exits 77 because
+the Linux extension is absent. The adjacent CLI lockfile still contains
+cudarc 0.19.7; the earlier CUDA 13.4 build failure was not rerun.
+
+No new capability request is required. R11 and the named-tensor loader
+remain prerequisites for any real inference; R12 is required for GPU claims,
+not necessarily a bounded CPU evaluation. Production tokenizer parity is
+also unresolved. Real accuracy, throughput and peak memory remain
+**unavailable**. Toy GRPO math is the next independent work; eager scoring
+tests do not establish its autograd behavior.
+
 ## Historical Apple measurements
 
 Measured against:
