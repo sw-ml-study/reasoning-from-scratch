@@ -4,6 +4,9 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 mlpl=$($repo_root/scripts/select-mlpl)
 runner=$($repo_root/scripts/select-mlplunit)
+# The binary fixture is intentionally untracked. A clean clone must create
+# it before running the checkpoint tests, including focused invocations.
+"$repo_root/scripts/generate-safetensors-fixture" >/dev/null
 
 if [ "$#" -gt 0 ]; then
     exec "$runner" --mlpl "$mlpl" --config "$repo_root/mlplunit.conf" "$@"

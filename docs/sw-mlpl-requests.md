@@ -9,7 +9,15 @@ Nothing here authorizes a change from this repository. Status as of
 2026-09-16: the upstream owner reports the autograd, dtype, and literal
 items as in progress.
 
-## Status summary, 2026-09-18
+## Current status, 2026-09-22
+
+Arch CPU build `6d784660` reconfirms R11, R3, and R10 as open using the
+existing probes. The autograd/dtype successes remain passing. R12 below is
+a new device-build handoff: cudarc rejects this host's CUDA 13.4 toolkit.
+GPU hardware availability alone has not unblocked real inference. See
+[Linux setup](linux-toolchain.md) for the exact tools and measurements.
+
+## Historical status summary, 2026-09-18
 
 Upstream closed its `reasoning-from-scratch-numerics` saga having shipped
 every autograd, dtype, and lexer item below, plus a crash fix for a scalar
@@ -123,7 +131,10 @@ ledger, and removes the workaround where the plan allows.
 
 ## R11. Bulk `unpack(bytes, dtype)` returning an array — blocking
 
-- Probe: to be added with the weight loader; measured by hand on 2026-09-18.
+- Probe: `probes/unpack-bulk.mlpl`, reconfirmed missing on build `6d784660`
+  on 2026-09-22. It now calls the requested raw-byte interface and wraps the
+  returned array in `ok` before unwrapping, so a future correct implementation
+  is not incorrectly rejected by the probe itself.
 - Today: `reinterpret(bytes, "bf16")` returns a typed *byte view*, not an
   array. It has no length, does not take part in arithmetic, and there is no
   `unpack` or `to_array`. The only way to get values out is one scalar at a
@@ -212,6 +223,30 @@ ledger, and removes the workaround where the plan allows.
   extension, but it is the difference between a reference implementation that
   can be run on real input and one that can only be read. It would also
   affect any later library that keeps a large table in MLPL.
+
+## R12. CUDA 13.4 build compatibility and array-dispatch acceptance
+
+- Home: core/device distribution; no Rust or sibling edits belong here.
+- Environment: Arch Linux x86_64, RTX 5060 Ti (16 GB), driver 615.71.09,
+  CUDA toolkit 13.4. The GPU is visible outside the execution sandbox.
+- Evidence: building sw-MLPL `6d784660` with `cargo build -p mlpl-repl
+  --release --features cuda --locked` in its CLI workspace fails in
+  `cudarc 0.19.7` with `Unsupported cuda toolkit version: 13.4`.
+- Required: a supported CUDA dependency/toolkit pairing for this host.
+  The CPU build passes fixture tests but warns and falls back when CUDA is
+  requested, so it is not a GPU workaround.
+- Probe: `probes/cuda-matmul.mlpl` through `just cuda-probe`, expected exact
+  product `[[19,22],[43,50]]` without fallback. The runner returns unavailable
+  on the current CPU build. This opt-in probe is outside the fixture catalog.
+- Acceptance: build the CUDA-enabled CLI; demonstrate real device dispatch
+  without fallback and compare its matrix products, normalization, reshaping,
+  gathers, slicing, concatenation, and softmax against CPU results before
+  measuring Qwen3. Training additionally needs backward/tape acceptance.
+- Affected steps: real-model smoke and throughput, baseline feasibility,
+  and later real-model gradient feasibility. R11 remains the earlier gate
+  to reading weights even after this build issue is resolved.
+- Reproduction: [Linux toolchain record](linux-toolchain.md). Do not replace
+  the installed user tools or change upstream dependencies from this repo.
 
 ## Not requested
 

@@ -8,6 +8,12 @@ set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 mlpl=$("$repo_root/scripts/select-mlpl")
+# Old CLIs interpret --source-dir's value as a script. Do not record their
+# invocation errors as evidence that a language capability is missing.
+if ! "$mlpl" --help 2>&1 | grep -q -- '--source-dir'; then
+    echo "incompatible interpreter: $mlpl lacks --source-dir; select a current build with MLPL" >&2
+    exit 2
+fi
 catalog="$repo_root/catalog/probes.tsv"
 out="$repo_root/out/probes"
 

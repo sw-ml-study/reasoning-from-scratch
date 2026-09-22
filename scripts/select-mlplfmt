@@ -1,0 +1,22 @@
+#!/bin/sh
+# Select the canonical upstream formatter without installing user tools.
+set -eu
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+if [ -n "${MLPLFMT:-}" ]; then
+    candidate=$MLPLFMT
+elif command -v mlpl-fmt >/dev/null 2>&1; then
+    candidate=$(command -v mlpl-fmt)
+elif command -v mlpl-fmt.sh >/dev/null 2>&1; then
+    candidate=$(command -v mlpl-fmt.sh)
+else
+    candidate="$repo_root/../sw-mlpl/scripts/mlpl-fmt.sh"
+fi
+case "$candidate" in
+    /*) ;;
+    *) echo 'MLPLFMT must resolve to an absolute path' >&2; exit 1 ;;
+esac
+[ -x "$candidate" ] || {
+    echo "canonical formatter not found: $candidate; set MLPLFMT to an executable" >&2
+    exit 1
+}
+printf '%s\n' "$candidate"

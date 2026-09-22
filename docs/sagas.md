@@ -39,9 +39,17 @@ with an honest unavailable result if the extension has not landed.
 | 1 | `qwen3-forward-tiny` | done: RMSNorm, RoPE, grouped-query attention, SwiGLU, seven property tests |
 | 2 | `kv-cache-generation` | done: prefill and step, bit-identical to recomputation, greedy loop |
 | 3 | `safetensors-header` | done: vendored reader, name mapping, whole-checkpoint validation against the real file |
-| 4 | `bf16-tensor-decode` | pending, gated on upstream R11 |
-| 5 | `real-model-smoke` | pending, follows step 4 |
-| 6 | `math500-baseline` | pending, follows step 5 |
+| 4 | `arch-cuda-revalidation` | done: 83 tests and fixture gate pass on Arch CPU; CUDA 13.4 build blocker recorded |
+| 5 | `bf16-tensor-decode` | next, gated on upstream R11, reconfirmed on build 6d784660 |
+| 6 | `real-model-smoke` | planned, follows step 5; GPU measurements also need R12 |
+| 7 | `math500-baseline` | planned, follows step 6 |
+
+The Linux revalidation uses isolated tool checkouts and explicit overrides;
+it does not modify sibling repositories or the installed tools. See
+[setup and measurements](linux-toolchain.md). The tokenizer's original
+unavailable result above was superseded on Apple by fixture parity, but
+real-vocabulary NFC support remains unresolved and the extension is absent
+on this Linux host.
 
 Resequenced so the blocked work comes last. Loading real weights needs a
 bulk decode from a typed byte buffer to an array, which did not ship with

@@ -35,81 +35,39 @@ the reasoning behind it.
 
 ## Status
 
-Planning is complete; implementation has not started. This session
-established the repository foundation: peer-identical license files, the
-Agentrail process, the [delivery plan](docs/plan.md), the
-[saga queue](docs/sagas.md), the [architecture](docs/architecture.md), the
-[book-to-component map](docs/book-map.md), the
-[verifier contract](docs/verifier-contract.md), the
-[data and model layout](docs/data-and-models.md), and a measured
-[sw-MLPL capability ledger](docs/sw-mlpl-blockers.md) listing the autograd,
-tokenizer, byte-decoding, and JSON gaps with their workarounds and upstream
-requests, plus single-operation timings that place CPU decoding of the 0.6B
-model at seconds per token, which makes bounded, measured real-model runs
-and an MLX build the decisive questions for later sagas.
+Revalidated on Arch Linux on 2026-09-22 with sw-MLPL 0.22.0, build
+`6d784660`. The verifier, evaluation harness, reference tokenizer and
+templates, tiny Qwen3 forward pass, and KV-cache generation are implemented.
+The safetensors header reader validates tensor names, shapes, offsets, and
+tied embeddings; the previous Apple run validated all 310 tensors in the
+real checkpoint. Tensor data is not yet loaded and there is no real-model
+accuracy result.
 
-A second planning step settled where each missing capability lives
-([`docs/feature-homes.md`](docs/feature-homes.md)): autograd, dtype, and
-lexer gaps go to sw-MLPL core (in progress upstream); array-math and
-string helpers are MLPL libraries here; the production tokenizer and large
-downloads are Rust extensions requested from `../demo-extensions`, with MLPL
-reference implementations kept as parity oracles. The asks themselves are
-in [`docs/sw-mlpl-requests.md`](docs/sw-mlpl-requests.md) and
-[`docs/demo-extensions-requests.md`](docs/demo-extensions-requests.md), and
-[`docs/demo-mlpl-libraries-requests.md`](docs/demo-mlpl-libraries-requests.md).
+The fixture suite has 83 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The literate document reproduces all 16
+library sources. Tiny cached generation matches full recomputation exactly
+on both the original Apple machine and this Linux host.
 
-The capability ledger is now executable: twenty-one probes under
-`probes/` pin each measured fact against the interpreter build, and
-`just capabilities` fails when an observation drifts from
-`catalog/probes.tsv`. Measured on this machine: a 150,000-key JSON object
-parses in 83 ms, a 10 MB array round-trips through native serialization in
-134 ms, and the output-head product alone costs 252 ms per token.
+The next implementation step is bulk bf16 tensor decoding, still blocked by
+core request R11 (`unpack`). Batched matmul and container-copy costs remain
+throughput constraints. The tokenizer extension passed synthetic parity on
+Apple but refused the real vocabulary's NFC normalizer; that extension is
+not installed in this Linux checkout. Scaling, GRPO, and distillation remain
+planned.
 
-The first library is in: `lib/eval/data.mlpl` loads and validates
-MATH-style records from JSONL (and small JSON arrays) under explicit
-budgets, with eight mlplunit tests over hand-authored fixtures, and
-`just fetch-math500` downloads the evaluation set with a size check.
-Upstream has already shipped differentiable `sqrt`, `sin`, and `cos`
-(build 0dfa3eae); the probe suite caught the change and the ledger was
-reconciled.
-
-Boxed-answer extraction and the thirteen-rule normalization pipeline are
-in as well, over hand-written character scanners that stand in for regular
-expressions: 23 tests cover every rule in isolation plus composed cases.
-Upstream has since shipped scientific-notation literals (build 2a774891),
-which the probe suite caught and the ledger records.
-
-The verifier is complete. Exact-rational arithmetic and a bounded
-recursive-descent evaluator replace the symbolic algebra system the
-reference uses, and grading compares tuples part by part in order. Across
-44 tests plus an opt-in run over the real evaluation set, all 500 MATH-500
-reference answers grade correct against themselves with no false positives.
-
-The evaluation harness closes the loop: a versioned prompt template, a run
-over any responder function, one JSONL record per problem, CSV metrics, and
-provenance on every report. `just verifier-demo` walks the whole pipeline
-over committed fixtures with a stand-in responder and no model.
-
-Saga 1 is complete. [`docs/reasoning.org`](docs/reasoning.org) is a literate
-reading of every library above, written for `ob-mlpl`: prose before each of
-its 52 source blocks, three runnable self-contained examples, and a gate
-check that tangles the document and compares all eight sources byte for
-byte, so the prose can never describe code that no longer exists.
-
-Saga 2 is under way. The tokenizer import reads a real six-megabyte
-`tokenizer.json` by locating each section and parsing it separately, because
-the whole document cannot be parsed in one call: it contains an array of
-objects, which the JSON parser refuses by design. The 151,643-entry
-vocabulary and 151,387-entry merge list parse in about half a second, and a
-native binary cache brings a warm load down to 173 milliseconds. The
-byte-level encoder is next. Nothing yet generates text.
+The host has an RTX 5060 Ti with 16 GB VRAM, but GPU execution is not yet
+validated: the current upstream CUDA build rejects the installed CUDA 13.4
+toolkit. Use the explicit CPU toolchain below for fixture checks. See
+[Linux setup and measurements](docs/linux-toolchain.md), the
+[saga queue](docs/sagas.md), and the [capability ledger](docs/sw-mlpl-blockers.md).
 
 ## Build and check
 
-Prerequisites: a built sw-MLPL interpreter (`../sw-mlpl/target/release/mlpl-repl`
-or `MLPL=/abs/path`), the mlplunit runner (`MLPLUNIT=/abs/path` or the
-adjacent `softwarewrighter/mlplunit` checkout), `just`, and batch Emacs for
-the canonical formatter used by the style check.
+Prerequisites: a compatible sw-MLPL 0.22.0 interpreter (`MLPL=/abs/path`),
+the mlplunit runner (`MLPLUNIT=/abs/path`), `just`, and batch Emacs with the
+canonical upstream formatter (`MLPLFMT=/abs/path`). PATH and adjacent
+checkouts are fallbacks. On this Arch host, use the explicit exports in
+[Linux setup](docs/linux-toolchain.md); the installed interpreter is older.
 
 ```sh
 just            # list recipes

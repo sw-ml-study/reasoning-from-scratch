@@ -10,11 +10,7 @@ if [ -z "$files" ]; then
     exit 0
 fi
 
-formatter="$repo_dir/../sw-mlpl/scripts/mlpl-fmt.sh"
-if [ ! -x "$formatter" ]; then
-    echo "missing adjacent canonical formatter: $formatter" >&2
-    exit 1
-fi
+formatter=$("$repo_dir/scripts/select-mlplfmt")
 
 for file in $files; do
     first=$(sed -n '/^[[:space:]]*$/d; p; q' "$file")

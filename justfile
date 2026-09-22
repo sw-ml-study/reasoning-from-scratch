@@ -20,6 +20,7 @@ sources:
 tools:
     ./scripts/select-mlpl
     ./scripts/select-mlplunit
+    ./scripts/select-mlplfmt
 
 # Grade every MATH-500 reference answer against itself (needs fetch-math500).
 math500-self-grade:
@@ -56,6 +57,10 @@ upstream:
 # Run the capability probes and compare with the declared expectations.
 capabilities:
     ./scripts/run-capability-probes
+
+# Opt-in CUDA matrix smoke; rejects CPU fallback (not part of the fixture gate).
+cuda-probe:
+    ./scripts/run-cuda-probe
 
 # Run the complete precommit gate.
 check:

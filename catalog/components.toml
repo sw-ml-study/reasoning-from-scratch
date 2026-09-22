@@ -1,6 +1,10 @@
 schema = "sw-ml-study.reasoning-components"
 version = 1
 
+# Accepted components below retain their algorithms and are revalidated on
+# the Arch CPU build 6d784660. CUDA execution is not accepted; see
+# docs/linux-toolchain.md and core request R12.
+
 [[component]]
 id = "DOC"
 slug = "literate-document"

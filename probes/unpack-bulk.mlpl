@@ -3,7 +3,7 @@ bytes = pack([128, 63, 128, 191, 0, 64, 0, 63, 0, 0, 72, 66], "u8")
 view = reinterpret(bytes, "bf16")
 print("unpack-bulk: reinterpret gives", type_of(view), "which has no length and no arithmetic")
 decoded = try {
-  unpack(view, "bf16")
+  ok(unpack(bytes, "bf16"))
 } catch e {
   err(e.message)
 }

@@ -7,6 +7,35 @@ drifts from the declaration, so an upstream change surfaces as a gate
 failure that must be reconciled here in the same step. Per-run output,
 wall time, and peak resident memory land in `out/probes/`.
 
+## Current host revalidation, 2026-09-22
+
+All 24 catalog outcomes were reproduced on Arch Linux x86_64 using a CPU
+release build of sw-MLPL 0.22.0 at `6d784660`. This is the current validation
+pin; the per-operation Apple measurements below retain their original pin
+and are not Linux predictions. The installed 0.20.0 build (`b3b1be48`) is
+incompatible with the required CLI, so use explicit tool overrides from
+[Linux setup](linux-toolchain.md).
+
+| Need | Classification | Current evidence / affected steps |
+|---|---|---|
+| Bulk bf16 unpack (R11) | missing | `unpack-bulk` still reports unknown function; real tensor loading remains blocked |
+| Batched matmul (R3) | missing | `matmul-rank3` still rejects rank-3 operands; real attention throughput remains constrained |
+| Constant-cost container access (R10) | missing | 100 large-record lookups: 3,235 ms; 100 large-list reads: 603–611 ms; same probes and acceptance budgets |
+| CUDA build on this host (R12) | missing | `--features cuda --locked` fails in cudarc 0.19.7 on toolkit 13.4; CPU `device("cuda")` explicitly falls back |
+| Native tokenizer on Linux | unavailable | extension checkout/artifact absent; prior Apple fixture parity does not validate this host |
+| Fresh-clone checkpoint tests | supported | the test entry point now generates the ignored synthetic fixture before running native tests |
+
+The host is a Xeon W-2135 with about 251 GiB RAM and an RTX 5060 Ti with
+16 GB VRAM. The GPU driver works outside the sandbox. No real model or
+training throughput has been measured on it. CPU-only informational runs
+measured 67.9 ms for the FFN projection and 890.6 ms for the output head;
+tiny cached generation remained exactly equal to full recomputation.
+CUDA acceptance requires a successful supported build, confirmed device
+dispatch, and parity for Qwen3's array operations; details and the failed
+build command are in [Linux setup](linux-toolchain.md).
+
+## Historical Apple measurements
+
 Measured against:
 
 ```text

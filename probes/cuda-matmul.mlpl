@@ -1,0 +1,9 @@
+# Opt-in CUDA smoke: expected product [[19,22],[43,50]]. Run through scripts/run-cuda-probe, which rejects the interpreter's CPU fallback warning; this alone does not validate the full Qwen3 device path.
+product = device("cuda") {
+  matmul(reshape([1, 2, 3, 4], [2, 2]), reshape([5, 6, 7, 8], [2, 2]))
+}
+if equal(product, reshape([19, 22, 43, 50], [2, 2])) {
+  ok(product)
+} else {
+  err("CUDA matrix product differs from the exact expected result")
+}
