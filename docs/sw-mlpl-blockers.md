@@ -72,6 +72,21 @@ Evidence is from stub responders only: vote agreement is not correctness,
 and there is no measured MATH-500 improvement. R11 and the real-model/GPU
 constraints above are unchanged.
 
+## Scoring, validated on Arch build 6d784660
+
+Stable row-wise log-softmax, aligned token gathers, binary answer masks,
+entropy with zero-mass handling, and explicit heuristic coefficients are
+**supported** by existing MLPL primitives. Ten native tests prove analytic
+goldens, underflow-safe log scores, validation/range errors, and teacher-forced
+answer alignment against independent tiny-model prefix forwards. No new
+upstream capability is required for these eager inference functions; training
+tape behavior is not established by this step.
+
+The gate now covers 115 native tests, 25 expected probe outcomes and 19
+tangled library sources, plus the narrated `just scoring-demo`. See
+[the scoring contract](scoring.md). Real-model memory, throughput and
+accuracy remain unmeasured and the existing R11/R12 blockers are unchanged.
+
 ## Historical Apple measurements
 
 Measured against:

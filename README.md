@@ -43,8 +43,8 @@ tied embeddings; the previous Apple run validated all 310 tensors in the
 real checkpoint. Tensor data is not yet loaded and there is no real-model
 accuracy result.
 
-The fixture suite has 105 native tests. A clean clone now generates its tiny
-checkpoint fixture automatically. The literate document reproduces all 18
+The fixture suite has 115 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The literate document reproduces all 19
 library sources. Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
@@ -56,7 +56,10 @@ temperature, nucleus filtering, seeded categorical draws, and sampled tiny
 generation, with exact cached/full-forward agreement. It also delivers
 [chain-of-thought prompting and self-consistency](docs/self-consistency.md):
 seeded boxed-answer voting with explicit ties, abstentions, provenance, and
-safe early stopping, tested with stub responders. Scoring is next.
+safe early stopping, tested with stub responders. [Scoring](docs/scoring.md)
+now adds stable log probabilities, answer masking, entropy, and an explicit
+ranking heuristic. `just scoring-demo` narrates these over fixtures and the
+tiny model. Self-refinement is next.
 Real loading remains deferred. Batched matmul and container-copy costs remain
 throughput constraints. The tokenizer extension passed synthetic parity on
 Apple but refused the real vocabulary's NFC normalizer; that extension is

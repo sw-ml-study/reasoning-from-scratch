@@ -4798,6 +4798,234 @@ def u:scaling_consistency(problem, responder, seeds, options) {
 }
 #+end_src
 
+** lib/scaling/scoring.mlpl
+:PROPERTIES:
+:CUSTOM_ID: lib-scaling-scoring-mlpl
+:END:
+
+Chapter 5's response scoring motivates these independently implemented
+likelihood, entropy, and heuristic functions. The [[file:scoring.md][contract]] specifies
+alignment, masks, numerical limits, and the distinction between ranking and
+correctness. =just scoring-demo= narrates the fixture calculations.
+
+The scoring module composes existing array primitives. It is an eager inference-time API; this step does not establish training-tape behavior.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+# Deterministic inference-time scoring: stable raw-model log probabilities, aligned token likelihoods, answer masks, entropy in nats, and an explicit ranking heuristic. Requires lib/scaling/scaling.mlpl; completion scoring additionally requires lib/text/text.mlpl and lib/qwen3/qwen3.mlpl.
+#+end_src
+
+Even finite inputs can overflow during subtraction or summation. Detect that explicitly and return a range error rather than silently ranking infinities.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_score_finite(value, field) {
+  "Reject arithmetic outside the finite f64 range instead of returning an accidental infinity or NaN.";
+  if reduce(:and, flatten(eq(value - value, 0))) {
+    ok(value)
+  } else {
+    err({kind: "score_range", field: field, message: "score arithmetic exceeded finite f64 range"})
+  }
+}
+#+end_src
+
+Subtract each row's maximum, compute the log of its shifted exponential sum, then subtract that normalizer. Taking the logarithm after softmax would lose low-probability tokens to underflow.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_log_matrix(logits) {
+  "Stable row-wise log-softmax on a finite nonempty [positions,vocabulary] matrix, at model temperature one and without top-p filtering.";
+  if str_eq(type_of(logits), "array") {
+    if rank(logits) - 2 {
+      u:scaling_error("logits", "expected a positions by vocabulary matrix")
+    } else {
+      dims = shape(logits);
+      rows = at(dims, 0);
+      vocab = at(dims, 1);
+      if rows * vocab {
+        u:scaling_score_finite(logits, "logits")?;
+        maxima = reshape(reduce(:max, logits, 1), [rows, 1]);
+        shifted = u:scaling_score_finite(logits - maxima, "logit differences")?;
+        normalizer = reshape(log(reduce_add(exp(shifted), 1)), [rows, 1]);
+        u:scaling_score_finite(shifted - normalizer, "log probabilities")
+      } else {
+        u:scaling_error("logits", "positions and vocabulary must both be nonempty")
+      }
+    }
+  } else {
+    u:scaling_error("logits", "expected a numeric matrix")
+  }
+}
+#+end_src
+
+The one-vector API uses the same matrix calculation through a single-row view.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_log_probs(logits) {
+  "Log probabilities of one next-token vocabulary vector, computed directly so small probabilities do not become log zero.";
+  scores = u:scaling_vector(logits, "logits")?;
+  ok(flatten(u:scaling_log_matrix(reshape(scores, [1, tally(scores)]))?))
+}
+#+end_src
+
+Exponentiating stable log probabilities gives ordinary probabilities. Underflow here is acceptable because the corresponding log scores remain available.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_probs(logits) {
+  "Raw-model next-token probabilities; very small entries may underflow to zero while log_probs retains their finite log scores.";
+  ok(exp(u:scaling_log_probs(logits)?))
+}
+#+end_src
+
+Validate the target count and integer vocabulary range before constructing gather indices.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_score_ids(ids, positions, vocab, field) {
+  "Require one finite integer vocabulary id per aligned row before any gather.";
+  tokens = u:scaling_vector(ids, field)?;
+  if tally(tokens) - positions {
+    u:scaling_error(field, "token count differs from the number of score rows")
+  } else {
+    if reduce(:and, eq(tokens, floor(tokens)) * (1 - lt(tokens, 0)) * lt(tokens, vocab)) {
+      ok(tokens)
+    } else {
+      u:scaling_error(field, "expected integer ids inside the vocabulary")
+    }
+  }
+}
+#+end_src
+
+Row t predicts the supplied target id at t. Flatten the log matrix and gather one offset per row, without multiplying a full one-hot mask or interpreting a loop over the vocabulary.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_token_scores(logits, ids) {
+  "Select each row's aligned target token log probability. Row t must already predict ids[t]; this function applies no implicit causal shift.";
+  logs = u:scaling_log_matrix(logits)?;
+  dims = shape(logs);
+  rows = at(dims, 0);
+  vocab = at(dims, 1);
+  tokens = u:scaling_score_ids(ids, rows, vocab, "ids")?;
+  selected = u:scaling_gather(flatten(logs), range(rows) * vocab + tokens);
+  ok({log_probabilities: selected, probabilities: exp(selected)})
+}
+#+end_src
+
+A nonempty selection has a count, sum, and mean. Keep the selected probabilities and log probabilities together. Refuse a nonfinite sum rather than inventing an aggregate.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_score_summary(logs) {
+  "Aggregate a nonempty vector of selected log probabilities, retaining its per-token values. Empty answers and nonfinite sums are errors.";
+  values = u:scaling_vector(logs, "selected log probabilities")?;
+  total = u:scaling_score_finite(reduce_add(values), "sum log probability")?;
+  ok({count: tally(values), sum_log_probability: total, mean_log_probability: total / tally(values), log_probabilities: values, probabilities: exp(values)})
+}
+#+end_src
+
+Sequence scoring aggregates every supplied target, so callers must distinguish prompt-inclusive scoring from answer scoring.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_sequence_score(logits, ids) {
+  "Sum and average the aligned target log probabilities over every row, including prompt rows if supplied.";
+  tokens = u:scaling_token_scores(logits, ids)?;
+  u:scaling_score_summary(tokens.log_probabilities)
+}
+#+end_src
+
+A binary mask makes prompt exclusion explicit. Compress the selected log probabilities before reducing them, so prompt-only terms do not affect either the sum or denominator. An empty answer is an error.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_answer_score(logits, ids, answer_mask) {
+  "Score only rows selected by an explicit binary answer mask; excluded prompt rows never enter the sum or denominator.";
+  tokens = u:scaling_token_scores(logits, ids)?;
+  mask = u:scaling_vector(answer_mask, "answer_mask")?;
+  if tally(mask) - tally(tokens.log_probabilities) {
+    u:scaling_error("answer_mask", "mask length differs from score rows")
+  } else {
+    if reduce(:and, eq(mask, 0) + eq(mask, 1)) {
+      if reduce_add(mask) {
+        u:scaling_score_summary(compress(mask, tokens.log_probabilities))
+      } else {
+        err({kind: "empty_answer", field: "answer_mask", message: "no answer tokens to score"})
+      }
+    } else {
+      u:scaling_error("answer_mask", "expected only zero and one")
+    }
+  }
+}
+#+end_src
+
+Entropy is in nats. Normalize relative weights, remove zero entries, and then evaluate minus the probability-weighted logarithm; never form zero times log zero.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_entropy(weights) {
+  "Shannon entropy in nats of finite nonnegative relative weights; remove zero probabilities before taking logarithms.";
+  probs = u:scaling_normalize(weights)?;
+  positive = compress(gt(probs, 0), probs);
+  u:scaling_score_finite(0 - reduce_add(positive * log(positive)), "entropy")
+}
+#+end_src
+
+The heuristic has no hidden coefficient defaults. Each required coefficient must be finite and nonnegative.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_score_weight(weights, field) {
+  "Read one required finite nonnegative heuristic coefficient from a validated record.";
+  if has_field(weights, field) {
+    value = u:scaling_scalar(record_get(weights, field)?, field)?;
+    if lt(value, 0) {
+      u:scaling_error(field, "heuristic coefficients must be nonnegative")
+    } else {
+      ok(value)
+    }
+  } else {
+    u:scaling_error(field, "required heuristic coefficient is missing")
+  }
+}
+#+end_src
+
+Combine mean answer log probability, entropy, and a caller-supplied format indicator with an explicit versioned formula. Higher is preferred; this is neither a calibrated correctness probability nor a verification reward.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_heuristic(mean_logp, entropy, format_ok, weights) {
+  "Higher-is-better heuristic: likelihood coefficient times mean logp minus entropy coefficient times entropy plus format coefficient times a caller-supplied binary format indicator.";
+  likelihood = u:scaling_scalar(mean_logp, "mean_logp")?;
+  uncertainty = u:scaling_scalar(entropy, "entropy")?;
+  formatted = u:scaling_scalar(format_ok, "format_ok")?;
+  if str_eq(type_of(weights), "record") {
+    wl = u:scaling_score_weight(weights, "likelihood")?;
+    we = u:scaling_score_weight(weights, "entropy")?;
+    wf = u:scaling_score_weight(weights, "format")?;
+    if (1 - gt(likelihood, 0)) * (1 - lt(uncertainty, 0)) * (eq(formatted, 0) + eq(formatted, 1)) {
+      value = u:scaling_score_finite(wl * likelihood - we * uncertainty + wf * formatted, "heuristic")?;
+      ok({score: value, version: "likelihood-entropy-format-v1", mean_log_probability: likelihood, entropy: uncertainty, format_ok: formatted, weights: weights})
+    } else {
+      u:scaling_error("heuristic", "require logp <= 0, entropy >= 0, and binary format_ok")
+    }
+  } else {
+    u:scaling_error("weights", "expected an explicit heuristic coefficient record")
+  }
+}
+#+end_src
+
+Teacher forcing concatenates prompt and answer, removes the last token from model inputs, and removes the first from targets. The first answer is predicted at row prompt_length minus one. Mask all preceding prompt-only transitions. Tests compare with independent next-token prefix calls.
+
+#+begin_src mlpl :tangle ../lib/scaling/scoring.mlpl
+def u:scaling_completion_score(config, model, prompt_ids, answer_ids) {
+  "Teacher-force a nonempty answer after its prompt, align next-token targets explicitly, and mask every prompt-only transition out of the score.";
+  prompt = u:scaling_vector(prompt_ids, "prompt_ids")?;
+  answer = u:scaling_vector(answer_ids, "answer_ids")?;
+  u:scaling_score_ids(prompt, tally(prompt), config.vocab, "prompt_ids")?;
+  u:scaling_score_ids(answer, tally(answer), config.vocab, "answer_ids")?;
+  all_ids = concat(prompt, answer);
+  rows = tally(all_ids) - 1;
+  if gt(rows, config.context) {
+    u:scaling_error("answer_ids", "prompt and answer inputs exceed the context table")
+  } else {
+    inputs = compress(lt(range(tally(all_ids)), rows), all_ids);
+    targets = compress(gt(range(tally(all_ids)), 0), all_ids);
+    mask = 1 - lt(range(rows), tally(prompt) - 1);
+    u:scaling_answer_score(u:qwen_logits(config, model, inputs), targets, mask)
+  }
+}
+#+end_src
+
 * What this adds up to
 
 Reading in order, the document has built: a scanner layer that replaces a
@@ -4827,4 +5055,5 @@ simplification, so =2x + 3x= and =5x= do not match. There is no regular
 expression anywhere. Tiny synthetic weights generate tokens and prove the
 forward, cache, and sampler contracts, but no real checkpoint data is loaded.
 Bulk bf16 decoding remains unavailable; no tiny-model result is evidence of
-real-model accuracy. Scoring and self-refinement are the next scaling steps.
+real-model accuracy. Stable likelihood and entropy scoring now support
+candidate ranking over fixtures and the tiny model. Self-refinement is next.

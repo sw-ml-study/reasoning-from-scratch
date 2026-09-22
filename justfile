@@ -46,6 +46,10 @@ tangle:
 generation-demo:
     ./scripts/run-generation-demo
 
+# Narrated probabilities, answer masking, entropy and tiny-model scoring.
+scoring-demo:
+    ./scripts/run-scoring-demo
+
 # Narrated verifier and harness walk-through over committed fixtures.
 verifier-demo:
     ./scripts/run-verifier-demo

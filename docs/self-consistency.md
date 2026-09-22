@@ -93,6 +93,6 @@ flags. A callback that fails on unused seeds proves early stop avoids calls.
 
 With [Linux tool overrides](linux-toolchain.md), run
 `just tests tests/test_scaling_consistency.mlpl` or `just check`.
-The full fixture suite has 105 tests and 18 tangled library sources.
+See the README for current full-suite totals.
 Real-model work remains subject to [the bf16 handoff](bf16-handoff.md).
-Scoring and self-refinement are subsequent steps.
+[Scoring](scoring.md) is available; self-refinement follows next.

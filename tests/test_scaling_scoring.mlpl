@@ -1,0 +1,137 @@
+# Scoring contracts: stable log-softmax, aligned token likelihoods, explicit answer masks, entropy in nats, and a transparent heuristic over fixtures.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/qwen3/tiny.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/scoring.mlpl";
+
+@test {name: "log probabilities and probabilities match analytic goldens", tags: ["scaling", "score"]}
+def u:test_score_distribution() {
+  "Logits equal to log weights have exactly known normalized probabilities.";
+  logits = log([1, 2, 3]);
+  u:assert_approx(u:scaling_log_probs(logits)?, log([1, 2, 3] / 6), 1e-12, "log probabilities")?;
+  u:assert_approx(u:scaling_probs(logits)?, [1, 2, 3] / 6, 1e-12, "probabilities")?;
+  u:assert_approx(u:scaling_log_probs(logits + 10000)?, log([1, 2, 3] / 6), 1e-11, "shift invariance")?;
+  u:assert_eq(u:scaling_log_probs([7])?, [0], "singleton")
+}
+
+@test {name: "tiny probabilities retain finite log scores after probability underflow", tags: ["scaling", "score"]}
+def u:test_score_underflow() {
+  "Taking log after softmax would lose the second score; direct log-sum-exp retains it.";
+  u:assert_eq(u:scaling_log_probs([0, 0 - 1000])?, [0, 0 - 1000], "finite log score")?;
+  u:assert_eq(u:scaling_probs([0, 0 - 1000])?, [1, 0], "probability may underflow")?;
+  u:assert_approx(u:scaling_log_probs([1e300, 1e300])?, [0 - log(2), 0 - log(2)], 1e-12, "large equal logits")
+}
+
+@test {name: "selected sequence scores use one aligned token id per logit row", tags: ["scaling", "score"]}
+def u:test_score_sequence() {
+  "Rows need not select the same vocabulary column.";
+  logits = log(reshape([1, 2, 3, 1, 1, 2], [2, 3]));
+  tokens = u:scaling_token_scores(logits, [2, 0])?;
+  u:assert_approx(tokens.probabilities, [0.5, 0.25], 1e-12, "selected probabilities")?;
+  u:assert_approx(tokens.log_probabilities, log([0.5, 0.25]), 1e-12, "selected log probabilities")?;
+  sequence = u:scaling_sequence_score(logits, [2, 0])?;
+  u:assert_approx(sequence.sum_log_probability, log(0.125), 1e-12, "sum")?;
+  u:assert_approx(sequence.mean_log_probability, log(0.125) / 2, 1e-12, "mean")?;
+  u:assert_eq(sequence.count, 2, "token count")
+}
+
+@test {name: "answer mask excludes prompt scores and permits noncontiguous selections", tags: ["scaling", "score"]}
+def u:test_score_answer_mask() {
+  "The first row models a prompt transition and must not influence the answer mean.";
+  logits = log(reshape([1, 99, 1, 3, 1, 1], [3, 2]));
+  result = u:scaling_answer_score(logits, [0, 0, 0], [0, 1, 1])?;
+  u:assert_approx(result.mean_log_probability, log(0.125) / 2, 1e-12, "answer only")?;
+  u:assert_eq(result.count, 2, "answer count")?;
+  sparse = u:scaling_answer_score(logits, [0, 0, 0], [1, 0, 1])?;
+  u:assert_approx(sparse.sum_log_probability, log(0.005), 1e-12, "noncontiguous mask")?;
+  extreme_prompt = reshape([0, 0 - 1e308, 0, 0 - 1e308, 0, 0], [3, 2]);
+  masked = u:scaling_answer_score(extreme_prompt, [1, 1, 0], [0, 0, 1])?;
+  u:assert_approx(masked.mean_log_probability, 0 - log(2), 1e-12, "excluded prompt sum cannot overflow answer")?;
+  u:assert_err(u:scaling_answer_score(logits, [0, 0, 0], [0, 0, 0]), "empty answer has no mean")
+}
+
+@test {name: "entropy handles zero mass and relative weights in nats", tags: ["scaling", "score"]}
+def u:test_score_entropy() {
+  "Uniform, deterministic, and dyadic distributions have analytic entropies.";
+  u:assert_approx(u:scaling_entropy([1, 1])?, log(2), 1e-12, "uniform binary")?;
+  u:assert_eq(u:scaling_entropy([0, 3, 0])?, 0, "deterministic with zeros")?;
+  u:assert_approx(u:scaling_entropy([1, 2, 1])?, 1.5 * log(2), 1e-12, "three tokens")?;
+  u:assert_approx(u:scaling_entropy([1e308, 1e308])?, log(2), 1e-12, "large weights")?;
+  u:assert_err(u:scaling_entropy([0, 0]), "no mass")?;
+  u:assert_err(u:scaling_entropy([1, 0 - 1]), "negative mass")
+}
+
+@test {name: "heuristic uses explicit likelihood entropy and format coefficients", tags: ["scaling", "score"]}
+def u:test_score_heuristic() {
+  "Higher likelihood, lower uncertainty and an explicit format indicator contribute transparently.";
+  weights = {likelihood: 1, entropy: 0.5, format: 2};
+  scored = u:scaling_heuristic(0 - 0.7, 0.4, 1, weights)?;
+  u:assert_approx(scored.score, 1.1, 1e-12, "weighted score")?;
+  u:assert_text_eq(scored.version, "likelihood-entropy-format-v1", "version")?;
+  u:assert_eq(scored.weights, weights, "coefficients retained")?;
+  worse = u:scaling_heuristic(0 - 1.7, 0.4, 1, weights)?;
+  u:assert_gt(scored.score, worse.score, "likelihood affects ranking")?;
+  u:assert_eq(u:scaling_heuristic(0 - 1000, 2, 0, {likelihood: 0, entropy: 0, format: 0})?.score, 0, "zero coefficients")
+}
+
+@test {name: "invalid score shapes ids masks and nonfinite inputs are rejected", tags: ["scaling", "errors"]}
+def u:test_score_invalid_inputs() {
+  "Reject malformed data before indexing or aggregation.";
+  logits = reshape([1, 2, 3, 4], [2, 2]);
+  u:assert_err(u:scaling_log_probs([]), "empty vocabulary")?;
+  u:assert_err(u:scaling_log_probs(logits), "vector API rejects matrices")?;
+  u:assert_err(u:scaling_log_probs([1, exp(1000)]), "infinite score")?;
+  u:assert_err(u:scaling_log_probs([exp(1000) - exp(1000)]), "NaN score")?;
+  u:assert_err(u:scaling_token_scores([1, 2], [0]), "matrix required")?;
+  u:assert_err(u:scaling_token_scores(logits, [0]), "row count mismatch")?;
+  u:assert_err(u:scaling_token_scores(logits, [0, 2]), "id out of range")?;
+  u:assert_err(u:scaling_token_scores(logits, [0, 0.5]), "fractional id")?;
+  u:assert_err(u:scaling_token_scores(logits, [0, 0 - 1]), "negative id")?;
+  u:assert_err(u:scaling_token_scores(reshape([], [0, 2]), []), "empty time axis")?;
+  u:assert_err(u:scaling_token_scores(reshape([], [2, 0]), [0, 0]), "empty vocabulary axis")?;
+  u:assert_err(u:scaling_answer_score(logits, [0, 1], [1]), "mask length")?;
+  u:assert_err(u:scaling_answer_score(logits, [0, 1], [1, 0.5]), "nonbinary mask")
+}
+
+@test {name: "heuristic rejects impossible scores and invalid coefficients", tags: ["scaling", "errors"]}
+def u:test_score_invalid_heuristic() {
+  "Validation prevents nonfinite or sign-reversed ranking controls.";
+  weights = {likelihood: 1, entropy: 1, format: 1};
+  u:assert_err(u:scaling_heuristic(0.1, 1, 1, weights), "positive log probability")?;
+  u:assert_err(u:scaling_heuristic(0 - 1, 0 - 1, 1, weights), "negative entropy")?;
+  u:assert_err(u:scaling_heuristic(0 - 1, 1, 0.5, weights), "nonboolean format")?;
+  u:assert_err(u:scaling_heuristic(0 - 1, 1, 1, {}), "missing coefficients")?;
+  u:assert_err(u:scaling_heuristic(0 - 1, 1, 1, {likelihood: 0 - 1, entropy: 0, format: 0}), "negative coefficient")?;
+  u:assert_err(u:scaling_heuristic(0 - 1, 1, 1, {likelihood: exp(1000), entropy: 0, format: 0}), "infinite coefficient")
+}
+
+@test {name: "unrepresentable score arithmetic returns an error", tags: ["scaling", "errors"]}
+def u:test_score_overflow() {
+  "Finite inputs can still exceed the f64 range during subtraction or summation.";
+  u:assert_err(u:scaling_log_probs([1e308, 0 - 1e308]), "difference overflow")?;
+  logits = reshape([0, 0 - 1e308, 0, 0 - 1e308], [2, 2]);
+  u:assert_err(u:scaling_sequence_score(logits, [1, 1]), "sum overflow")?;
+  u:assert_err(u:scaling_heuristic(0 - 1e308, 1, 0, {likelihood: 2, entropy: 0, format: 0}), "heuristic overflow")
+}
+
+@test {name: "completion scoring aligns each answer with its preceding prefix", tags: ["scaling", "qwen"]}
+def u:test_score_completion() {
+  "Teacher-forced matrix scoring agrees with separate next-token forward calls.";
+  config = u:qwen_config_tiny();
+  model = u:qwen_tiny_model();
+  first = u:scaling_log_probs(u:qwen_next_logits(config, model, [5, 9]))?;
+  second = u:scaling_log_probs(u:qwen_next_logits(config, model, [5, 9, 2]))?;
+  expected = [at(first, 2), at(second, 7)];
+  result = u:scaling_completion_score(config, model, [5, 9], [2, 7])?;
+  u:assert_approx(result.log_probabilities, expected, 1e-12, "causal alignment")?;
+  u:assert_approx(result.mean_log_probability, reduce_add(expected) / 2, 1e-12, "answer mean")?;
+  u:assert_eq(result.count, 2, "answer tokens")?;
+  u:assert_err(u:scaling_completion_score(config, 0, [5], []), "empty answer before model access")?;
+  u:assert_err(u:scaling_completion_score(config, 0, [], [2]), "empty prompt")?;
+  u:assert_err(u:scaling_completion_score(config, 0, [config.vocab], [2]), "bad prompt id")?;
+  u:assert_err(u:scaling_completion_score(config, 0, [5], [0.5]), "bad answer id")?;
+  u:assert_err(u:scaling_completion_score(config, 0, [5], range(config.context + 1)), "context limit")
+}
+
+u:run_registered_tests()

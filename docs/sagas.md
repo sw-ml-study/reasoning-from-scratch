@@ -73,15 +73,16 @@ Saga 3 is archived under `.agentrail-archive/model-and-generation-20260922T13363
 |---|---|---|
 | 1 | `sampling-primitives` | done: ten native tests; temperature, top-p, categorical draws, cached sampled decoding |
 | 2 | `cot-and-self-consistency` | done: versioned suffix, seeded voting, ties, abstentions, audit rows and safe early stop; twelve tests |
-| 3 | `scoring` | next: probabilities, answer log-probability, entropy and heuristic scoring |
-| 4 | `self-refinement` | planned |
+| 3 | `scoring` | done: stable token/answer scores, entropy, explicit heuristic, teacher-forced tiny scoring and narrated demo; ten tests |
+| 4 | `self-refinement` | next: critique/revision prompts, accept-if-not-worse loop and best-of-N |
 | 5 | `scaling-report` | real-model runs deferred behind the bf16 handoff |
 
 The [sampling contract](sampling.md) pins threshold boundaries, stable ties,
 seed warmup, and decoding provenance. Cached sampled ids equal an independent
 full-forward loop. The [self-consistency contract](self-consistency.md)
 specifies exact normalized vote keys and a stopping bound that preserves
-winners and ties. All 105 native tests pass; real-model reports remain deferred.
+winners and ties. [Scoring](scoring.md) adds causal answer alignment and an
+auditable heuristic. All 115 native tests pass; real-model reports remain deferred.
 
 ## Queued: Saga 5, `grpo`
 

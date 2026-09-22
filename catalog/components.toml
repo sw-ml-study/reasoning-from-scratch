@@ -196,6 +196,15 @@ documentation = "docs/self-consistency.md"
 status = "accepted"
 
 [[component]]
+id = "SCORE"
+slug = "response-scoring"
+chapter = 5
+source = "lib/scaling/scoring.mlpl"
+test = "tests/test_scaling_scoring.mlpl"
+documentation = "docs/scoring.md"
+status = "accepted"
+
+[[component]]
 id = "RL"
 slug = "grpo"
 chapter = 6

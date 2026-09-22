@@ -82,5 +82,5 @@ With the overrides from [Linux setup](linux-toolchain.md), run
 Evidence is limited to fixtures and the tiny model. Real loading remains
 [blocked on R11](bf16-handoff.md); GPU inference and MATH-500 accuracy are
 unmeasured. [Self-consistency](self-consistency.md) now consumes explicitly
-seeded text responders and records voting provenance. Scoring and refinement
-follow in later steps.
+seeded text responders and records voting provenance. [Scoring](scoring.md)
+provides raw-model likelihood and entropy; refinement follows next.

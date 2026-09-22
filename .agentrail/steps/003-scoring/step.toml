@@ -1,6 +1,6 @@
 number = 3
 slug = "scoring"
-status = "pending"
+status = "in-progress"
 description = "Implement Saga 4 scoring in lib/scaling/ with unique u:scaling_ functions and..."
 role = "production"
 context_files = []

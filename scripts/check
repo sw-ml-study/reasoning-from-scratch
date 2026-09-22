@@ -15,6 +15,7 @@ sh "$repo_dir/tests/check-tooling.sh"
 "$repo_dir/scripts/run-tests"
 "$repo_dir/scripts/run-verifier-demo" > /dev/null
 "$repo_dir/scripts/run-generation-demo" > /dev/null
+"$repo_dir/scripts/run-scoring-demo" > /dev/null
 git -C "$repo_dir" diff --check
 
 echo "PASS pre-commit"

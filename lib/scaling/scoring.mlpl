@@ -1,0 +1,161 @@
+# Deterministic inference-time scoring: stable raw-model log probabilities, aligned token likelihoods, answer masks, entropy in nats, and an explicit ranking heuristic. Requires lib/scaling/scaling.mlpl; completion scoring additionally requires lib/text/text.mlpl and lib/qwen3/qwen3.mlpl.
+
+def u:scaling_score_finite(value, field) {
+  "Reject arithmetic outside the finite f64 range instead of returning an accidental infinity or NaN.";
+  if reduce(:and, flatten(eq(value - value, 0))) {
+    ok(value)
+  } else {
+    err({kind: "score_range", field: field, message: "score arithmetic exceeded finite f64 range"})
+  }
+}
+
+def u:scaling_log_matrix(logits) {
+  "Stable row-wise log-softmax on a finite nonempty [positions,vocabulary] matrix, at model temperature one and without top-p filtering.";
+  if str_eq(type_of(logits), "array") {
+    if rank(logits) - 2 {
+      u:scaling_error("logits", "expected a positions by vocabulary matrix")
+    } else {
+      dims = shape(logits);
+      rows = at(dims, 0);
+      vocab = at(dims, 1);
+      if rows * vocab {
+        u:scaling_score_finite(logits, "logits")?;
+        maxima = reshape(reduce(:max, logits, 1), [rows, 1]);
+        shifted = u:scaling_score_finite(logits - maxima, "logit differences")?;
+        normalizer = reshape(log(reduce_add(exp(shifted), 1)), [rows, 1]);
+        u:scaling_score_finite(shifted - normalizer, "log probabilities")
+      } else {
+        u:scaling_error("logits", "positions and vocabulary must both be nonempty")
+      }
+    }
+  } else {
+    u:scaling_error("logits", "expected a numeric matrix")
+  }
+}
+
+def u:scaling_log_probs(logits) {
+  "Log probabilities of one next-token vocabulary vector, computed directly so small probabilities do not become log zero.";
+  scores = u:scaling_vector(logits, "logits")?;
+  ok(flatten(u:scaling_log_matrix(reshape(scores, [1, tally(scores)]))?))
+}
+
+def u:scaling_probs(logits) {
+  "Raw-model next-token probabilities; very small entries may underflow to zero while log_probs retains their finite log scores.";
+  ok(exp(u:scaling_log_probs(logits)?))
+}
+
+def u:scaling_score_ids(ids, positions, vocab, field) {
+  "Require one finite integer vocabulary id per aligned row before any gather.";
+  tokens = u:scaling_vector(ids, field)?;
+  if tally(tokens) - positions {
+    u:scaling_error(field, "token count differs from the number of score rows")
+  } else {
+    if reduce(:and, eq(tokens, floor(tokens)) * (1 - lt(tokens, 0)) * lt(tokens, vocab)) {
+      ok(tokens)
+    } else {
+      u:scaling_error(field, "expected integer ids inside the vocabulary")
+    }
+  }
+}
+
+def u:scaling_token_scores(logits, ids) {
+  "Select each row's aligned target token log probability. Row t must already predict ids[t]; this function applies no implicit causal shift.";
+  logs = u:scaling_log_matrix(logits)?;
+  dims = shape(logs);
+  rows = at(dims, 0);
+  vocab = at(dims, 1);
+  tokens = u:scaling_score_ids(ids, rows, vocab, "ids")?;
+  selected = u:scaling_gather(flatten(logs), range(rows) * vocab + tokens);
+  ok({log_probabilities: selected, probabilities: exp(selected)})
+}
+
+def u:scaling_score_summary(logs) {
+  "Aggregate a nonempty vector of selected log probabilities, retaining its per-token values. Empty answers and nonfinite sums are errors.";
+  values = u:scaling_vector(logs, "selected log probabilities")?;
+  total = u:scaling_score_finite(reduce_add(values), "sum log probability")?;
+  ok({count: tally(values), sum_log_probability: total, mean_log_probability: total / tally(values), log_probabilities: values, probabilities: exp(values)})
+}
+
+def u:scaling_sequence_score(logits, ids) {
+  "Sum and average the aligned target log probabilities over every row, including prompt rows if supplied.";
+  tokens = u:scaling_token_scores(logits, ids)?;
+  u:scaling_score_summary(tokens.log_probabilities)
+}
+
+def u:scaling_answer_score(logits, ids, answer_mask) {
+  "Score only rows selected by an explicit binary answer mask; excluded prompt rows never enter the sum or denominator.";
+  tokens = u:scaling_token_scores(logits, ids)?;
+  mask = u:scaling_vector(answer_mask, "answer_mask")?;
+  if tally(mask) - tally(tokens.log_probabilities) {
+    u:scaling_error("answer_mask", "mask length differs from score rows")
+  } else {
+    if reduce(:and, eq(mask, 0) + eq(mask, 1)) {
+      if reduce_add(mask) {
+        u:scaling_score_summary(compress(mask, tokens.log_probabilities))
+      } else {
+        err({kind: "empty_answer", field: "answer_mask", message: "no answer tokens to score"})
+      }
+    } else {
+      u:scaling_error("answer_mask", "expected only zero and one")
+    }
+  }
+}
+
+def u:scaling_entropy(weights) {
+  "Shannon entropy in nats of finite nonnegative relative weights; remove zero probabilities before taking logarithms.";
+  probs = u:scaling_normalize(weights)?;
+  positive = compress(gt(probs, 0), probs);
+  u:scaling_score_finite(0 - reduce_add(positive * log(positive)), "entropy")
+}
+
+def u:scaling_score_weight(weights, field) {
+  "Read one required finite nonnegative heuristic coefficient from a validated record.";
+  if has_field(weights, field) {
+    value = u:scaling_scalar(record_get(weights, field)?, field)?;
+    if lt(value, 0) {
+      u:scaling_error(field, "heuristic coefficients must be nonnegative")
+    } else {
+      ok(value)
+    }
+  } else {
+    u:scaling_error(field, "required heuristic coefficient is missing")
+  }
+}
+
+def u:scaling_heuristic(mean_logp, entropy, format_ok, weights) {
+  "Higher-is-better heuristic: likelihood coefficient times mean logp minus entropy coefficient times entropy plus format coefficient times a caller-supplied binary format indicator.";
+  likelihood = u:scaling_scalar(mean_logp, "mean_logp")?;
+  uncertainty = u:scaling_scalar(entropy, "entropy")?;
+  formatted = u:scaling_scalar(format_ok, "format_ok")?;
+  if str_eq(type_of(weights), "record") {
+    wl = u:scaling_score_weight(weights, "likelihood")?;
+    we = u:scaling_score_weight(weights, "entropy")?;
+    wf = u:scaling_score_weight(weights, "format")?;
+    if (1 - gt(likelihood, 0)) * (1 - lt(uncertainty, 0)) * (eq(formatted, 0) + eq(formatted, 1)) {
+      value = u:scaling_score_finite(wl * likelihood - we * uncertainty + wf * formatted, "heuristic")?;
+      ok({score: value, version: "likelihood-entropy-format-v1", mean_log_probability: likelihood, entropy: uncertainty, format_ok: formatted, weights: weights})
+    } else {
+      u:scaling_error("heuristic", "require logp <= 0, entropy >= 0, and binary format_ok")
+    }
+  } else {
+    u:scaling_error("weights", "expected an explicit heuristic coefficient record")
+  }
+}
+
+def u:scaling_completion_score(config, model, prompt_ids, answer_ids) {
+  "Teacher-force a nonempty answer after its prompt, align next-token targets explicitly, and mask every prompt-only transition out of the score.";
+  prompt = u:scaling_vector(prompt_ids, "prompt_ids")?;
+  answer = u:scaling_vector(answer_ids, "answer_ids")?;
+  u:scaling_score_ids(prompt, tally(prompt), config.vocab, "prompt_ids")?;
+  u:scaling_score_ids(answer, tally(answer), config.vocab, "answer_ids")?;
+  all_ids = concat(prompt, answer);
+  rows = tally(all_ids) - 1;
+  if gt(rows, config.context) {
+    u:scaling_error("answer_ids", "prompt and answer inputs exceed the context table")
+  } else {
+    inputs = compress(lt(range(tally(all_ids)), rows), all_ids);
+    targets = compress(gt(range(tally(all_ids)), 0), all_ids);
+    mask = 1 - lt(range(rows), tally(prompt) - 1);
+    u:scaling_answer_score(u:qwen_logits(config, model, inputs), targets, mask)
+  }
+}

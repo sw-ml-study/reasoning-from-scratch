@@ -1,0 +1,37 @@
+# Narrated inference-time scoring on exact distributions and a synthetic tiny model; no downloads and no claim of learned reasoning.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/qwen3/tiny.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/scoring.mlpl";
+
+print("SCORING DEMO -- MLPL math over authored distributions and synthetic tiny weights.")
+print("No real checkpoint, training, or model accuracy is demonstrated.\n")
+
+print("1. A small probability can underflow without losing its log score.")
+print("   logits:", [0, 0 - 1000])
+print("   probabilities:", u:scaling_probs([0, 0 - 1000])?)
+print("   log probabilities:", u:scaling_log_probs([0, 0 - 1000])?)
+
+print("\n2. Prompt transitions must not affect the mean answer score.")
+logits = log(reshape([1, 99, 1, 3, 1, 1], [3, 2]))
+scored = u:scaling_answer_score(logits, [0, 0, 0], [0, 1, 1])?
+print("   all selected probabilities: 0.01, 0.25, 0.5; answer mask: 0, 1, 1")
+print("   answer tokens:", scored.count, "mean log probability:", scored.mean_log_probability)
+print("   expected:", log(0.125) / 2)
+
+print("\n3. Entropy and an explicit ranking heuristic.")
+print("   uniform binary entropy:", u:scaling_entropy([1, 1])?, "nats; deterministic entropy:", u:scaling_entropy([0, 1, 0])?)
+coefficients = {likelihood: 1, entropy: 0.5, format: 2}
+better = u:scaling_heuristic(0 - 0.7, 0.4, 1, coefficients)?
+worse = u:scaling_heuristic(0 - 1.7, 0.4, 1, coefficients)?
+print("   score = mean_logp - 0.5 * entropy + 2 * format_ok")
+print("   candidate A:", better.score, "candidate B:", worse.score, "; higher is preferred, not proven correct.")
+
+print("\n4. Score answer token ids after a prompt with the tiny Qwen3 forward pass.")
+tiny = u:scaling_completion_score(u:qwen_config_tiny(), u:qwen_tiny_model(), [5, 9], [2, 7])?
+print("   prompt ids: 5, 9; answer ids: 2, 7")
+print("   answer log probabilities:", tiny.log_probabilities)
+print("   answer mean:", tiny.mean_log_probability)
+print("   These weights are synthetic. The tests compare each score with a separate prefix forward call.")
+ok(1)
