@@ -1,6 +1,6 @@
 number = 5
 slug = "bf16-tensor-decode"
-status = "pending"
+status = "in-progress"
 description = "Implement the planned bf16 tensor decode only after revalidating R11 with pro..."
 role = "production"
 context_files = []

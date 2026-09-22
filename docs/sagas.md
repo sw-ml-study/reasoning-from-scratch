@@ -32,7 +32,7 @@ The production encoder is a Rust extension requested from
 synthetic fixture, the chat templates, and the parity tests. Step 4 stops
 with an honest unavailable result if the extension has not landed.
 
-## Active: Saga 3, `model-and-generation`
+## Complete with unavailable real-weight path: Saga 3, `model-and-generation`
 
 | # | Step | Status |
 |---|---|---|
@@ -40,9 +40,15 @@ with an honest unavailable result if the extension has not landed.
 | 2 | `kv-cache-generation` | done: prefill and step, bit-identical to recomputation, greedy loop |
 | 3 | `safetensors-header` | done: vendored reader, name mapping, whole-checkpoint validation against the real file |
 | 4 | `arch-cuda-revalidation` | done: 83 tests and fixture gate pass on Arch CPU; CUDA 13.4 build blocker recorded |
-| 5 | `bf16-tensor-decode` | next, gated on upstream R11, reconfirmed on build 6d784660 |
-| 6 | `real-model-smoke` | planned, follows step 5; GPU measurements also need R12 |
-| 7 | `math500-baseline` | planned, follows step 6 |
+| 5 | `bf16-tensor-decode` | done as unavailable: R11 absent at upstream HEAD 6d784660; no loader implemented |
+| deferred | `real-model-smoke` | not run: requires R11 and the loader; GPU measurements also need R12 |
+| deferred | `math500-baseline` | not run: requires real-model smoke and tokenization |
+
+This satisfies the saga's explicit alternative exit: tiny-model algorithms
+are proven and the real-model path has a precise filed blocker. It does not
+mark decoding or evaluation as implemented. The [bf16 handoff](bf16-handoff.md)
+records the reproduction, core acceptance cases, and resume conditions. E3
+remains contingent on core declining R11; no decline has been observed.
 
 The Linux revalidation uses isolated tool checkouts and explicit overrides;
 it does not modify sibling repositories or the installed tools. See
@@ -60,6 +66,15 @@ nothing upstream and come first.
 
 Temperature and nucleus sampling, chain-of-thought, self-consistency,
 scoring, and self-refinement, with bounded real-model reports.
+
+Next session: archive the completed `model-and-generation` saga through
+Agentrail, then initialize `inference-time-scaling` from Saga 4 in the plan.
+Its first step is `sampling-primitives`: native mlplunit goldens for
+temperature scaling, top-p with the crossing token retained and weights
+renormalized, seeded categorical draws, and sampled decoding over tiny
+weights. Use three- and ten-token distributions, explicit seeds, unique
+`u:scaling_` functions, and the normal literate/catalog/check gate. Real-model
+reports stay deferred; revisit the bf16 handoff when R11 ships.
 
 ## Queued: Saga 5, `grpo`
 

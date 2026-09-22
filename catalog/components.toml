@@ -141,6 +141,16 @@ documentation = "docs/data-and-models.md"
 status = "accepted"
 
 [[component]]
+id = "BF16"
+slug = "bf16-tensor-decode"
+chapter = 2
+# Diagnostic source only: no production loader exists while R11 is missing.
+source = "probes/unpack-bulk.mlpl"
+test = "scripts/run-capability-probes"
+documentation = "docs/bf16-handoff.md"
+status = "blocked"
+
+[[component]]
 id = "QWEN"
 slug = "qwen3-forward"
 chapter = 2

@@ -48,12 +48,15 @@ checkpoint fixture automatically. The literate document reproduces all 16
 library sources. Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
-The next implementation step is bulk bf16 tensor decoding, still blocked by
-core request R11 (`unpack`). Batched matmul and container-copy costs remain
+The bf16 decoding step recorded an explicit unavailable outcome: core
+request R11 (`unpack`) is still missing at upstream HEAD `6d784660`.
+[The decoder handoff](docs/bf16-handoff.md) pins reproduction, acceptance,
+and resume conditions. The next saga starts fixture-based inference-time
+scaling while real loading remains deferred. Batched matmul and container-copy costs remain
 throughput constraints. The tokenizer extension passed synthetic parity on
 Apple but refused the real vocabulary's NFC normalizer; that extension is
 not installed in this Linux checkout. Scaling, GRPO, and distillation remain
-planned.
+planned; none has real-model results.
 
 The host has an RTX 5060 Ti with 16 GB VRAM, but GPU execution is not yet
 validated: the current upstream CUDA build rejects the installed CUDA 13.4

@@ -131,6 +131,13 @@ ledger, and removes the workaround where the plan allows.
 
 ## R11. Bulk `unpack(bytes, dtype)` returning an array — blocking
 
+Consumer disposition, 2026-09-22: the bf16 decoding step closed with an
+explicit unavailable result after the probe failed and upstream HEAD was
+confirmed unchanged. [The handoff](bf16-handoff.md) specifies finite and
+special-value cases, malformed buffers, bulk-size acceptance, and the
+conditions for resuming the loader. No core decline has been observed;
+the E3 extension fallback remains inactive.
+
 - Probe: `probes/unpack-bulk.mlpl`, reconfirmed missing on build `6d784660`
   on 2026-09-22. It now calls the requested raw-byte interface and wraps the
   returned array in `ok` before unwrapping, so a future correct implementation

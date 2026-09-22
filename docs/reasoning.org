@@ -4114,6 +4114,14 @@ from the configuration, which is exactly what the file's own header reports.
 The header reader itself is vendored from `../demo-mlpl-libraries` at a
 pinned revision with a hash lock, rather than rewritten here.
 
+On 2026-09-22 the bf16 decoding step rechecked this boundary on Arch using
+build =6d784660=, also the upstream HEAD at the time. The bulk conversion
+probe still failed with an unknown-function error. That step therefore
+recorded =unavailable=; these load plans are not a tensor decoder. The
+[[file:bf16-handoff.md][core handoff]] specifies ordinary and special bf16 values, malformed
+buffers, bulk-size acceptance, and the conditions for resuming the loader.
+No additional source block is tangled for a decoder that does not exist.
+
 The vendored reader and the three local modules this builds on.
 
 #+begin_src mlpl :tangle ../lib/safetensors/plan.mlpl

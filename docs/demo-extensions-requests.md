@@ -139,6 +139,11 @@ it.
 
 **Not requested yet. Raise only if `sw-mlpl` declines request R11.**
 
+Rechecked 2026-09-22: R11 is still missing at upstream HEAD `6d784660`, but
+no decline has been observed. The bf16 step recorded an unavailable result
+and chose to wait for core; E3 remains inactive. Acceptance and resumption
+are pinned in [the decoder handoff](bf16-handoff.md).
+
 The `bf16` dtype shipped upstream, but the bulk decode did not:
 `reinterpret(bytes, "bf16")` returns a typed byte view with no length and no
 arithmetic, and the only way to read values is one scalar at a time. The

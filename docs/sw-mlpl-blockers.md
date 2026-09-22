@@ -34,6 +34,12 @@ CUDA acceptance requires a successful supported build, confirmed device
 dispatch, and parity for Qwen3's array operations; details and the failed
 build command are in [Linux setup](linux-toolchain.md).
 
+The subsequent bf16 decoding step reconfirmed R11 on the same build and
+checked that upstream HEAD had not advanced. Its outcome is **unavailable**,
+not a delivered loader. See [the core handoff](bf16-handoff.md) for exact
+acceptance cases and resume conditions. Real-model smoke/baseline are
+deferred; fixture-based scaling can proceed independently.
+
 ## Historical Apple measurements
 
 Measured against:
