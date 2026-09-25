@@ -1,9 +1,10 @@
 number = 1
 slug = "upstream-revalidation"
-status = "in-progress"
+status = "completed"
 description = "Build isolated sw-MLPL cd3cd03f, measure delivered unpack against the bf16 ha..."
 role = "production"
 context_files = []
 created_at = "2026-09-25T08:10:19"
+completed_at = "2026-09-25T08:16:19"
 task_type = "validation"
-commits = []
+commits = ["35f9938f563f48696312c8148b9d0c8f9778dc35"]

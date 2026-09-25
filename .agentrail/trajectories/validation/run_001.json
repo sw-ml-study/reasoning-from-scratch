@@ -1,0 +1,11 @@
+{
+  "task_type": "validation",
+  "state": {
+    "number": 1,
+    "step": "upstream-revalidation"
+  },
+  "action": "Read-only upstream checks; isolated worktree and release build; old/new native acceptance tests; measured capability drift and reconciled unpack only; bounded bulk benchmark; packaged tokenizer checks; updated catalog, handoffs and ledger; full gate and named-path commit.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-25T08:16:19"
+}
