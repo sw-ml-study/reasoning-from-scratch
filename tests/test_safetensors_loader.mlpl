@@ -1,0 +1,150 @@
+# Authored bf16 file acceptance: exact byte ranges, finite policy, errors, projection orientation, tied model assembly and cached forward parity.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/generate/generate.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+
+def u:stl_write(path, text, data) {
+  "Write a tiny authored file from JSON and a numeric byte vector, including its little-endian length prefix.";
+  bytes = tokenize_bytes(text);
+  n = tally(bytes);
+  write_bytes(path, concat(concat([mod(n, 256), floor(n / 256), 0, 0, 0, 0, 0, 0], bytes), data))
+}
+
+def u:stl_fixture(untied) {
+  "Reuse only the existing fixture's shapes; author bf16 payload values independently as 1 plus global index modulo 127 over 128.";
+  header = u:st_open("out/fixtures/tiny-checkpoint.safetensors", {})?;
+  text = "{";
+  i = 0;
+  while lt(i, header.tensor_count) {
+    name = unwrap(list_get(header.names, i));
+    entry = u:st_entry(header, name)?;
+    if i {
+      text = str_concat(text, ",")
+    };
+    text = str_concat(text, str_concat(to_json(name)?, str_concat(":", to_json({dtype: "BF16", shape: entry.shape, data_offsets: [2 * entry.start, 2 * entry.end]})?)));
+    i = i + 1
+  };
+  count = header.parameter_count;
+  if untied {
+    text = str_concat(text, str_concat(",\"lm_head.weight\":", to_json({dtype: "BF16", shape: [32, 16], data_offsets: [2 * count, 2 * (count + 512)]})?));
+    count = count + 512
+  };
+  data = flatten(concat(reshape(128 + mod(range(count), 127), [count, 1]), zeros([count, 1]) + 63, 1));
+  path = if untied {
+    "out/fixtures/loader-untied.safetensors"
+  } else {
+    "out/fixtures/loader-bf16.safetensors"
+  };
+  u:stl_write(path, str_concat(text, "}"), data)?;
+  u:st_open(path, {})
+}
+
+@test {name: "named tensor decoding respects relative data offsets and matrix shape", tags: ["safetensors", "loader"]}
+def u:test_stl_named() {
+  "A non-first tensor must not read the header or an adjacent tensor's bytes.";
+  h = u:stl_fixture(0)?;
+  name = u:st_layer_name(1, "wk")?;
+  entry = u:st_entry(h, name)?;
+  actual = u:st_read_tensor(h, name, [8, 16], "BF16")?;
+  expected = reshape(1 + mod(range(entry.parameters) + entry.start / 2, 127) / 128, [8, 16]);
+  u:assert_eq(actual, expected, "exact decoded values")?;
+  u:assert_eq(shape(actual), [8, 16], "stored shape")
+}
+
+@test {name: "layer loader transposes projections and leaves normalization vectors unchanged", tags: ["safetensors", "loader"]}
+def u:test_stl_orientation() {
+  "Nonsquare key and down projections expose incorrect orientation.";
+  h = u:stl_fixture(0)?;
+  config = u:qwen_config_tiny();
+  wk = u:st_read_projection(h, config, 1, "wk", "BF16")?;
+  stored = u:st_read_tensor(h, u:st_layer_name(1, "wk")?, [8, 16], "BF16")?;
+  u:assert_eq(wk, transpose(stored), "key transpose")?;
+  u:assert_eq(shape(u:st_read_projection(h, config, 0, "down", "BF16")?), [32, 16], "down orientation")?;
+  u:assert_eq(shape(u:st_read_projection(h, config, 0, "qn", "BF16")?), [4], "gain unchanged")
+}
+
+@test {name: "loader rejects missing tensors unsupported dtypes and wrong shapes", tags: ["safetensors", "errors"]}
+def u:test_stl_contract_errors() {
+  "Validation runs before byte decoding and distinguishes each contract mismatch.";
+  h = u:stl_fixture(0)?;
+  u:assert_err(u:st_read_tensor(h, "absent", [1], "BF16"), "missing")?;
+  u:assert_err(u:st_read_tensor(h, u:st_embedding_name(), [1], "BF16"), "wrong shape")?;
+  u:assert_err(u:st_read_tensor(h, u:st_embedding_name(), [32, 16], "F32"), "wrong dtype")?;
+  old = u:st_open("out/fixtures/tiny-checkpoint.safetensors", {})?;
+  u:assert_err(u:st_read_tensor(old, u:st_embedding_name(), [32, 16], "U8"), "unsupported integer weights")?;
+  u:assert_err(u:st_read_projection(h, u:qwen_config_tiny(), 0, "bogus", "BF16"), "unknown role")
+}
+
+@test {name: "loader refuses files truncated after header validation", tags: ["safetensors", "errors"]}
+def u:test_stl_truncated() {
+  "A stale header cannot authorize reading beyond the current file or quietly accept a short read.";
+  h = u:stl_fixture(0)?;
+  bytes = read_bytes(h.path, 0, h.file_size - 1)?;
+  write_bytes(h.path, bytes)?;
+  u:assert_err(u:st_read_tensor(h, u:st_embedding_name(), [32, 16], "BF16"), "changed file size")?;
+  u:assert_err(u:st_open(h.path, {}), "fresh header rejects truncation")
+}
+
+@test {name: "loader rejects nonfinite weights but preserves negative zero", tags: ["safetensors", "errors"]}
+def u:test_stl_nonfinite() {
+  "Model weights use a finite-only policy even though the primitive supports infinities and NaNs.";
+  path = "out/fixtures/loader-special.safetensors";
+  text = "{\"x\":{\"dtype\":\"BF16\",\"shape\":[1],\"data_offsets\":[0,2]}}";
+  u:stl_write(path, text, [128, 127])?;
+  u:assert_err(u:st_read_tensor(u:st_open(path, {})?, "x", [1], "BF16"), "infinity")?;
+  u:stl_write(path, text, [193, 127])?;
+  u:assert_err(u:st_read_tensor(u:st_open(path, {})?, "x", [1], "BF16"), "NaN")?;
+  u:stl_write(path, text, [0, 128])?;
+  value = u:st_read_tensor(u:st_open(path, {})?, "x", [1], "BF16")?;
+  u:assert_eq(1 / at(value, 0), (0 - 1) / 0, "signed zero")
+}
+
+@test {name: "loaded tied model runs full and cached forward with identical logits", tags: ["safetensors", "loader"]}
+def u:test_stl_model() {
+  "Every tensor is loaded before inference; the tied output reuses the embedding and callbacks read resident weights.";
+  h = u:stl_fixture(0)?;
+  config = u:qwen_config_tiny();
+  model = u:st_load_model(h.path, config, "BF16", {})?;
+  u:assert_eq(model.checkpoint.tied, 1, "tied head")?;
+  u:assert_eq(call(model.layer_weights, 1).wk, u:st_read_projection(h, config, 1, "wk", "BF16")?, "resident layer")?;
+  full = u:qwen_next_logits(config, model, [1, 2, 3]);
+  cached = u:gen_step(config, model, u:gen_prefill(config, model, [1, 2]), 3).logits;
+  u:assert_approx(cached, full, 1e-10, "cache parity")?;
+  write_bytes(h.path, [])?;
+  u:assert_eq(u:qwen_next_logits(config, model, [1, 2, 3]), full, "no file reads during inference")
+}
+
+@test {name: "model assembly explicitly refuses separate output heads", tags: ["safetensors", "errors"]}
+def u:test_stl_untied() {
+  "The existing Qwen forward assumes tying, so a separate head must not be silently ignored.";
+  h = u:stl_fixture(1)?;
+  result = u:st_load_model(h.path, u:qwen_config_tiny(), "BF16", {});
+  u:assert_err(result, "separate head unsupported")?;
+  u:assert_text_eq(err_message(result).kind, "untied_head", "honest failure")
+}
+
+@test {name: "F32 tensors decode from packed bounded reads", tags: ["safetensors", "loader"]}
+def u:test_stl_f32() {
+  "Authored IEEE single bytes represent 1 and minus 2 without depending on pack for fixture generation.";
+  path = "out/fixtures/loader-f32.safetensors";
+  text = "{\"x\":{\"dtype\":\"F32\",\"shape\":[2],\"data_offsets\":[0,8]}}";
+  u:stl_write(path, text, [0, 0, 128, 63, 0, 0, 0, 192])?;
+  u:assert_eq(u:st_read_tensor(u:st_open(path, {})?, "x", [2], "F32")?, [1, 0 - 2], "F32 values")
+}
+
+@test {name: "malformed tensor byte spans are rejected before decoding", tags: ["safetensors", "errors"]}
+def u:test_stl_spans() {
+  "A shape-byte disagreement and a hole before the first payload are invalid headers, even when the file is long enough.";
+  path = "out/fixtures/loader-bad-span.safetensors";
+  u:stl_write(path, "{\"x\":{\"dtype\":\"BF16\",\"shape\":[2],\"data_offsets\":[0,2]}}", [128, 63])?;
+  u:assert_err(u:st_open(path, {}), "shape versus span")?;
+  u:stl_write(path, "{\"x\":{\"dtype\":\"BF16\",\"shape\":[1],\"data_offsets\":[2,4]}}", [0, 0, 128, 63])?;
+  u:assert_err(u:st_open(path, {}), "hole before data")
+}
+
+u:run_registered_tests()

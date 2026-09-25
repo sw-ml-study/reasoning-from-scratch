@@ -1,0 +1,9 @@
+number = 3
+slug = "tokenizer-download-integration"
+status = "pending"
+description = "Integrate the delivered Linux hftok and checksum-verified http download packa..."
+role = "production"
+context_files = []
+created_at = "2026-09-25T10:13:14"
+task_type = "mlpl-library"
+commits = []

@@ -1,5 +1,9 @@
 # Delivered dependency revalidation — 2026-09-25
 
+Follow-up: the [named-tensor loader](tensor-loader.md) has now shipped on
+tiny fixtures, including the previously deferred full embedding-size
+synthetic measurement. The revalidation snapshot below precedes that work.
+
 **Bulk unpack and the Linux tokenizer are available. The named-tensor loader
 is next; real model inference and learned reasoning are not demonstrated.**
 

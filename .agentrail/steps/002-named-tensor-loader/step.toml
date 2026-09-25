@@ -1,6 +1,6 @@
 number = 2
 slug = "named-tensor-loader"
-status = "pending"
+status = "in-progress"
 description = "Implement the now-unblocked MLPL safetensors named-tensor loader using valida..."
 role = "production"
 context_files = []

@@ -1,4 +1,14 @@
-# bf16 tensor decoding: primitive delivered, loader next
+# bf16 tensor decoding: primitive and fixture loader delivered
+
+## Loader delivered (2026-09-25)
+
+The [MLPL loader](tensor-loader.md) now reads packed named BF16/F32 tensors,
+rejects nonfinite weights and assembles the tied Qwen model. Nine native
+tests pass on tiny files, including forward/cache parity. The opt-in
+155,320,832-value synthetic case passed: decode 1.27 s, sampled process
+VmHWM 6,377,172 KiB (lower bound on peak RSS). No real weights were loaded.
+Tokenizer/download integration is next; prior sections below retain the
+primitive acceptance and historical handoff.
 
 ## Current outcome (2026-09-25)
 

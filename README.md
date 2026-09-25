@@ -40,17 +40,19 @@ Revalidated on Arch Linux on 2026-09-25 with sw-MLPL 0.22.0, build
 templates, tiny Qwen3 forward pass, and KV-cache generation are implemented.
 The safetensors header reader validates tensor names, shapes, offsets, and
 tied embeddings; the previous Apple run validated all 310 tensors in the
-real checkpoint. Tensor data is not yet loaded and there is no real-model
-accuracy result.
+real checkpoint. The [named-tensor loader](docs/tensor-loader.md) now decodes
+BF16/F32 weights and assembles a resident tied model on authored tiny files.
+Real checkpoint tensors are not yet loaded and there is no real-model accuracy result.
 
-The fixture suite has 129 native tests. A clean clone now generates its tiny
-checkpoint fixture automatically. The literate document reproduces all 20
+The fixture suite has 138 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The literate document reproduces all 21
 library sources. Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
 Core request R11 (`unpack`) has shipped and passes finite/special-value,
-malformed-buffer and bounded bulk acceptance checks. The named-tensor loader
-is now the next step; real weights are not loaded yet. See the
+malformed-buffer and full embedding-size synthetic checks. The loader passes
+projection, finite-weight and cached-forward tests. Tokenizer/download
+integration is next. See the
 [upstream revalidation](docs/upstream-revalidation.md) and
 [decoder handoff](docs/bf16-handoff.md). Saga 4 delivered [sampling primitives](docs/sampling.md):
 temperature, nucleus filtering, seeded categorical draws, and sampled tiny

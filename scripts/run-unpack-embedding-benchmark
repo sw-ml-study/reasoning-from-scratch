@@ -1,0 +1,33 @@
+#!/bin/sh
+# Opt-in synthetic full embedding-size allocation; sample Linux process high-water RSS when available.
+set -eu
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mkdir -p "$repo_root/out"
+fixture=$(mktemp "$repo_root/out/embedding-bf16.XXXXXX")
+trap 'rm -f "$fixture"' EXIT
+truncate -s 310641664 "$fixture"
+FULL_UNPACK_PATH="out/$(basename "$fixture")"
+export FULL_UNPACK_PATH
+start=$(date +%s)
+"$repo_root/scripts/run-mlpl-demo" demos/unpack_embedding_benchmark.mlpl &
+child=$!
+peak=0
+while kill -0 "$child" 2>/dev/null; do
+    if [ -r "/proc/$child/status" ]; then
+        sample=$(awk '/^VmHWM:/ {print $2}' "/proc/$child/status" 2>/dev/null || true)
+        case "$sample" in
+            ''|*[!0-9]*) ;;
+            *) if [ "$sample" -gt "$peak" ]; then peak=$sample; fi ;;
+        esac
+    fi
+    sleep 0.05
+done
+if wait "$child"; then status=0; else status=$?; fi
+end=$(date +%s)
+echo "process wall seconds (coarse): $((end - start))"
+if [ "$peak" -gt 0 ]; then
+    echo "sampled process VmHWM KiB: $peak (lower bound on peak RSS; 50 ms polling)"
+else
+    echo "peak RSS unavailable"
+fi
+exit "$status"

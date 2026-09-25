@@ -144,11 +144,10 @@ status = "accepted"
 id = "BF16"
 slug = "bf16-tensor-decode"
 chapter = 2
-# Diagnostic source only: the primitive shipped; the production loader is next.
-source = "probes/unpack-bulk.mlpl"
-test = "scripts/run-capability-probes"
-documentation = "docs/bf16-handoff.md"
-status = "planned"
+source = "lib/safetensors/load.mlpl"
+test = "tests/test_safetensors_loader.mlpl"
+documentation = "docs/tensor-loader.md"
+status = "accepted"
 
 [[component]]
 id = "UNPACK"

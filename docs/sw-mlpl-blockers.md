@@ -24,6 +24,24 @@ an explicit fallback and the CUDA runner exits 77. R3 and R10 remain open.
 See [reproduction and limits](upstream-revalidation.md). The loader is next;
 no real-model inference or training has been established.
 
+## Named-tensor loader, 2026-09-25
+
+Packed bounded reads are **supported**, measured by the new
+`packed-range-read` probe: exact offsets/lengths, Bytes storage and EOF clamp.
+The MLPL loader consumes this primitive with `unpack` and validated headers;
+nine native tests cover BF16/F32, finite policy, shape/name/dtype/span errors,
+truncation, projection orientation, tied assembly and cached/full logits.
+The complete gate now covers 138 tests, 26 probes and 21 tangled libraries.
+
+An opt-in sparse synthetic buffer with 155,320,832 bf16 values decoded in
+1,266.53 ms after a 171.03 ms packed read. Whole-process wall time was six
+coarse seconds; sampled VmHWM was 6,377,172 KiB, a lower bound on peak RSS.
+This establishes full embedding-size bulk allocation, not real file I/O
+throughput or whole-model feasibility. R10 copying remains **awkward** for
+resident role stacks and callbacks, and its original acceptance remains open.
+See [the loader contract and measurement](tensor-loader.md). Real weights,
+GPU inference and training remain unmeasured; no new upstream ask is needed.
+
 ## Historical host revalidation, 2026-09-22
 
 All 24 catalog outcomes were reproduced on Arch Linux x86_64 using a CPU

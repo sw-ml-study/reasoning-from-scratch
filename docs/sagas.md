@@ -119,12 +119,15 @@ conditions. Saga 4 is archived at
 | Step | Status |
 |---|---|
 | `upstream-revalidation` | done: isolated cd3cd03f CPU build, R11 acceptance, 129 native tests, 25 probe outcomes and packaged tokenizer parity |
-| `named-tensor-loader` | next: MLPL loader over validated headers and core unpack, fixture tests and full-size synthetic decode measurement |
-| tokenizer/download integration | pending: public facades, strict parity runner, pinned artifact digests and verified downloads |
+| `named-tensor-loader` | done: packed BF16/F32 reads, resident tied-model assembly, nine native tests and full embedding-size synthetic measurement |
+| tokenizer/download integration | next: public facades, strict parity runner, pinned artifact digests and verified downloads |
 | real-model smoke | deferred until loader/integration and feasibility checks pass; CPU first if practical, GPU requires R12 |
 
 See [the revalidation report](upstream-revalidation.md). Toy GRPO remains
 independent of the real-model path and retains the starting contract above.
+The [loader report](tensor-loader.md) records 138 tests, 26 probe outcomes,
+21 tangled libraries and a 1.27 s synthetic embedding decode; real inference
+and whole-model memory remain unmeasured.
 
 ## Queued: Saga 6, `distillation`
 

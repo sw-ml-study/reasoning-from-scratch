@@ -1,0 +1,12 @@
+# Probe: bounded packed reads retain bytes, honor offset/length and clamp at EOF; bulk unpack consumes the result without an expanded byte array.
+path = "out/fixtures/packed-range.bin"
+write_bytes(path, [99, 128, 63, 0, 64, 77])?
+bytes = read_bytes_packed(path, 1, 4)?
+end = read_bytes_packed(path, 5, 4)?
+empty = read_bytes_packed(path, 6, 4)?
+if str_eq(type_of(bytes), "bytes") * eq(size_bytes(bytes), 4) * equal(unpack(bytes, "bf16"), [1, 2]) * eq(size_bytes(end), 1) * eq(size_bytes(empty), 0) {
+  print("packed bounded read and EOF lengths: 4, 1, 0");
+  ok(1)
+} else {
+  err("packed range semantics mismatch")
+}

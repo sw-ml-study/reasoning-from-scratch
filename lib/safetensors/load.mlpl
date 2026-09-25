@@ -1,0 +1,89 @@
+# Packed bounded safetensors decoding and eager tied-Qwen model assembly. Requires vendor/swml/lib/safetensors-header/header.mlpl, lib/text/text.mlpl, lib/eval/data.mlpl, lib/qwen3/qwen3.mlpl, lib/safetensors/names.mlpl and lib/safetensors/plan.mlpl.
+
+def u:st_decode_dtype(dtype) {
+  "Map supported floating checkpoint dtypes to the generic packed-byte decoder; integer weights are not silently interpreted as model parameters.";
+  if str_eq(dtype, "BF16") {
+    ok("bf16")
+  } else {
+    if str_eq(dtype, "F32") {
+      ok("f32")
+    } else {
+      err({kind: "unsupported_dtype", dtype: dtype, message: "loader supports BF16 and F32 weights"})
+    }
+  }
+}
+
+def u:st_read_tensor(header, name, expected_shape, dtype) {
+  "Read exactly one validated data span as packed bytes, decode in bulk, require finite weights and restore the stored shape. Header must come from st_open; the file must remain unchanged.";
+  decoder = u:st_decode_dtype(dtype)?;
+  entry = u:st_check_tensor(header, name, expected_shape, dtype)?;
+  current_size = file_size(header.path)?;
+  if eq(current_size, header.file_size) {
+    length = entry.end - entry.start;
+    bytes = read_bytes_packed(header.path, 8 + header.header_length + entry.start, length)?;
+    if eq(size_bytes(bytes), length) {
+      decoded = unpack(bytes, decoder);
+      if eq(tally(decoded), entry.parameters) {
+        if reduce(:and, flatten(eq(decoded - decoded, 0))) {
+          ok(reshape(decoded, entry.shape))
+        } else {
+          err({kind: "nonfinite_weight", name: name, message: "weights must be finite"})
+        }
+      } else {
+        err({kind: "decode_shape", name: name, message: "decoded count disagrees with tensor shape"})
+      }
+    } else {
+      err({kind: "short_read", name: name, message: "packed read was shorter than the declared span"})
+    }
+  } else {
+    err({kind: "changed_file", name: name, message: "file size changed after header validation"})
+  }
+}
+
+def u:st_read_projection(header, config, layer, role, dtype) {
+  "Use the existing name/load plan, validate the expected role shape, and transpose output-by-input matrices into the forward pass orientation.";
+  plan = u:st_load_plan(header, config, layer, role)?;
+  values = u:st_read_tensor(header, plan.name, u:st_expected_shape(config, role), dtype)?;
+  ok(if plan.transpose {
+      transpose(values)
+    } else {
+      values
+    })
+}
+
+def u:st_read_stack(header, config, role, dtype) {
+  "Load one role across layers into a leading layer axis; no file reads remain in the inference callback.";
+  layer = 0;
+  stack = [];
+  while lt(layer, config.layers) {
+    values = u:st_read_projection(header, config, layer, role, dtype)?;
+    piece = reshape(values, concat([1], shape(values)));
+    stack = if layer {
+      concat(stack, piece, 0)
+    } else {
+      piece
+    };
+    layer = layer + 1
+  };
+  ok(stack)
+}
+
+def u:st_resident_layer(stacks, layer) {
+  "Select a resident layer from parallel role stacks. Container and slice copying remain an interpreter performance limitation, not a zero-copy claim.";
+  {wq: take(stacks.wq, 0, layer), wk: take(stacks.wk, 0, layer), wv: take(stacks.wv, 0, layer), wo: take(stacks.wo, 0, layer), qn: take(stacks.qn, 0, layer), kn: take(stacks.kn, 0, layer), n1: take(stacks.n1, 0, layer), n2: take(stacks.n2, 0, layer), gate: take(stacks.gate, 0, layer), up: take(stacks.up, 0, layer), down: take(stacks.down, 0, layer)}
+}
+
+def u:st_load_model(path, config, dtype, options) {
+  "Validate the entire checkpoint before reading payloads, then assemble the existing tied-Qwen model contract. Config is a trusted Qwen configuration; file immutability and provenance hashes are caller responsibilities.";
+  u:st_decode_dtype(dtype)?;
+  header = u:st_open(path, options)?;
+  if u:st_tied(header) {
+    summary = u:st_check_model(header, config, dtype)?;
+    embedding = u:st_read_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?;
+    final_norm = u:st_read_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?;
+    stacks = {wq: u:st_read_stack(header, config, "wq", dtype)?, wk: u:st_read_stack(header, config, "wk", dtype)?, wv: u:st_read_stack(header, config, "wv", dtype)?, wo: u:st_read_stack(header, config, "wo", dtype)?, qn: u:st_read_stack(header, config, "qn", dtype)?, kn: u:st_read_stack(header, config, "kn", dtype)?, n1: u:st_read_stack(header, config, "n1", dtype)?, n2: u:st_read_stack(header, config, "n2", dtype)?, gate: u:st_read_stack(header, config, "gate", dtype)?, up: u:st_read_stack(header, config, "up", dtype)?, down: u:st_read_stack(header, config, "down", dtype)?};
+    ok({embedding: embedding, final_norm: final_norm, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: call(:u:st_resident_layer, stacks), checkpoint: summary})
+  } else {
+    err({kind: "untied_head", message: "the Qwen forward contract requires tied embeddings; a separate output head is unsupported"})
+  }
+}

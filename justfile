@@ -74,6 +74,10 @@ cuda-probe:
 unpack-benchmark:
     ./scripts/run-unpack-benchmark
 
+# Measure a full embedding-size synthetic allocation (opt-in; several GiB RAM).
+unpack-embedding-benchmark:
+    ./scripts/run-unpack-embedding-benchmark
+
 # Run the complete precommit gate.
 check:
     ./scripts/check

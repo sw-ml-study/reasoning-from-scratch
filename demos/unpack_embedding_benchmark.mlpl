@@ -1,0 +1,21 @@
+# Opt-in embedding-size synthetic bf16 read/decode. A sparse zero file exercises allocation at 155,320,832 values without downloading weights.
+path = env("FULL_UNPACK_PATH")?
+start = clock_ms()
+bytes = read_bytes_packed(path, 0, 310641664)?
+read_ms = clock_ms() - start
+if eq(size_bytes(bytes), 310641664) {
+  ok(1)
+} else {
+  err("short synthetic input")?
+}
+start = clock_ms()
+values = unpack(bytes, "bf16")
+decode_ms = clock_ms() - start
+if equal(shape(values), [155320832]) * eq(reduce(:max, abs(values)), 0) {
+  print("bf16 values:", tally(values), "packed bytes:", size_bytes(bytes));
+  print("packed read ms:", read_ms, "bulk decode ms:", decode_ms);
+  print("Sparse synthetic zeros: not checkpoint loading, device throughput, or model accuracy.");
+  ok(1)
+} else {
+  err("embedding-size decode mismatch")
+}
