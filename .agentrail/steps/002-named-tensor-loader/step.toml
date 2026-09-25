@@ -1,0 +1,9 @@
+number = 2
+slug = "named-tensor-loader"
+status = "pending"
+description = "Implement the now-unblocked MLPL safetensors named-tensor loader using valida..."
+role = "production"
+context_files = []
+created_at = "2026-09-25T08:15:07"
+task_type = "mlpl-library"
+commits = []

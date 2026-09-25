@@ -1,0 +1,22 @@
+# Opt-in synthetic bulk decode measurement: one million f32 and bf16 values, with allocation outside the decode timing. No real weights or accuracy.
+values = range(1000000) / 8
+bytes = pack(values, "f32")
+start = clock_ms()
+decoded = unpack(bytes, "f32")
+elapsed = clock_ms() - start
+if equal(values, decoded) {
+  print("f32 values:", tally(decoded), "decode ms:", elapsed)
+} else {
+  err("f32 bulk mismatch")?
+}
+bf16 = pack(reshape([128, 63] + zeros([1000000, 2]), [2000000]), "u8")
+start = clock_ms()
+decoded = unpack(bf16, "bf16")
+elapsed = clock_ms() - start
+if eq(tally(decoded), 1000000) * reduce(:and, eq(decoded, 1)) {
+  print("bf16 values:", tally(decoded), "decode ms:", elapsed)
+} else {
+  err("bf16 bulk mismatch")?
+}
+print("Single-run decode timings only; peak RSS and full-size tensor loading are not measured.")
+ok(1)

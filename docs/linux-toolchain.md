@@ -1,5 +1,23 @@
 # Arch Linux toolchain and revalidation
 
+## Current tools (2026-09-25)
+
+Use the new isolated build, which provides required bulk `unpack`:
+
+```sh
+export MLPL=/disk1/tmp/reasoning-tools/build-cd3cd03f/release/mlpl-repl
+export MLPLUNIT=/disk1/tmp/reasoning-tools/mlplunit/bin/mlplunit
+export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-cd3cd03f/scripts/mlpl-fmt.sh
+just check
+```
+
+The source revision is `cd3cd03fd4eb66d1a33390a40f27c28e8a55e435`.
+The installed tools and old checkout remain untouched. The moved
+`../demo-extensions` now supplies tested Linux tokenizer binaries. CUDA is
+still unavailable; see [current evidence](upstream-revalidation.md).
+
+## Historical migration setup
+
 Measured 2026-09-22. The original September 16–19 measurements were on an
 Apple M1 Max; they are historical, not forecasts for this host.
 

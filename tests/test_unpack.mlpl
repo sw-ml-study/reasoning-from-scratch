@@ -1,0 +1,60 @@
+# Consumer acceptance for upstream bulk little-endian unpack: shape, finite bf16, special values, invalid buffers and f32 round trips.
+
+@test {name: "bulk bf16 decoding preserves authored values and flat shape", tags: ["unpack", "bf16"]}
+def u:test_unpack_values() {
+  "The six-value handoff buffer is decoded directly to a rank-one numeric array.";
+  values = unpack(pack([128, 63, 128, 191, 0, 64, 0, 63, 0, 0, 72, 66], "u8"), "bf16");
+  u:assert_eq(values, [1, 0 - 1, 2, 0.5, 0, 50], "values")?;
+  u:assert_eq(shape(values), [6], "flat array")?;
+  u:assert_eq(shape(unpack(pack([], "u8"), "bf16")), [0], "empty array")
+}
+
+@test {name: "bf16 subnormals and finite extremes decode exactly", tags: ["unpack", "bf16"]}
+def u:test_unpack_extremes() {
+  "Subnormals must not be silently flushed to zero or confused with the minimum normal.";
+  values = unpack(pack([1, 0, 127, 0, 128, 0, 127, 127], "u8"), "bf16");
+  u:assert_eq(values, [pow(2, 0 - 133), 127 * pow(2, 0 - 133), pow(2, 0 - 126), (2 - pow(2, 0 - 7)) * pow(2, 127)], "finite edge cases")
+}
+
+@test {name: "bf16 retains signed zeros infinities and NaN", tags: ["unpack", "bf16"]}
+def u:test_unpack_special() {
+  "Reciprocals distinguish the zero signs, and self-inequality identifies NaN.";
+  values = unpack(pack([0, 0, 0, 128, 128, 127, 128, 255, 193, 127], "u8"), "bf16");
+  u:assert_eq(1 / at(values, 0), 1 / 0, "positive zero")?;
+  u:assert_eq(1 / at(values, 1), (0 - 1) / 0, "negative zero")?;
+  u:assert_eq(at(values, 2), 1 / 0, "positive infinity")?;
+  u:assert_eq(at(values, 3), (0 - 1) / 0, "negative infinity")?;
+  u:assert_false(eq(at(values, 4), at(values, 4)), "NaN")
+}
+
+@test {name: "unpack rejects malformed lengths dtypes and arguments recoverably", tags: ["unpack", "errors"]}
+def u:test_unpack_errors() {
+  "Each error stays catchable, including wrong argument kinds.";
+  odd = try {
+    ok(unpack(pack([0], "u8"), "bf16"))
+  } catch e {
+    err(e.message)
+  };
+  dtype = try {
+    ok(unpack(pack([0, 0], "u8"), "bogus"))
+  } catch e {
+    err(e.message)
+  };
+  input = try {
+    ok(unpack([0, 0], "bf16"))
+  } catch e {
+    err(e.message)
+  };
+  u:assert_err(odd, "odd byte count")?;
+  u:assert_err(dtype, "invalid dtype")?;
+  u:assert_err(input, "not bytes")
+}
+
+@test {name: "f32 pack unpack round trips a bounded numeric vector", tags: ["unpack"]}
+def u:test_unpack_f32() {
+  "Binary fractions are exact in f32 so this fixture needs no tolerance.";
+  values = range(1024) / 8 - 64;
+  u:assert_eq(unpack(pack(values, "f32"), "f32"), values, "f32 round trip")
+}
+
+u:run_registered_tests()

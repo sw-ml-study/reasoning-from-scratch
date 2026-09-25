@@ -7,7 +7,24 @@ drifts from the declaration, so an upstream change surfaces as a gate
 failure that must be reconciled here in the same step. Per-run output,
 wall time, and peak resident memory land in `out/probes/`.
 
-## Current host revalidation, 2026-09-22
+## Current host revalidation, 2026-09-25
+
+CPU build `cd3cd03fd4eb66d1a33390a40f27c28e8a55e435` replaces the previous
+pin. Bulk `unpack` (R11) is now **supported**: the existing probe changed
+from fail to pass, five new native acceptance tests pass, and one million
+f32 and bf16 values decode correctly in single runs of 12.49 ms and 19.21 ms.
+These are decode-only timings, not complete tensor load or peak-RSS claims.
+All other 24 probe outcomes are unchanged; the full suite has 129 tests.
+
+The moved extension at `4be5074` passes six fixture cases, eight real-Qwen
+goldens/round trips and an NFC check. The tokenizer implementation gap is
+resolved; facade integration and 12,000-prompt throughput remain pending.
+CUDA dependency cudarc 0.19.7 is unchanged; the new CPU build still produces
+an explicit fallback and the CUDA runner exits 77. R3 and R10 remain open.
+See [reproduction and limits](upstream-revalidation.md). The loader is next;
+no real-model inference or training has been established.
+
+## Historical host revalidation, 2026-09-22
 
 All 24 catalog outcomes were reproduced on Arch Linux x86_64 using a CPU
 release build of sw-MLPL 0.22.0 at `6d784660`. This is the current validation

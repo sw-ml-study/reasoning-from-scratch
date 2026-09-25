@@ -94,8 +94,8 @@ Rewards, advantages, sequence log-probabilities, the policy loss, a toy
 training run, real-model gradient feasibility, bounded training, and the
 chapter 7 stabilizers.
 
-At the next session, archive the completed Saga 4 through Agentrail commands
-and initialize Saga 5. Start with `rl-math-on-toy`: native MLPL goldens for
+After the delivery-integration work below, initialize Saga 5. Start with
+`rl-math-on-toy`: native MLPL goldens for
 boxed-only rewards, unbiased group advantages with epsilon (including
 `[1,1,0,0]` and constant rewards), masked summed sequence log probabilities,
 policy loss, clipped ratios, KL surrogate, entropy, ordered think-tag format
@@ -108,6 +108,23 @@ synthetic verifiable task and measure reward before and after updates,
 retaining metrics and checkpoint provenance. No real weights or CUDA are
 needed for these first steps. Keep real-model gradient feasibility and
 training gated by the decoder, tokenizer and measured device/memory limits.
+
+## Active: `upstream-delivery-integration`
+
+The user requested a fresh check and continuation after moving the extension
+checkout. Core unpack has also shipped, activating the decoder resume
+conditions. Saga 4 is archived at
+`.agentrail-archive/inference-time-scaling-20260925T081019/`.
+
+| Step | Status |
+|---|---|
+| `upstream-revalidation` | done: isolated cd3cd03f CPU build, R11 acceptance, 129 native tests, 25 probe outcomes and packaged tokenizer parity |
+| `named-tensor-loader` | next: MLPL loader over validated headers and core unpack, fixture tests and full-size synthetic decode measurement |
+| tokenizer/download integration | pending: public facades, strict parity runner, pinned artifact digests and verified downloads |
+| real-model smoke | deferred until loader/integration and feasibility checks pass; CPU first if practical, GPU requires R12 |
+
+See [the revalidation report](upstream-revalidation.md). Toy GRPO remains
+independent of the real-model path and retains the starting contract above.
 
 ## Queued: Saga 6, `distillation`
 

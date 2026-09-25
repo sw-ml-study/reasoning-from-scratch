@@ -35,23 +35,24 @@ the reasoning behind it.
 
 ## Status
 
-Revalidated on Arch Linux on 2026-09-22 with sw-MLPL 0.22.0, build
-`6d784660`. The verifier, evaluation harness, reference tokenizer and
+Revalidated on Arch Linux on 2026-09-25 with sw-MLPL 0.22.0, build
+`cd3cd03f`. The verifier, evaluation harness, reference tokenizer and
 templates, tiny Qwen3 forward pass, and KV-cache generation are implemented.
 The safetensors header reader validates tensor names, shapes, offsets, and
 tied embeddings; the previous Apple run validated all 310 tensors in the
 real checkpoint. Tensor data is not yet loaded and there is no real-model
 accuracy result.
 
-The fixture suite has 124 native tests. A clean clone now generates its tiny
+The fixture suite has 129 native tests. A clean clone now generates its tiny
 checkpoint fixture automatically. The literate document reproduces all 20
 library sources. Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
-The bf16 decoding step recorded an explicit unavailable outcome: core
-request R11 (`unpack`) is still missing at upstream HEAD `6d784660`.
-[The decoder handoff](docs/bf16-handoff.md) pins reproduction, acceptance,
-and resume conditions. Saga 4 has delivered [sampling primitives](docs/sampling.md):
+Core request R11 (`unpack`) has shipped and passes finite/special-value,
+malformed-buffer and bounded bulk acceptance checks. The named-tensor loader
+is now the next step; real weights are not loaded yet. See the
+[upstream revalidation](docs/upstream-revalidation.md) and
+[decoder handoff](docs/bf16-handoff.md). Saga 4 delivered [sampling primitives](docs/sampling.md):
 temperature, nucleus filtering, seeded categorical draws, and sampled tiny
 generation, with exact cached/full-forward agreement. It also delivers
 [chain-of-thought prompting and self-consistency](docs/self-consistency.md):
@@ -64,11 +65,12 @@ prompts, bounded accept-if-not-worse rounds, and best-of-N with stable ties
 and complete traces. `just refinement-demo` narrates scripted corrections
 and regressions; it does not demonstrate learned reasoning. Saga 4 closes
 with [the scaling report](docs/scaling-report.md): 41 scaling tests and
-explicitly unavailable real-model measurements. Analytic toy GRPO is next.
-Real loading remains deferred. Batched matmul and container-copy costs remain
-throughput constraints. The tokenizer extension passed synthetic parity on
-Apple but refused the real vocabulary's NFC normalizer; that extension is
-not installed in this Linux checkout. Real-model scaling reports, GRPO, and
+explicitly unavailable real-model measurements. Delivered dependencies are
+being integrated before returning to the queued toy GRPO work.
+Batched matmul and container-copy costs remain throughput constraints.
+The moved Linux tokenizer package passes six fixture cases, eight real-Qwen
+goldens and NFC; its public-facade integration and corpus throughput remain
+pending. Real-model scaling reports, GRPO, and
 distillation are planned; none has real-model results.
 
 The host has an RTX 5060 Ti with 16 GB VRAM, but GPU execution is not yet

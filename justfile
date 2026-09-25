@@ -70,6 +70,10 @@ capabilities:
 cuda-probe:
     ./scripts/run-cuda-probe
 
+# Measure bounded synthetic bulk decoding (opt-in; no real weights).
+unpack-benchmark:
+    ./scripts/run-unpack-benchmark
+
 # Run the complete precommit gate.
 check:
     ./scripts/check

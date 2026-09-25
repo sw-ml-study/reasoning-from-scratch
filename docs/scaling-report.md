@@ -1,5 +1,10 @@
 # Inference-time scaling report
 
+Update 2026-09-25: [upstream revalidation](upstream-revalidation.md) accepts
+bulk unpack and the moved Linux tokenizer. The prerequisite table below is
+the September 22 snapshot. Real-model measurements are still unavailable;
+the named-tensor loader is next.
+
 Recorded 2026-09-22 on Arch Linux. Saga 4's MLPL methods are implemented and
 fixture-tested. **Real-model MATH-500 accuracy, inference throughput, peak
 memory and scaling improvements are unavailable.** No checkpoint tensors

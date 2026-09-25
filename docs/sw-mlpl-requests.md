@@ -1,5 +1,8 @@
 # Requests to `../sw-mlpl` (core)
 
+Current update, 2026-09-25: R11 is delivered and accepted on `cd3cd03f`;
+R3, R10 and R12 remain open. See [revalidation](upstream-revalidation.md).
+
 This is the single list of what this repository asks of the language. Each
 item names the probe that demonstrates the gap today, the semantics
 requested, and the acceptance cases the probe will check once the change
@@ -129,7 +132,13 @@ ledger, and removes the workaround where the plan allows.
   now R11 below, because measurement showed it is the blocking half.
 - Before the fix: accepted dtypes were `u8 i8 u16 i16 u32 i32 u64 i64 f32 f64`.
 
-## R11. Bulk `unpack(bytes, dtype)` returning an array — blocking
+## R11. Bulk `unpack(bytes, dtype)` returning an array — delivered
+
+Accepted 2026-09-25 on `cd3cd03f`, shipped by `b3180d9a`. The probe, five
+native tests and bounded million-value f32/bf16 runs pass. The 155-million
+value load/RSS case is still deferred to loader feasibility. See
+[current evidence](upstream-revalidation.md). The original request and
+September 22 disposition below are historical.
 
 Consumer disposition, 2026-09-22: the bf16 decoding step closed with an
 explicit unavailable result after the probe failed and upstream HEAD was

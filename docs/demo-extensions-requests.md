@@ -11,6 +11,13 @@ begins.
 
 ## E1. Hugging Face tokenizer extension (`hftok`)
 
+**Current consumer result, 2026-09-25:** the moved Linux checkout at
+`4be5074` supplies the packaged binary and public facade. With interpreter
+`cd3cd03f`, six fixture cases, eight real-Qwen goldens/round trips and NFC
+pass. The previous NFC gap below is resolved. Public-facade integration,
+strict acceptance runner updates and corpus throughput remain consumer work;
+see [the revalidation report](upstream-revalidation.md).
+
 **State on 2026-09-18, second look: built and passing fixture parity.** The
 library loads, and it encodes all six committed fixture expectations to ids
 identical to the MLPL reference, faster than the reference. Four things a
@@ -136,6 +143,9 @@ repository will simply document the expected duration rather than ask for
 it.
 
 ## E3. Contingent: a native safetensors tensor reader
+
+2026-09-25: core R11 has shipped and passed consumer acceptance. The fallback
+is not needed; proceed with an MLPL loader over core `unpack`.
 
 **Not requested yet. Raise only if `sw-mlpl` declines request R11.**
 

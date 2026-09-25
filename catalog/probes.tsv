@@ -22,5 +22,5 @@ native-roundtrip-10mb	probes/native-roundtrip-10mb.mlpl	core	pass	a 10 MB array 
 matmul-throughput	probes/matmul-throughput.mlpl	core	pass	informational matmul timings for the 0.6B feasibility estimate	available
 record-lookup-scaling	probes/record-lookup-scaling.mlpl	core	fail	record field lookup is independent of record size	open
 list-index-scaling	probes/list-index-scaling.mlpl	core	fail	string-list indexing is independent of list length	open
-unpack-bulk	probes/unpack-bulk.mlpl	core	fail	a typed byte buffer decodes to a numeric array in one call	open
+unpack-bulk	probes/unpack-bulk.mlpl	core	pass	a typed byte buffer decodes to a numeric array in one call	shipped
 sampling-array-ops	probes/sampling-array-ops.mlpl	library	pass	stable sorting, gather, prefix sums, seeded random and finite masks support sampling	available

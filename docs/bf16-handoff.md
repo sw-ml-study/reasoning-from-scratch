@@ -1,4 +1,19 @@
-# bf16 tensor decoding: unavailable, awaiting R11
+# bf16 tensor decoding: primitive delivered, loader next
+
+## Current outcome (2026-09-25)
+
+R11 shipped in upstream commit `b3180d9a` and is accepted on isolated CPU
+build `cd3cd03fd4eb66d1a33390a40f27c28e8a55e435`. Five native consumer tests
+cover the finite/special-value, shape and invalid-buffer cases below. The
+six-value probe passes, and opt-in million-value f32/bf16 checks pass.
+The full 155,320,832-value measurement and peak RSS remain unmeasured.
+See [the revalidation report](upstream-revalidation.md) for exact evidence.
+
+The next step is the named-tensor loader with fixture tests. R11 no longer
+blocks its implementation. Real-model smoke still requires the loader and
+measured memory/throughput. E3 is unnecessary while core unpack satisfies
+the contract; no native-reader request is activated. The previous outcome
+below is retained as historical evidence, not current status.
 
 ## Recorded outcome (2026-09-22)
 

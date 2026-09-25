@@ -5242,8 +5242,9 @@ What is deliberately absent is as important. There is no symbolic
 simplification, so =2x + 3x= and =5x= do not match. There is no regular
 expression anywhere. Tiny synthetic weights generate tokens and prove the
 forward, cache, and sampler contracts, but no real checkpoint data is loaded.
-Bulk bf16 decoding remains unavailable; no tiny-model result is evidence of
-real-model accuracy. Stable likelihood and entropy scoring now support
+Bulk bf16 unpack now passes consumer acceptance on =cd3cd03f=; the
+named-tensor loader is next. No tiny-model result is evidence of real-model
+accuracy. Stable likelihood and entropy scoring now support
 candidate ranking over fixtures and the tiny model. Bounded self-refinement
 and best-of-N now have callback goldens and a scripted demo. Real-model
 scaling measurements remain unavailable pending the decoder handoff.

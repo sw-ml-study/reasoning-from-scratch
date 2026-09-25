@@ -2,7 +2,7 @@ schema = "sw-ml-study.reasoning-components"
 version = 1
 
 # Accepted components below retain their algorithms and are revalidated on
-# the Arch CPU build 6d784660. CUDA execution is not accepted; see
+# the Arch CPU build cd3cd03f. CUDA execution is not accepted; see
 # docs/linux-toolchain.md and core request R12.
 
 [[component]]
@@ -144,11 +144,20 @@ status = "accepted"
 id = "BF16"
 slug = "bf16-tensor-decode"
 chapter = 2
-# Diagnostic source only: no production loader exists while R11 is missing.
+# Diagnostic source only: the primitive shipped; the production loader is next.
 source = "probes/unpack-bulk.mlpl"
 test = "scripts/run-capability-probes"
 documentation = "docs/bf16-handoff.md"
-status = "blocked"
+status = "planned"
+
+[[component]]
+id = "UNPACK"
+slug = "bulk-byte-decoding"
+chapter = 2
+source = "probes/unpack-bulk.mlpl"
+test = "tests/test_unpack.mlpl"
+documentation = "docs/upstream-revalidation.md"
+status = "accepted"
 
 [[component]]
 id = "QWEN"

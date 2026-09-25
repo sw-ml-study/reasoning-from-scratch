@@ -1,0 +1,5 @@
+#!/bin/sh
+# Opt-in bounded synthetic unpack measurement, outside the fixture gate.
+set -eu
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$repo_root/scripts/run-mlpl-demo" demos/unpack_benchmark.mlpl
