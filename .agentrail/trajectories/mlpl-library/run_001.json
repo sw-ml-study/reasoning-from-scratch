@@ -1,0 +1,11 @@
+{
+  "task_type": "mlpl-library",
+  "state": {
+    "number": 2,
+    "step": "named-tensor-loader"
+  },
+  "action": "Test-first authored tiny safetensors; packed bounded read probe; whole-model validation and resident role stacks in MLPL; cache/forward parity and no-inference-I/O test; opt-in sparse full embedding allocation with Linux VmHWM sampling; exact literate tangle and documentation/catalog updates; full gate and named-path commit.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-25T10:14:08"
+}
