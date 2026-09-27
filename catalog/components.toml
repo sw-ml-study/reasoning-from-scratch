@@ -119,8 +119,26 @@ slug = "tokenizer-parity"
 chapter = 2
 source = "demos/tokenizer_parity.mlpl"
 test = "scripts/run-tokenizer-parity"
-documentation = "docs/demo-extensions-requests.md"
-status = "blocked"
+documentation = "docs/extension-integration.md"
+status = "accepted"
+
+[[component]]
+id = "ARTIFACT"
+slug = "verified-artifacts"
+chapter = 2
+source = "lib/artifacts/transfer.mlpl"
+test = "tests/test_artifacts.mlpl"
+documentation = "docs/extension-integration.md"
+status = "accepted"
+
+[[component]]
+id = "TOKCHECK"
+slug = "strict-tokenizer-parity"
+chapter = 2
+source = "lib/tokenizer/parity.mlpl"
+test = "tests/test_tokenizer_parity.mlpl"
+documentation = "docs/extension-integration.md"
+status = "accepted"
 
 [[component]]
 id = "STN"

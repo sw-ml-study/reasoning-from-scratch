@@ -1,33 +1,5 @@
 #!/bin/sh
-# Download the MATH-500 evaluation set (JSONL) into the ignored data/ tree.
-# Opt-in: never part of `just check`. Prints provenance, checks the published
-# byte size, and refuses to overwrite an existing file.
+# Opt-in pinned MATH-500 download with byte-count and SHA-256 verification.
 set -eu
-
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-url="https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/main/test.jsonl"
-expected_bytes=446564
-dest="$repo_root/data/math500/test.jsonl"
-
-echo "MATH-500 evaluation set"
-echo "  source:  $url"
-echo "  origin:  OpenAI PRM800K MATH splits (https://github.com/openai/prm800k), 500 problems"
-echo "  license: per the dataset card; the PRM800K source repository is MIT licensed"
-echo "  dest:    ${dest#"$repo_root/"} (ignored by git, never redistributed)"
-
-if [ -e "$dest" ]; then
-    echo "refusing to overwrite existing file: ${dest#"$repo_root/"}" >&2
-    exit 1
-fi
-
-mkdir -p "$(dirname "$dest")"
-tmp="$dest.part"
-curl -L --fail --silent --show-error -o "$tmp" "$url"
-actual=$(wc -c < "$tmp" | tr -d ' ')
-if [ "$actual" -ne "$expected_bytes" ]; then
-    rm -f "$tmp"
-    echo "size mismatch: expected $expected_bytes bytes, got $actual; refusing the download" >&2
-    exit 1
-fi
-mv "$tmp" "$dest"
-echo "  bytes:   $actual (matches the published size)"
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$repo/scripts/fetch-artifact" math500

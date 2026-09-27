@@ -1,106 +1,40 @@
-# Compare the MLPL reference tokenizer with the native hftok extension on every committed expectation, then report throughput for both.
+# Strict opt-in tokenizer parity: public load plus boxed-handle native adapters pending core R13; fixture ids, real goldens, round trips and NFC all fail on mismatch.
 include "lib/text/text.mlpl";
-include "lib/eval/data.mlpl";
-include "lib/tokenizer/import.mlpl";
-include "lib/tokenizer/bpe.mlpl";
-include "lib/tokenizer/template.mlpl";
+include "lib/tokenizer/parity.mlpl";
 
-def u:parity_cases(path) {
-  "Read one expectation file as a list of JSON lines.";
-  text = read_text(path);
-  if is_err(text) {
-    []
-  } else {
-    str_split(u:text_trim(unwrap(text)), "\n")
+def u:parity_encode(box, text) {
+  "Work around R13: opaque handles can cross a user-function boundary inside records, but not as bare arguments.";
+  _hftok:encode(box.handle, text)
+}
+
+def u:parity_decode(box, ids) {
+  "Decode nonempty ids through the native ABI; empty ids return empty text locally because the current boundary rejects an empty decode argument.";
+  if tally(ids) { _hftok:decode(box.handle, ids) } else {
+    ""
   }
 }
-
-def u:parity_report(label, matched, total, reference_ms, extension_ms) {
-  "Print one comparison summary.";
-  print("  ", label, ":", matched, "of", total, "matched");
-  print("     reference ms:", round(reference_ms), " extension ms:", round(extension_ms))
-}
-
-print("WHAT THIS SHOWS -- the readable MLPL encoder and the native extension must produce identical token ids. The MLPL encoder is the specification; the extension is the implementation that runs at usable speed.")
-print("")
-print("NOTE -- this calls the extension's private namespace directly. The convention is that a shipped module.mlpl facade re-exposes it publicly; until that exists, the private names are what a consumer can reach.")
-print("")
-namespace = load_extension(unwrap_or(env("HFTOK_LIBRARY"), "hftok"))
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
 if str_eq(type_of(namespace), "result") {
-  print("UNAVAILABLE -- the hftok extension did not load:", err_message(namespace));
-  print("The reference encoder remains the path for bounded slices. Work order: docs/demo-extensions-requests.md item E1.");
-  err("hftok extension unavailable")
-} else {
-  print("loaded extension namespace:", namespace);
-  tiny_handle = _hftok:load_path(str_concat(unwrap_or(env("REPO_ROOT"), "."), "/fixtures/tokenizer/tiny-tokenizer.json"));
-  if str_eq(type_of(tiny_handle), "result") {
-    err(str_concat("hftok could not load the fixture tokenizer: ", err_message(tiny_handle)))
-  } else {
-    handle = tiny_handle;
-    tables = unwrap(u:tok_import("fixtures/tokenizer/tiny-tokenizer.json", {}));
-    base = unwrap(u:tok_merge_base(tables, 1));
-    count = u:tok_merge_count(tables);
-    cases = u:parity_cases("fixtures/tokenizer/tiny-expected.jsonl");
-    total = list_len(cases);
-    matched = 0;
-    reference_ms = 0;
-    extension_ms = 0;
-    i = 0;
-    while lt(i, total) {
-      row = unwrap(parse_json(unwrap(list_get(cases, i))));
-      t0 = clock_ms();
-      mine = unwrap(u:tok_encode(tables, row.text, base, count));
-      reference_ms = reference_ms + clock_ms() - t0;
-      t1 = clock_ms();
-      theirs = _hftok:encode(handle, row.text);
-      extension_ms = extension_ms + clock_ms() - t1;
-      agree = if str_eq(type_of(theirs), "array") {
-        equal(theirs, mine) * equal(mine, row.ids)
-      } else {
-        0
-      };
-      if agree {
-        matched = matched + 1
-      } else {
-        print("     MISMATCH on", row.text, "reference:", mine, "extension:", theirs)
-      };
-      i = i + 1
-    };
-    u:parity_report("fixture expectations", matched, total, reference_ms, extension_ms);
-    goldens = u:parity_cases("fixtures/tokenizer/qwen3-goldens.jsonl");
-    golden_total = list_len(goldens);
-    if golden_total {
-      real_handle = _hftok:load_path(str_concat(unwrap_or(env("REPO_ROOT"), "."), "/models/qwen3-0.6b-base/tokenizer.json"));
-      if str_eq(type_of(real_handle), "result") {
-        print("  real vocabulary unavailable:", err_message(real_handle))
-      } else {
-        rh = real_handle;
-        golden_matched = 0;
-        golden_ms = 0;
-        j = 0;
-        while lt(j, golden_total) {
-          row = unwrap(parse_json(unwrap(list_get(goldens, j))));
-          t2 = clock_ms();
-          theirs = _hftok:encode(rh, row.text);
-          golden_ms = golden_ms + clock_ms() - t2;
-          if str_eq(type_of(theirs), "array") * equal(theirs, row.ids) {
-            golden_matched = golden_matched + 1
-          } else {
-            print("     MISMATCH on", row.text, "expected:", row.ids, "extension:", theirs)
-          };
-          j = j + 1
-        };
-        u:parity_report("real vocabulary goldens", golden_matched, golden_total, 0, golden_ms);
-        print("");
-        print("INTERPRETATION -- the reference encoder recorded its own timings when these goldens were produced; they are in the file. The extension's timing above is what evaluation and training will actually pay.")
-      }
-    } else {
-      print("  no real-vocabulary goldens present; run the generator first")
-    };
-    if matched - total {
-      err("the extension disagrees with the reference")
-    } else {
-      ok(matched)
-    }
-  }
+  err(namespace)?
 }
+root = env("REPO_ROOT")?
+tiny = u:hftok_load(str_concat(root, "/fixtures/tokenizer/tiny-tokenizer.json"))
+fixture = u:tok_parity(read_text("fixtures/tokenizer/tiny-expected.jsonl")?, call(:u:parity_encode, {handle: tiny}), call(:u:parity_decode, {handle: tiny}))?
+_hftok:close(tiny)
+print("fixture ids and round trips:", fixture.matched, "elapsed ms:", fixture.elapsed_ms)
+if str_eq(env("TOKENIZER_MODE")?, "real") {
+  real = u:hftok_load(env("TOKENIZER_PATH")?);
+  report = u:tok_parity(read_text(env("TOKENIZER_GOLDENS")?)?, call(:u:parity_encode, {handle: real}), call(:u:parity_decode, {handle: real}))?;
+  composed = _hftok:encode(real, "Café");
+  decomposed = _hftok:encode(real, "Café");
+  if equal(composed, decomposed) * str_eq(_hftok:decode(real, decomposed), "Café") {
+    ok(1)
+  } else {
+    err("NFC acceptance failed")?
+  };
+  print("real ids and round trips:", report.matched, "elapsed ms:", report.elapsed_ms, "NFC: pass");
+  _hftok:close(real)
+} else {
+  print("Fixture-only check: real vocabulary not tested.")
+}
+ok(1)

@@ -272,3 +272,27 @@ the E3 extension fallback remains inactive.
 - A pretrained-decoder surface in the Model DSL (this repository's array
   implementation is the deliverable; a native surface is a later upstream
   choice with this code as its oracle).
+
+## R13. Native handles as ordinary user-function arguments
+
+Measured 2026-09-27 on `cd3cd03f`. `u:hftok_load(path)` returns a valid
+native handle, but `u:hftok_encode(handle, text)` is rejected by generic
+user-function argument binding before the extension is called. Direct
+native calls work. Source inspection of remote HEAD `3e3748f4` still shows
+that `eval_user_fn.rs` rejects handles; that newer build was not adopted.
+
+Home: core value/function semantics, not tokenizer logic. Required behavior:
+identity functions, ordinary public facade calls and partial application
+must accept and preserve opaque handles without exposing their internals.
+Stale/wrong-resource handles must still fail at their native owner.
+
+Opt-in probe: `probes/native-handle-argument.mlpl`, run through
+`scripts/run-extension-demo hftok probes/native-handle-argument.mlpl`.
+Expected after fix: exit 0, forwarded handle encodes `abc` as `[6]`.
+Observed: exit 1 with unsupported argument type. Acceptance includes direct
+and partial facade encode/decode/close, callback use and stale-handle errors.
+Affected work: tokenizer facade integration and real-model responder adapter.
+
+Workaround: carry the handle in a record accepted by the evaluator, then
+call the native encoder/decoder on `box.handle`. The strict parity runner
+uses this explicit MLPL adapter. No upstream source was modified.

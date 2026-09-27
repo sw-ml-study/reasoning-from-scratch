@@ -350,3 +350,26 @@ repository: [`sw-mlpl-requests.md`](sw-mlpl-requests.md) for core and
 extensions. Libraries built here (gradient clipping, string helpers, text
 scanners, the expression evaluator, top-p sampling, JSONL reading, bf16
 decoding, the KV cache, checkpoints) are not requested anywhere.
+
+## Tokenizer/download integration, 2026-09-27
+
+Pinned external public facades and deterministic packaged-library discovery
+are integrated. HTTP streaming checksum verification and reuse are
+**supported**, measured on tokenizer, config and MATH-500 artifacts. The
+committed manifest pins hashes, sizes and immutable revisions; weight digest
+comes from its Git LFS pointer and weights remain undownloaded.
+
+Native-handle user-function binding is **missing** (R13), with an opt-in
+probe, required semantics and acceptance cases in the core work order.
+Boxed record callbacks are a **supported workaround**. Empty native decode
+is **awkward**: the extension boundary rejects `[]`, and a second opt-in
+probe records the expected empty-string result. The consumer handles empty
+ids locally. Six fixture round trips, eight real goldens and NFC pass;
+deliberate bad goldens fail. Training-corpus throughput is unavailable.
+
+The full fixture gate now has 143 native tests, 26 regular probe outcomes,
+23 tangled libraries and extension discovery shell checks. These do not
+require the optional native packages or network. See
+[the integration contract](extension-integration.md). R12 CUDA is unchanged;
+R13 does not block CPU smoke through the documented adapters. Two separate
+Org/Babel usage and implementation guides are linked from that report.

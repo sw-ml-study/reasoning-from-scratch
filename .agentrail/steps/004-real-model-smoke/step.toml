@@ -1,0 +1,9 @@
+number = 4
+slug = "real-model-smoke"
+status = "pending"
+description = "Run an opt-in bounded CPU real-model viability smoke using the pinned verifie..."
+role = "production"
+context_files = []
+created_at = "2026-09-27T09:42:53"
+task_type = "mlpl-library"
+commits = []

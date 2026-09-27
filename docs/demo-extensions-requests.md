@@ -176,3 +176,31 @@ This repository will report which way it went after Saga 3 step 1.
 - Regular expressions: no remaining user in this repository.
 - HTTP for small files: `http-client` V1 already covers responses under
   1 MiB.
+
+## Consumer integration update, 2026-09-27
+
+Pinned `4be5074`: public HTTP download and public tokenizer load work on
+host `cd3cd03f`. Strict parity passes through the adapters described in
+[the integration report](extension-integration.md). Six fixture and eight
+real golden checks fail on mismatch; verified config and MATH-500 transfers
+and verified reuse succeeded. D1 artifact digests and D2 consumer integration
+are implemented here. Corpus throughput remains unavailable: the 12,000
+training prompts are absent.
+
+Two facade/boundary findings need follow-up:
+
+- Core R13 rejects a bare native handle as an MLPL function argument.
+  The consumer boxes handles and calls native encode/decode/close until
+  the generic binder supports the public facade. See the core request.
+- Direct `_hftok:decode(handle, [])` returns `invalid extension argument`
+  rather than empty text on this host/library pair. Opt-in reproduction:
+  `scripts/run-extension-demo hftok probes/tokenizer-empty-decode.mlpl`.
+  Expected: exit 0 and empty text; observed: exit 1. Investigate empty-array
+  ABI marshaling with core before assigning the bug to tokenizer code.
+  Acceptance: empty encoded ids round-trip to empty text; nonempty and
+  malformed ids retain their current behavior. The consumer currently
+  handles the empty sequence locally, without claiming native empty decode
+  passed. This does not block ordinary nonempty prompts.
+
+Both probes require native artifacts and are outside the fixture gate.
+No sibling modifications or external messages were sent.

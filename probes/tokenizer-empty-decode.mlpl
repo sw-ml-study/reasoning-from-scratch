@@ -1,0 +1,13 @@
+# Opt-in extension-boundary probe: expected empty text from decoding empty ids; current pinned host/library returns invalid extension argument. Run through scripts/run-extension-demo hftok.
+load_extension(env("EXTENSION_LIBRARY")?)
+h = u:hftok_load(str_concat(env("REPO_ROOT")?, "/fixtures/tokenizer/tiny-tokenizer.json"))
+decoded = _hftok:decode(h, [])
+if str_eq(type_of(decoded), "string") {
+  if str_eq(decoded, "") {
+    ok(1)
+  } else {
+    err("empty ids decoded to nonempty text")
+  }
+} else {
+  err(decoded)
+}

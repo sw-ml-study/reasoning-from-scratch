@@ -1,44 +1,19 @@
 #!/bin/sh
-# Compare the MLPL reference tokenizer with the native hftok extension.
-#
-# Opt-in and gated on ../demo-extensions. Exits 77 with an explanation when
-# the extension is not built, which is an honest "unavailable" result rather
-# than a failure: the reference encoder remains the path for bounded slices.
+# Default acceptance requires real tokenizer data; fixture-only is an explicit, separately labeled check.
 set -eu
-
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-parent=$(CDPATH= cd -- "$repo_root/.." && pwd)
-ext_repo="$parent/demo-extensions"
-manifest="$ext_repo/extensions/hftok/extension.toml"
-
-echo "Tokenizer parity: MLPL reference against the native hftok extension"
-
-if [ ! -d "$ext_repo/extensions/hftok" ]; then
-    echo "  unavailable: ../demo-extensions has no hftok extension yet" >&2
-    echo "  work order:  docs/demo-extensions-requests.md, item E1" >&2
-    exit 77
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+case "${1:-}" in
+    '') TOKENIZER_MODE=real ;;
+    --fixture-only) TOKENIZER_MODE=fixture ;;
+    *) echo 'usage: run-tokenizer-parity [--fixture-only]' >&2; exit 2 ;;
+esac
+[ "$#" -le 1 ] || exit 2
+TOKENIZER_PATH=${TOKENIZER_PATH:-"$repo/models/qwen3-0.6b-base/tokenizer.json"}
+TOKENIZER_GOLDENS=${TOKENIZER_GOLDENS:-fixtures/tokenizer/qwen3-goldens.jsonl}
+if [ "$TOKENIZER_MODE" = real ]; then
+    case "$TOKENIZER_PATH" in /*) ;; *) echo 'TOKENIZER_PATH must be absolute' >&2; exit 2 ;; esac
+    [ -f "$TOKENIZER_PATH" ] || { echo 'unavailable: real tokenizer missing; run just fetch-model' >&2; exit 77; }
+    sha256sum "$TOKENIZER_PATH"
 fi
-
-if [ ! -f "$manifest" ]; then
-    echo "  unavailable: hftok exists but has no extension.toml manifest yet" >&2
-    echo "  present:     $(find "$ext_repo/extensions/hftok" -type f | sed "s|$ext_repo/||" | tr '\n' ' ')" >&2
-    echo "  work order:  docs/demo-extensions-requests.md, item E1" >&2
-    exit 77
-fi
-
-library=$(find "$ext_repo" -name 'lib*hftok*.dylib' -o -name 'lib*hftok*.so' 2>/dev/null | head -1 || true)
-if [ -z "$library" ]; then
-    echo "  unavailable: hftok is declared but no built library was found" >&2
-    echo "  build it in ../demo-extensions, then rerun" >&2
-    exit 77
-fi
-
-echo "  extension:   $library"
-# Load by explicit path. Name-based lookup expects libhftok.dylib, but the
-# crate builds as libmlpl_extension_hftok.dylib; loading by path is the
-# documented alternative and avoids depending on the artifact's name.
-MLPL_EXTENSION_PATH=$(dirname "$library")
-HFTOK_LIBRARY=$library
-REPO_ROOT=$repo_root
-export MLPL_EXTENSION_PATH HFTOK_LIBRARY REPO_ROOT
-exec "$repo_root/scripts/run-mlpl-demo" demos/tokenizer_parity.mlpl
+export TOKENIZER_MODE TOKENIZER_PATH TOKENIZER_GOLDENS
+exec "$repo/scripts/run-extension-demo" hftok demos/tokenizer_parity.mlpl

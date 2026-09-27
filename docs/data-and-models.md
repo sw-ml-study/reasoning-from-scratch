@@ -89,12 +89,16 @@ key, wrong type, non-object line).
 
 ```sh
 just fetch-math500     # evaluation set, 446,564 bytes of JSONL
-just fetch-model       # Qwen3-0.6B-Base safetensors + tokenizer (later step)
+just fetch-model       # pinned tokenizer + configuration
+scripts/fetch-model --weights # also fetch 1.19 GB safetensors, explicitly opt-in
 just fetch-math-train  # 12,000-problem training split (later step)
 ```
 
-Each recipe delegates to `scripts/fetch-*`, uses `curl`, prints the source
-and license of what it downloads, checks the byte size against the
-published size, and refuses to overwrite an existing file. None runs inside
-`just check`. `fetch-math500` exists today; the others are introduced by
-the saga step that first needs the artifact.
+The model and MATH-500 recipes use the pinned public HTTP extension facade.
+They print provenance, verify byte length and SHA-256 from
+[`catalog/artifacts.jsonl`](../catalog/artifacts.jsonl), and reuse a matching
+cached file. A replacement is installed only after verification. Transfers
+have explicit resource limits; see [integration details](extension-integration.md).
+Neither downloads nor real inference run inside `just check`. The training
+split recipe remains unavailable. Follow the [Org/Babel usage guide](using-reasoning-model.org)
+for tested commands and the outstanding real-model viability check.

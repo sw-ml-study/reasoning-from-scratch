@@ -1,0 +1,57 @@
+# Strict parity checks on stub callbacks: empty suites, wrong ids, wrong decodes and callback failures must never pass.
+include "lib/text/text.mlpl";
+include "lib/tokenizer/parity.mlpl";
+
+def u:tp_encode(text) {
+  "Authored encoder for two golden rows.";
+  if str_eq(text, "a") {
+    [1]
+  } else {
+    []
+  }
+}
+
+def u:tp_decode(ids) {
+  "Authored decoder preserving the empty case.";
+  if tally(ids) {
+    "a"
+  } else {
+    ""
+  }
+}
+
+def u:tp_bad_decode(ids) {
+  "Wrong decoder to prove ids alone are insufficient.";
+  "wrong"
+}
+
+def u:tp_broken(text) {
+  "Return an extension-style failure result instead of ids.";
+  err("fixture failure")
+}
+
+@test {name: "strict tokenizer parity requires ids and decoded text", tags: ["tokenizer", "parity"]}
+def u:test_tp_pass() {
+  "Both nonempty and empty token arrays are valid cases.";
+  text = "{\"text\":\"a\",\"ids\":[1]}\n{\"text\":\"\",\"ids\":[]}\n";
+  result = u:tok_parity(text, :u:tp_encode, :u:tp_decode)?;
+  u:assert_eq(result.matched, 2, "all rows")
+}
+
+@test {name: "parity rejects wrong ids and wrong round trips", tags: ["tokenizer", "parity"]}
+def u:test_tp_mismatch() {
+  "The first mismatch is an error, including a real-vocabulary golden mismatch.";
+  u:assert_err(u:tok_parity("{\"text\":\"a\",\"ids\":[2]}", :u:tp_encode, :u:tp_decode), "ids")?;
+  u:assert_err(u:tok_parity("{\"text\":\"a\",\"ids\":[1]}", :u:tp_encode, :u:tp_bad_decode), "decode")
+}
+
+@test {name: "parity rejects missing malformed and empty expectations", tags: ["tokenizer", "errors"]}
+def u:test_tp_invalid() {
+  "An empty suite or malformed row cannot count as successful acceptance.";
+  u:assert_err(u:tok_parity("", :u:tp_encode, :u:tp_decode), "empty")?;
+  u:assert_err(u:tok_parity("{}", :u:tp_encode, :u:tp_decode), "missing fields")?;
+  u:assert_err(u:tok_parity("bad json", :u:tp_encode, :u:tp_decode), "JSON")?;
+  u:assert_err(u:tok_parity("{\"text\":\"a\",\"ids\":[1]}", :u:tp_broken, :u:tp_decode), "callback Result")
+}
+
+u:run_registered_tests()

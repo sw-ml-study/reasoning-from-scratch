@@ -1,0 +1,15 @@
+# Opt-in verified artifact download through the pinned external public HTTP facade; no transfer is part of the fixture gate.
+include "lib/text/text.mlpl";
+include "lib/artifacts/transfer.mlpl";
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+artifact = u:artifacts_select(read_text("catalog/artifacts.jsonl")?, env("ARTIFACT_ID")?)?
+print("artifact:", artifact.id, "revision:", artifact.revision)
+print("license/provenance:", artifact.license)
+print("bytes:", artifact.bytes, "sha256:", artifact.sha256)
+print("Verified reuse or streaming transfer; no progress callback; deadline one hour.")
+receipt = u:artifacts_transfer(artifact, env("REPO_ROOT")?, :u:http_download)?
+print(to_json(receipt)?)
+ok(receipt)

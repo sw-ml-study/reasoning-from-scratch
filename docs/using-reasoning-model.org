@@ -1,0 +1,157 @@
+#+title: Using the reasoning model
+#+subtitle: An Emacs Org/Babel operator guide, separate from the implementation
+#+options: toc:2 num:t
+#+property: header-args:sh :dir .. :results output :exports both :eval no-export :tangle no :noweb yes
+
+* What can be used today
+
+This document explains *how to run the project*. The companion
+[[file:reasoning.org][How it works]] document explains the implementation, with annotated MLPL
+blocks that reproduce the library files through tangling.
+
+As of 2026-09-27, verifier, synthetic-model generation, scoring and scripted
+refinement are runnable. The real tokenizer and verified downloads work
+with the [[file:extension-integration.md][documented adapters]]. The named-tensor loader passes authored-file
+tests. Real checkpoint inference is the next viability check. No trained
+reasoning checkpoint, real-model accuracy or learning improvement is claimed.
+
+Open this file in Emacs Org mode. Enable shell Babel evaluation in your own
+Emacs configuration, inspect each block, then use =C-c C-c= to run it.
+Blocks run from the repository root via =:dir ..=. They respect your Babel
+confirmation setting and never run merely by opening or exporting this document. MLPL code lives
+in the implementation document; this guide uses the same thin shell recipes
+that an operator runs from a terminal.
+
+* 1. Select tested tools
+
+These paths are the isolated builds on the current Arch host. On another
+host, replace them with matching builds; see [[file:linux-toolchain.md][Linux setup]]. No block uses
+sudo or replaces system tools. Every runnable command block expands this
+named setup so environment variables do not depend on a persistent shell.
+
+#+name: tested-tools
+#+begin_src sh :eval never :exports code
+export MLPL=/disk1/tmp/reasoning-tools/build-cd3cd03f/release/mlpl-repl
+export MLPLUNIT=/disk1/tmp/reasoning-tools/mlplunit/bin/mlplunit
+export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-cd3cd03f/scripts/mlpl-fmt.sh
+#+end_src
+
+First inspect the selected interpreter and runner. CUDA is not required for
+these CPU checks. Current GPU compatibility limits are recorded in the ledger.
+
+#+begin_src sh
+<<tested-tools>>
+just tools
+#+end_src
+
+* 2. Verify the checkout before downloading anything
+
+The gate uses authored fixtures only. It checks native tests, formatting,
+capability expectations, documentation links and the implementation tangle.
+A passing expected-failure probe confirms a known limitation, not support.
+
+#+begin_src sh
+<<tested-tools>>
+just check
+#+end_src
+
+* 3. Try the available demonstrations
+
+Generation uses synthetic tiny weights; refinement uses scripted responses.
+These demonstrate working components and selection decisions, not a model
+learning to reason. Read the printed labels before interpreting the output.
+
+#+begin_src sh
+<<tested-tools>>
+just verifier-demo
+just generation-demo
+just scoring-demo
+just refinement-demo
+#+end_src
+
+* 4. Obtain verified artifacts and check tokenization
+
+The read-only adjacent =demo-extensions= checkout supplies packaged Linux
+libraries. =EXTENSIONS_ROOT= can select another checkout; =HFTOK_LIBRARY=
+and =HTTP_LIBRARY= select explicit absolute binaries. Public facade hashes
+are pinned and checked. Each run prints the selected native binary hash.
+
+This block downloads the tokenizer and configuration if absent, or checks
+and reuses valid cached files. Data stays under ignored =models/=. It uses
+the pinned revisions, sizes and SHA-256 values in [[file:../catalog/artifacts.jsonl][the manifest]]. It does
+not download the 1.19 GB weights.
+
+#+begin_src sh
+<<tested-tools>>
+just fetch-model
+just tokenizer-parity
+#+end_src
+
+Acceptance requires six fixture cases, eight real-Qwen goldens and NFC.
+Missing real data and wrong ids or round trips fail; fixture-only acceptance
+must be requested explicitly and does not establish real tokenizer parity.
+
+The following separate block also fetches the real weights. Run it only
+when ready for the next real-model smoke step; it can transfer 1.19 GB.
+A verified transfer is an artifact-readiness check, not proof of inference.
+
+#+begin_src sh
+<<tested-tools>>
+scripts/fetch-model --weights
+#+end_src
+
+* 5. Real prompting and method selection — awaiting viability
+
+There is not yet a validated operator command for real-model generation.
+The next smoke step will add an exact prompt command, a small explicit token
+budget/seed, an observed output and CPU load/time/memory measurements here.
+Until then, use the demos above and do not treat synthetic outputs as answers.
+
+Once the real responder is validated, the guide will show the same prompt
+under each supported method, with explicit budgets and provenance:
+
+| Method | What the user controls | Interpretation |
+|--------+------------------------+----------------|
+| Greedy | Token limit and stop id | Highest-scoring next token |
+| Sampling | Seed, temperature, top-p, token limit | A reproducible sampled continuation |
+| Self-consistency | Distinct seeds and N | Votes on extracted normalized answers |
+| Best-of-N | Candidate seeds and scorer | First maximum score, not proof of correctness |
+| Refinement | Initial seed and critique/revision pairs | Retain a revision only if score does not fall |
+
+See [[file:sampling.md][sampling]], [[file:self-consistency.md][voting]], [[file:scoring.md][scoring]] and [[file:self-refinement.md][refinement]] for the implemented
+contracts. Their APIs exist today; real-model examples still need validation.
+
+* 6. Evaluation and interpreting results
+
+MATH-500 is an opt-in download with a pinned digest. Its pinned card does not
+declare a license field; the provenance notes retain its PRM800K source link.
+The following command tests the verifier against references, not model accuracy.
+
+#+begin_src sh
+<<tested-tools>>
+just fetch-math500
+just math500-self-grade
+#+end_src
+
+A future model evaluation must record checkpoint hash, interpreter commit,
+example ids, prompt template, seeds, decoding controls, method budget and
+scorer. Report attempted/valid/correct counts and failures; never substitute
+confidence, vote agreement or reference self-grading for measured accuracy.
+
+* 7. Troubleshooting and the implementation map
+
+- Missing extension or tokenizer: check the printed path and the download
+  recipe; required missing data returns status 77.
+- Facade hash mismatch: review the dependency revision before changing pins.
+- Native-handle function failure: current adapters box handles for R13.
+  Empty token decode returns empty text locally; native nonempty errors fail.
+- CUDA fallback: the selected build is CPU-only; a successful CPU result
+  does not validate GPU dispatch. No sudo action is needed for this guide.
+- Weight loading errors: see [[file:tensor-loader.md][the tensor loader contract]] and preserve the
+  error rather than retrying with unverified or differently shaped artifacts.
+
+To understand why each step works, continue in [[file:reasoning.org][How it works]]. That document
+walks through tokenization, decoding, Qwen forward/cache operations, answer
+verification and inference-time scaling. Training and distillation sections
+will grow with tested implementations, rather than describe unbuilt features
+as working code.

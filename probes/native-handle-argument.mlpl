@@ -1,0 +1,14 @@
+# Opt-in R13 probe: expected success once generic MLPL function arguments support opaque native handles. Run via scripts/run-extension-demo hftok probes/native-handle-argument.mlpl; currently fails on cd3cd03f.
+def u:handle_identity(value) {
+  "Return the exact native handle without interpreting or copying its payload.";
+  value
+}
+load_extension(env("EXTENSION_LIBRARY")?)
+h = u:hftok_load(str_concat(env("REPO_ROOT")?, "/fixtures/tokenizer/tiny-tokenizer.json"))
+returned = u:handle_identity(h)
+ids = _hftok:encode(returned, "abc")
+if equal(ids, [6]) {
+  ok(1)
+} else {
+  err("handle forwarding changed behavior")
+}

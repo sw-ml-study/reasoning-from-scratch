@@ -1,6 +1,6 @@
 number = 3
 slug = "tokenizer-download-integration"
-status = "pending"
+status = "in-progress"
 description = "Integrate the delivered Linux hftok and checksum-verified http download packa..."
 role = "production"
 context_files = []

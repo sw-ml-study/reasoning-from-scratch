@@ -35,7 +35,7 @@ the reasoning behind it.
 
 ## Status
 
-Revalidated on Arch Linux on 2026-09-25 with sw-MLPL 0.22.0, build
+Revalidated on Arch Linux on 2026-09-27 with sw-MLPL 0.22.0, build
 `cd3cd03f`. The verifier, evaluation harness, reference tokenizer and
 templates, tiny Qwen3 forward pass, and KV-cache generation are implemented.
 The safetensors header reader validates tensor names, shapes, offsets, and
@@ -44,15 +44,16 @@ real checkpoint. The [named-tensor loader](docs/tensor-loader.md) now decodes
 BF16/F32 weights and assembles a resident tied model on authored tiny files.
 Real checkpoint tensors are not yet loaded and there is no real-model accuracy result.
 
-The fixture suite has 138 native tests. A clean clone now generates its tiny
-checkpoint fixture automatically. The literate document reproduces all 21
+The fixture suite has 143 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The implementation document reproduces all 23
 library sources. Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
 Core request R11 (`unpack`) has shipped and passes finite/special-value,
 malformed-buffer and full embedding-size synthetic checks. The loader passes
-projection, finite-weight and cached-forward tests. Tokenizer/download
-integration is next. See the
+projection, finite-weight and cached-forward tests. [Verified downloads and
+strict tokenizer parity](docs/extension-integration.md) are integrated;
+bounded real-model CPU smoke is next. See the
 [upstream revalidation](docs/upstream-revalidation.md) and
 [decoder handoff](docs/bf16-handoff.md). Saga 4 delivered [sampling primitives](docs/sampling.md):
 temperature, nucleus filtering, seeded categorical draws, and sampled tiny
@@ -71,8 +72,9 @@ explicitly unavailable real-model measurements. Delivered dependencies are
 being integrated before returning to the queued toy GRPO work.
 Batched matmul and container-copy costs remain throughput constraints.
 The moved Linux tokenizer package passes six fixture cases, eight real-Qwen
-goldens and NFC; its public-facade integration and corpus throughput remain
-pending. Real-model scaling reports, GRPO, and
+goldens and NFC. Public HTTP and tokenizer-load facades work; tokenizer
+handle callbacks use documented R13 and empty-decode workarounds. Training
+corpus throughput remains unavailable. Real-model scaling reports, GRPO, and
 distillation are planned; none has real-model results.
 
 The host has an RTX 5060 Ti with 16 GB VRAM, but GPU execution is not yet
@@ -80,6 +82,11 @@ validated: the current upstream CUDA build rejects the installed CUDA 13.4
 toolkit. Use the explicit CPU toolchain below for fixture checks. See
 [Linux setup and measurements](docs/linux-toolchain.md), the
 [saga queue](docs/sagas.md), and the [capability ledger](docs/sw-mlpl-blockers.md).
+
+Two separate Emacs Org/Babel guides are maintained:
+[how to use the model](docs/using-reasoning-model.org) and
+[how it works](docs/reasoning.org). Real inference examples will be added
+when the smoke step establishes viability.
 
 ## Build and check
 

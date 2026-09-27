@@ -1,0 +1,57 @@
+# Strict JSONL tokenizer parity over public-facade-compatible callbacks. Requires lib/text/text.mlpl; tests use authored stubs and opt-in real checks bind native handles.
+
+def u:tok_parity(text, encoder, decoder) {
+  "Require a nonempty golden suite and exact ids plus decoded text for every row; malformed input and callback failures return errors rather than partial success.";
+  cleaned = u:text_trim(text);
+  if str_len(cleaned) {
+    rows = str_split(cleaned, "\n");
+    i = 0;
+    started = clock_ms();
+    while lt(i, list_len(rows)) {
+      row = parse_json(unwrap(list_get(rows, i)))?;
+      if str_eq(type_of(row), "record") {
+        if has_field(row, "text") * has_field(row, "ids") {
+          if str_eq(type_of(row.text), "string") * str_eq(type_of(row.ids), "array") {
+            expected_text = if has_field(row, "round_trip") {
+              unwrap(record_get(row, "round_trip"))
+            } else {
+              row.text
+            };
+            checked = try {
+              ids = call(encoder, row.text);
+              if str_eq(type_of(ids), "array") {
+                decoded = call(decoder, ids);
+                if str_eq(type_of(decoded), "string") * str_eq(type_of(expected_text), "string") {
+                  if equal(ids, row.ids) * str_eq(decoded, expected_text) {
+                    ok(1)
+                  } else {
+                    err("ids or round trip disagree")
+                  }
+                } else {
+                  err("decoder must return text")
+                }
+              } else {
+                err("encoder must return ids")
+              }
+            } catch e {
+              err(e.message)
+            };
+            if is_err(checked) {
+              err({kind: "tokenizer_parity", index: i, detail: err_message(checked)})?
+            }
+          } else {
+            err("golden text and ids have invalid types")?
+          }
+        } else {
+          err("golden is missing text or ids")?
+        }
+      } else {
+        err("golden must be a record")?
+      };
+      i = i + 1
+    };
+    ok({matched: i, elapsed_ms: clock_ms() - started})
+  } else {
+    err("empty tokenizer golden suite")
+  }
+}

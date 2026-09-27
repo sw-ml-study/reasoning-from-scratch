@@ -1,0 +1,19 @@
+#!/bin/sh
+# Load a pinned external public facade without copying it into this repository; interpreter sandbox remains rooted in this repo.
+set -eu
+[ "$#" -eq 2 ] || { echo 'usage: run-extension-demo hftok|http demo.mlpl' >&2; exit 2; }
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+EXTENSION_LIBRARY=$("$repo/scripts/select-extension" "$1")
+case "$1" in
+    hftok) package=hftok; expected=46be36fec408a402a2d7dd03d9b1976a5284e751e6d7ecef570e69fd095ba00d ;;
+    http) package=http-client; expected=c5d9d807fe5be286ef1b443958af89e91c208d11d1716064f719261305be2dd6 ;;
+esac
+EXTENSION_FACADE="${EXTENSIONS_ROOT:-$repo/../demo-extensions}/extensions/$package/module.mlpl"
+[ -f "$EXTENSION_FACADE" ] || { echo "public facade missing: $EXTENSION_FACADE" >&2; exit 77; }
+actual=$(sha256sum "$EXTENSION_FACADE" | awk '{print $1}')
+[ "$actual" = "$expected" ] || { echo 'extension facade differs from pin 4be5074; review before updating dependency' >&2; exit 1; }
+echo "extension: $EXTENSION_LIBRARY" >&2
+sha256sum "$EXTENSION_LIBRARY" >&2
+REPO_ROOT=$repo
+export EXTENSION_LIBRARY EXTENSION_FACADE REPO_ROOT
+exec "$repo/scripts/run-mlpl-demo" "$2"

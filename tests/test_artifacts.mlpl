@@ -1,0 +1,37 @@
+# Artifact selection and verified-transfer callback contracts without network or native extensions.
+include "lib/text/text.mlpl";
+include "lib/artifacts/transfer.mlpl";
+
+def u:artifact_stub(url, bytes, hash, root, path, chunk, timeout) {
+  "Check explicit transfer controls and return a matching native-style receipt.";
+  if eq(chunk, 1048576) * eq(timeout, 3600000) {
+    {bytes: bytes, sha256: hash, path: str_concat(root, str_concat("/", path)), reused: 1}
+  } else {
+    err("wrong controls")
+  }
+}
+
+def u:artifact_bad(url, bytes, hash, root, path, chunk, timeout) {
+  "A false success receipt must not be accepted.";
+  {bytes: bytes + 1, sha256: hash}
+}
+
+@test {name: "artifact selection rejects absent duplicate and malformed rows", tags: ["artifacts"]}
+def u:test_artifact_select() {
+  "Ambiguous pins must fail before any downloader runs.";
+  u:assert_text_eq(u:artifacts_select("{\"id\":\"x\"}", "x")?.id, "x", "selection")?;
+  u:assert_err(u:artifacts_select("{\"id\":\"x\"}", "y"), "absent")?;
+  u:assert_err(u:artifacts_select("{\"id\":\"x\"}\n{\"id\":\"x\"}", "x"), "duplicate")?;
+  u:assert_err(u:artifacts_select("broken", "x"), "malformed")
+}
+
+@test {name: "artifact transfer preserves pinned controls and verifies receipt", tags: ["artifacts"]}
+def u:test_artifact_transfer() {
+  "The native downloader owns hashing; the consumer also checks its returned byte count and digest.";
+  artifact = {url: "https://fixture.invalid/pinned", bytes: 3, sha256: "abc", path: "data/x"};
+  u:assert_eq(u:artifacts_transfer(artifact, "/fixture", :u:artifact_stub)?.bytes, 3, "receipt")?;
+  u:assert_err(u:artifacts_transfer(artifact, "/fixture", :u:artifact_bad), "bad receipt")?;
+  u:assert_err(u:artifacts_transfer({}, "/fixture", :u:artifact_stub), "incomplete manifest row")
+}
+
+u:run_registered_tests()

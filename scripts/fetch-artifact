@@ -1,0 +1,8 @@
+#!/bin/sh
+# Download only a manifest-pinned artifact through the external verified-download facade.
+set -eu
+[ "$#" -eq 1 ] || { echo 'usage: fetch-artifact artifact-id' >&2; exit 2; }
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ARTIFACT_ID=$1
+export ARTIFACT_ID
+exec "$repo/scripts/run-extension-demo" http demos/fetch_artifact.mlpl

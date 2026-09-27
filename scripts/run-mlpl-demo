@@ -21,6 +21,10 @@ trap cleanup EXIT HUP INT TERM
 combined="$tmp_dir/combined.mlpl"
 
 : > "$combined"
+if [ -n "${EXTENSION_FACADE:-}" ]; then
+    cat "$EXTENSION_FACADE" >> "$combined"
+    printf '\n' >> "$combined"
+fi
 seen=""
 while IFS= read -r line; do
     case "$line" in

@@ -51,6 +51,13 @@ requirement.
 
 ## Third-party artifacts are downloaded, never committed
 
+The optional tokenizer and HTTP facades are runtime dependencies from the
+MIT-licensed adjacent `demo-extensions` checkout, Copyright Michael A Wright.
+They are read into temporary demo programs, not vendored into this tree.
+Reviewed source revision and facade digests are pinned in
+[extension integration](extension-integration.md); all library MLPL tracked
+here remains independently authored under the rules above.
+
 | Artifact | Source | License | Local location |
 |---|---|---|---|
 | Qwen3-0.6B-Base weights (`model.safetensors`, bf16, 1.19 GB), `tokenizer.json` (7.0 MB), `config.json` | <https://huggingface.co/Qwen/Qwen3-0.6B-Base> | Apache-2.0 | ignored `models/qwen3-0.6b-base/` |

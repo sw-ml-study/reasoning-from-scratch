@@ -1,5 +1,5 @@
-#+title: A reasoning model, from scratch, in sw-MLPL
-#+subtitle: the verifier and evaluation harness, read in the order they were built
+#+title: How the reasoning model works: implementation in sw-MLPL
+#+subtitle: Annotated algorithms, from tokenization and loading to generation, verification and scaling
 #+author: Michael A Wright
 #+startup: showall
 #+property: header-args:mlpl :results output :exports code :eval no-export
@@ -8,10 +8,15 @@
 
 * How to read and run this document
 
-This is the first half of a from-scratch reasoning model: everything needed to
-*decide whether an answer is right*, written in sw-MLPL, with prose before
-every block. It is a literate reading of the committed sources, not a
-paraphrase of them. Each source block carries a =:tangle= target, and
+This is the implementation guide. The separate [[file:using-reasoning-model.org][usage guide]] explains
+setup, commands and interpreting results. Each library block below has prose
+explaining its purpose and method, and tangles back to the checked source.
+Real-model execution and future learning sections will follow measured
+viability, not fixture-only claims.
+
+The narrative begins with deciding whether an answer is right, then develops
+the tokenizer, model, loader and inference-time methods in sw-MLPL, with prose
+before every implementation block. Each library source block carries a =:tangle= target, and
 =scripts/check-tangle= runs in the pre-commit gate to prove that tangling this
 document reproduces every file it explains, byte for byte. The =.mlpl= files
 remain the source of truth; when they change, this document is edited to
@@ -32,15 +37,16 @@ The document never evaluates anything on export (=:eval no-export= in the
 header), so exporting produces no prompts. Evaluation is for reading
 interactively. To make =C-c C-c= work, evaluate this setup block once per
 Emacs session; it loads sw-MLPL's Org-babel backend from the adjacent checkout
-and points it at whichever interpreter exists:
+and prefers an explicit =MLPL= override, then the tested isolated CPU build:
 
 #+begin_src emacs-lisp :tangle no
 (let* ((here (file-name-directory (buffer-file-name)))
        (repo (or (locate-dominating-file here "AGENTS.md") (expand-file-name ".." here)))
        (sw-mlpl (expand-file-name "../sw-mlpl" repo))
-       (candidates (list (expand-file-name "target/release/mlpl-repl" sw-mlpl)
-                         (expand-file-name "target/debug/mlpl-repl" sw-mlpl)
+       (candidates (list (getenv "MLPL")
+                         "/disk1/tmp/reasoning-tools/build-cd3cd03f/release/mlpl-repl"
                          (executable-find "mlpl-repl")
+                         (expand-file-name "components/cli/target/release/mlpl-repl" sw-mlpl)
                          (expand-file-name "~/.local/softwarewrighter/bin/mlpl-repl"))))
   (add-to-list 'load-path (expand-file-name "elisp" sw-mlpl))
   (require 'ob-mlpl)
@@ -49,7 +55,6 @@ and points it at whichever interpreter exists:
   (setq org-babel-mlpl-command
         (or (seq-find (lambda (p) (and p (file-executable-p p))) candidates)
             (user-error "no mlpl-repl found; build ../sw-mlpl or set org-babel-mlpl-command")))
-  (setq org-confirm-babel-evaluate nil)
   (message "ob-mlpl ready: %s" org-babel-mlpl-command))
 #+end_src
 
@@ -64,7 +69,7 @@ Two things to know before pressing =C-c C-c=:
   below are for reading and tangling; the runnable ones are the
   self-contained examples in the primer.
 - =org-confirm-babel-evaluate= controls the yes/no prompt. The setup block
-  turns it off for the session.
+  preserves your existing preference.
 
 ** A five-minute primer
 
@@ -5338,6 +5343,145 @@ def u:st_load_model(path, config, dtype, options) {
     ok({embedding: embedding, final_norm: final_norm, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: call(:u:st_resident_layer, stacks), checkpoint: summary})
   } else {
     err({kind: "untied_head", message: "the Qwen forward contract requires tied embeddings; a separate output head is unsupported"})
+  }
+}
+#+end_src
+
+** Verified artifacts and strict tokenizer integration
+
+The [[file:extension-integration.md][integration contract]] distinguishes external native services from MLPL
+orchestration. The operator steps are in the separate [[file:using-reasoning-model.org][usage guide]]. Public
+facades are pinned by hash and read from the dependency at runtime. The
+HTTP facade is usable; tokenizer handle calls need the documented R13
+boxed-record adapter, and empty ids decode to empty text locally.
+
+*** lib/tokenizer/parity.mlpl
+
+The parity module accepts callbacks so its failure behavior can be tested without native extensions or real data.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/parity.mlpl
+# Strict JSONL tokenizer parity over public-facade-compatible callbacks. Requires lib/text/text.mlpl; tests use authored stubs and opt-in real checks bind native handles.
+#+end_src
+
+Each golden requires exact token ids and decoded text. The first mismatch returns an error, so real-vocabulary failure cannot disappear behind a successful fixture summary.
+
+#+begin_src mlpl :tangle ../lib/tokenizer/parity.mlpl
+def u:tok_parity(text, encoder, decoder) {
+  "Require a nonempty golden suite and exact ids plus decoded text for every row; malformed input and callback failures return errors rather than partial success.";
+  cleaned = u:text_trim(text);
+  if str_len(cleaned) {
+    rows = str_split(cleaned, "\n");
+    i = 0;
+    started = clock_ms();
+    while lt(i, list_len(rows)) {
+      row = parse_json(unwrap(list_get(rows, i)))?;
+      if str_eq(type_of(row), "record") {
+        if has_field(row, "text") * has_field(row, "ids") {
+          if str_eq(type_of(row.text), "string") * str_eq(type_of(row.ids), "array") {
+            expected_text = if has_field(row, "round_trip") {
+              unwrap(record_get(row, "round_trip"))
+            } else {
+              row.text
+            };
+            checked = try {
+              ids = call(encoder, row.text);
+              if str_eq(type_of(ids), "array") {
+                decoded = call(decoder, ids);
+                if str_eq(type_of(decoded), "string") * str_eq(type_of(expected_text), "string") {
+                  if equal(ids, row.ids) * str_eq(decoded, expected_text) {
+                    ok(1)
+                  } else {
+                    err("ids or round trip disagree")
+                  }
+                } else {
+                  err("decoder must return text")
+                }
+              } else {
+                err("encoder must return ids")
+              }
+            } catch e {
+              err(e.message)
+            };
+            if is_err(checked) {
+              err({kind: "tokenizer_parity", index: i, detail: err_message(checked)})?
+            }
+          } else {
+            err("golden text and ids have invalid types")?
+          }
+        } else {
+          err("golden is missing text or ids")?
+        }
+      } else {
+        err("golden must be a record")?
+      };
+      i = i + 1
+    };
+    ok({matched: i, elapsed_ms: clock_ms() - started})
+  } else {
+    err("empty tokenizer golden suite")
+  }
+}
+#+end_src
+
+*** lib/artifacts/transfer.mlpl
+
+Artifact metadata is committed as JSONL; the module delegates native hashing and transfer to a callback rather than putting network effects in the fixture gate.
+
+#+begin_src mlpl :tangle ../lib/artifacts/transfer.mlpl
+# Pinned artifact selection and native verified-download orchestration. Requires lib/text/text.mlpl; network effects are injected through the public HTTP facade callback.
+#+end_src
+
+Selection requires exactly one id match. Duplicate pins and absent artifacts fail before a downloader is called.
+
+#+begin_src mlpl :tangle ../lib/artifacts/transfer.mlpl
+def u:artifacts_select(text, id) {
+  "Select exactly one JSONL manifest row by id; absent or duplicate pins are errors.";
+  rows = str_split(u:text_trim(text), "\n");
+  found = 0;
+  selected = {};
+  i = 0;
+  while lt(i, list_len(rows)) {
+    row = parse_json(unwrap(list_get(rows, i)))?;
+    if str_eq(type_of(row), "record") {
+      if has_field(row, "id") {
+        if str_eq(row.id, id) {
+          found = found + 1;
+          selected = row
+        }
+      } else {
+        err("artifact row missing id")?
+      }
+    } else {
+      err("artifact row must be a record")?
+    };
+    i = i + 1
+  };
+  if eq(found, 1) {
+    ok(selected)
+  } else {
+    err("artifact id must match exactly one pinned row")
+  }
+}
+#+end_src
+
+The transfer passes explicit size, digest, destination, chunk size and deadline to the public HTTP facade. A receipt must agree with the pin before the consumer reports success.
+
+#+begin_src mlpl :tangle ../lib/artifacts/transfer.mlpl
+def u:artifacts_transfer(artifact, root, downloader) {
+  "Delegate streaming hashing and atomic publication to a public-facade-compatible callback; require a matching receipt. One MiB chunks and a one-hour deadline are explicit.";
+  try {
+    receipt = call(downloader, artifact.url, artifact.bytes, artifact.sha256, root, artifact.path, 1048576, 3600000);
+    if str_eq(type_of(receipt), "record") {
+      if eq(receipt.bytes, artifact.bytes) * str_eq(receipt.sha256, artifact.sha256) {
+        ok(receipt)
+      } else {
+        err("download receipt disagrees with artifact pin")
+      }
+    } else {
+      err({kind: "artifact_download", detail: receipt})
+    }
+  } catch e {
+    err(e.message)
   }
 }
 #+end_src

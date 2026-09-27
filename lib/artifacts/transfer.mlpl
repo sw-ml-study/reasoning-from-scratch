@@ -1,0 +1,48 @@
+# Pinned artifact selection and native verified-download orchestration. Requires lib/text/text.mlpl; network effects are injected through the public HTTP facade callback.
+
+def u:artifacts_select(text, id) {
+  "Select exactly one JSONL manifest row by id; absent or duplicate pins are errors.";
+  rows = str_split(u:text_trim(text), "\n");
+  found = 0;
+  selected = {};
+  i = 0;
+  while lt(i, list_len(rows)) {
+    row = parse_json(unwrap(list_get(rows, i)))?;
+    if str_eq(type_of(row), "record") {
+      if has_field(row, "id") {
+        if str_eq(row.id, id) {
+          found = found + 1;
+          selected = row
+        }
+      } else {
+        err("artifact row missing id")?
+      }
+    } else {
+      err("artifact row must be a record")?
+    };
+    i = i + 1
+  };
+  if eq(found, 1) {
+    ok(selected)
+  } else {
+    err("artifact id must match exactly one pinned row")
+  }
+}
+
+def u:artifacts_transfer(artifact, root, downloader) {
+  "Delegate streaming hashing and atomic publication to a public-facade-compatible callback; require a matching receipt. One MiB chunks and a one-hour deadline are explicit.";
+  try {
+    receipt = call(downloader, artifact.url, artifact.bytes, artifact.sha256, root, artifact.path, 1048576, 3600000);
+    if str_eq(type_of(receipt), "record") {
+      if eq(receipt.bytes, artifact.bytes) * str_eq(receipt.sha256, artifact.sha256) {
+        ok(receipt)
+      } else {
+        err("download receipt disagrees with artifact pin")
+      }
+    } else {
+      err({kind: "artifact_download", detail: receipt})
+    }
+  } catch e {
+    err(e.message)
+  }
+}

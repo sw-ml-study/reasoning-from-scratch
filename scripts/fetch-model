@@ -1,45 +1,9 @@
 #!/bin/sh
-# Download the Qwen3-0.6B-Base tokenizer and config into the ignored models/
-# tree. Opt-in: never part of `just check`. Prints provenance, checks the
-# published byte sizes, and refuses to overwrite existing files.
-#
-# Pass --weights to also fetch model.safetensors (1,192,135,096 bytes).
+# Opt-in pinned, checksum-verified Qwen tokenizer/config; add --weights for the 1.19 GB checkpoint.
 set -eu
-
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-base="https://huggingface.co/Qwen/Qwen3-0.6B-Base/resolve/main"
-dest_dir="$repo_root/models/qwen3-0.6b-base"
-
-echo "Qwen3-0.6B-Base tokenizer and configuration"
-echo "  source:  $base"
-echo "  license: Apache-2.0 (see the model card)"
-echo "  dest:    models/qwen3-0.6b-base/ (ignored by git, never redistributed)"
-
-fetch() {
-    name=$1
-    expected=$2
-    target="$dest_dir/$name"
-    if [ -e "$target" ]; then
-        echo "  skip:    $name already present" >&2
-        return 0
-    fi
-    mkdir -p "$dest_dir"
-    tmp="$target.part"
-    curl -L --fail --silent --show-error -o "$tmp" "$base/$name"
-    actual=$(wc -c < "$tmp" | tr -d ' ')
-    if [ "$expected" -gt 0 ] && [ "$actual" -ne "$expected" ]; then
-        rm -f "$tmp"
-        echo "size mismatch for $name: expected $expected bytes, got $actual" >&2
-        exit 1
-    fi
-    mv "$tmp" "$target"
-    echo "  bytes:   $name $actual"
-}
-
-fetch tokenizer.json 7031645
-fetch config.json 0
-
-if [ "${1:-}" = "--weights" ]; then
-    echo "  fetching the weights; this is 1.19 GB and takes a while"
-    fetch model.safetensors 1192135096
-fi
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+case "${1:-}" in ''|--weights) ;; *) echo 'usage: fetch-model [--weights]' >&2; exit 2 ;; esac
+[ "$#" -le 1 ] || exit 2
+"$repo/scripts/fetch-artifact" qwen-tokenizer
+"$repo/scripts/fetch-artifact" qwen-config
+if [ "${1:-}" = --weights ]; then "$repo/scripts/fetch-artifact" qwen-weights; fi
