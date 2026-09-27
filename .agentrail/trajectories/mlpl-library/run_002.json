@@ -1,0 +1,11 @@
+{
+  "task_type": "mlpl-library",
+  "state": {
+    "number": 3,
+    "step": "tokenizer-download-integration"
+  },
+  "action": "Test-first native MLPL callbacks and shell discovery; pinned external facades; independently verified artifact hashes; real tokenizer and HTTP opt-in checks; capability probes and upstream work orders; Org/Babel expansion and byte-exact tangling; full fixture gate; named-path main commit.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-27T09:43:58"
+}
