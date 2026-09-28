@@ -1,5 +1,26 @@
 # sw-MLPL capability ledger
 
+## Bounded real-checkpoint attempt, 2026-09-28
+
+**Bulk decoding: supported. Whole-model loading: awkward. Real inference:
+unavailable within the declared budget.** On pinned CPU build `cd3cd03f`,
+the verified 1,192,135,096-byte Qwen3-0.6B-Base checkpoint passes configuration
+and whole-header validation (310 BF16 tensors, 596,049,920 parameters, tied
+embeddings). The unchanged bounded repeat exits 124 at 600 wall seconds
+while still in `u:st_load_model`. Maximum sampled VmHWM is 14,830,820 KiB
+(about 14.14 GiB, a lower bound); the address-space limit is 32 GiB.
+No completed load time, generation output, throughput or accuracy is available.
+
+See [reproduction, hashes and measurement limits](real-model-smoke.md).
+This does not establish a new missing primitive. Existing R10 probes show
+size-dependent container costs; stack growth and environment/callback copies
+are profiling candidates, not a proven diagnosis. Apply the home rule by
+trying bounded MLPL load-order/scope changes first, with fixture parity. If
+fundamental core behavior blocks that route, attach a minimal declared probe
+and precise acceptance cases to R10 before asking upstream. Do not implement
+the differentiable model as a native extension. CUDA remains unvalidated;
+boxed-handle and empty-decode adapters remain in use. Toy GRPO is independent.
+
 Every row below cites an executable probe under `probes/` and the result it
 observed. `catalog/probes.tsv` declares the expected pass/fail of each probe;
 `just capabilities` (also run by `just check`) fails when an observation

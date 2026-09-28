@@ -249,6 +249,15 @@ documentation = "docs/book-map.md"
 status = "planned"
 
 [[component]]
+id = "SMOKE"
+slug = "bounded-cpu-smoke"
+chapter = 2
+source = "lib/smoke/smoke.mlpl"
+test = "tests/test_smoke.mlpl"
+documentation = "docs/real-model-smoke.md"
+status = "unavailable"
+
+[[component]]
 id = "DIST"
 slug = "distillation"
 chapter = 8

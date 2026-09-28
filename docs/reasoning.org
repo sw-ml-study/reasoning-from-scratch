@@ -11,8 +11,8 @@
 This is the implementation guide. The separate [[file:using-reasoning-model.org][usage guide]] explains
 setup, commands and interpreting results. Each library block below has prose
 explaining its purpose and method, and tangles back to the checked source.
-Real-model execution and future learning sections will follow measured
-viability, not fixture-only claims.
+The bounded real-checkpoint attempt appears at the end. Generated real-model
+examples and learning sections require measured viability, not fixture-only claims.
 
 The narrative begins with deciding whether an answer is right, then develops
 the tokenizer, model, loader and inference-time methods in sw-MLPL, with prose
@@ -5519,4 +5519,118 @@ named-tensor loader now passes tiny-file and cached-forward tests. No tiny-model
 accuracy. Stable likelihood and entropy scoring now support
 candidate ranking over fixtures and the tiny model. Bounded self-refinement
 and best-of-N now have callback goldens and a scripted demo. Real-model
-scaling measurements remain unavailable pending the decoder handoff.
+scaling measurements remain unavailable pending end-to-end viability.
+
+* Bounded real-checkpoint viability
+
+The 2026-09-28 CPU repeat reached checkpoint validation but timed out after
+600 seconds inside the loader, at a sampled peak of about 14.14 GiB. The
+driver below specifies the complete intended path; its generation phase was
+not reached. See [[file:real-model-smoke.md][the measurement report]] and the separate usage guide
+for the observed output. Loader profiling is next; no real continuation or
+accuracy result is claimed here.
+
+Before allocating weights, the operator wrapper checks all three artifact
+hashes. The configuration guard below rejects mismatched dimensions,
+activation, rotary convention, tying and tokenizer stop id. It also checks
+the published base checkpoint limit of 32,768 positions. The older convenience
+configuration has a larger context; the smoke deliberately replaces that
+allocation with prompt length plus two generated positions after validation.
+This is an MLPL library guard, requiring no new core or extension feature.
+
+#+begin_src mlpl :tangle ../lib/smoke/smoke.mlpl :mkdirp yes
+# Real-model smoke compatibility guard. Requires lib/qwen3/qwen3.mlpl; no downloads or model allocation occur in this module.
+
+def u:smoke_config(document, context) {
+  "Require the pinned base architecture, including non-shape semantics, and allocate only the requested bounded rotary context.";
+  expected = parse_json("{\"model_type\":\"qwen3\",\"vocab_size\":151936,\"hidden_size\":1024,\"num_hidden_layers\":28,\"num_attention_heads\":16,\"num_key_value_heads\":8,\"head_dim\":128,\"intermediate_size\":3072,\"rms_norm_eps\":0.000001,\"rope_theta\":1000000,\"max_position_embeddings\":32768,\"tie_word_embeddings\":true,\"attention_bias\":false,\"use_sliding_window\":false,\"rope_scaling\":null,\"hidden_act\":\"silu\",\"torch_dtype\":\"bfloat16\",\"eos_token_id\":151643}")?;
+  fields = record_keys(expected);
+  i = 0;
+  while lt(i, list_len(fields)) {
+    field = list_get(fields, i)?;
+    actual = record_get(document, field)?;
+    wanted = record_get(expected, field)?;
+    if str_eq(to_json(actual)?, to_json(wanted)?) {
+      i = i + 1
+    } else {
+      err(str_concat("unsupported checkpoint config field: ", field))?
+    }
+  };
+  if gt(context, 0) * eq(context, floor(context)) * lt(context, 32769) {
+    c = u:qwen_config_06b();
+    ok({vocab: c.vocab, emb: c.emb, layers: c.layers, heads: c.heads, kv_heads: c.kv_heads, head_dim: c.head_dim, hidden: c.hidden, rope_base: c.rope_base, eps: c.eps, context: context})
+  } else {
+    err("smoke context must be an integer from 1 through 32768")
+  }
+}
+#+end_src
+
+The end-to-end driver first loads the pinned native tokenizer. Its adapter
+boxes the opaque handle when crossing MLPL function boundaries (R13), and
+returns empty text locally for an empty id vector. It encodes the literal
+bare-text prompt; no chat or thinking wrapper is applied to this base model.
+The guard sizes the rotary tables, the safetensors validator checks the whole
+checkpoint, and the named loader assembles resident role stacks and the tied
+embedding/output matrix. The cached greedy loop prefills once, emits at most
+two tokens and stops at id 151643. The report records ids, decoded text,
+load/generation times, template version and seed 42 (unused by greedy).
+The outer script records interpreter and artifact hashes and bounds the
+process to 600 seconds and 32 GiB of virtual memory. Linux VmHWM sampling is
+a lower bound on peak resident memory, not an exact peak measurement.
+
+The exact driver is tangled here alongside the libraries so the executable
+path and its explanation cannot drift. Run it through =just real-model-smoke=
+only after the explicit weight fetch in the separate usage guide.
+
+#+begin_src mlpl :tangle ../demos/real_model_smoke.mlpl :mkdirp yes
+# Opt-in pinned Qwen3 base smoke: boxed tokenizer adapter, validated config/checkpoint, resident CPU load and two greedy tokens. Run only through scripts/run-real-model-smoke.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/generate/generate.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "lib/smoke/smoke.mlpl";
+
+def u:smoke_encode(box, text) {
+  "Pass opaque tokenizer handles inside a record until core R13 is accepted.";
+  _hftok:encode(box.handle, text)
+}
+
+def u:smoke_decode(box, ids) {
+  "Preserve the local empty-decode workaround without masking native errors.";
+  if tally(ids) { _hftok:decode(box.handle, ids) } else {
+    ""
+  }
+}
+
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+tokenizer = u:hftok_load(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+prompt = "The capital of France is"
+ids = u:smoke_encode({handle: tokenizer}, prompt)
+max_new = 2
+config = u:smoke_config(parse_json(read_text("models/qwen3-0.6b-base/config.json")?)?, tally(ids) + max_new)?
+print("template: base-smoke-v1; bare text; greedy; seed: 42 (unused); max_new: 2; eos: 151643")
+print("prompt:", prompt, "prompt ids:", ids, "context allocation:", config.context)
+path = "models/qwen3-0.6b-base/model.safetensors"
+header = u:st_open(path, {})?
+print("checkpoint:", to_json(u:st_check_model(header, config, "BF16")?)?)
+print("phase: load")
+started = clock_ms()
+model = u:st_load_model(path, config, "BF16", {})?
+load_ms = clock_ms() - started
+print("load_ms:", load_ms)
+print("phase: generation")
+started = clock_ms()
+result = u:gen_greedy(config, model, ids, max_new, 151643)?
+generation_ms = clock_ms() - started
+text = u:smoke_decode({handle: tokenizer}, result.ids)
+print("result:", to_json({template: "base-smoke-v1", prompt: prompt, prompt_ids: ids, seed: 42, decoding: "greedy", max_new: max_new, stop_id: 151643, generated_ids: result.ids, text: text, stopped: result.stopped, load_ms: load_ms, generation_ms: generation_ms})?)
+_hftok:close(tokenizer)
+ok(1)
+#+end_src

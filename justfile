@@ -81,3 +81,7 @@ unpack-embedding-benchmark:
 # Run the complete precommit gate.
 check:
     ./scripts/check
+
+# Opt-in bounded real Qwen CPU smoke; fetch-model --weights must run first.
+real-model-smoke:
+    ./scripts/run-real-model-smoke

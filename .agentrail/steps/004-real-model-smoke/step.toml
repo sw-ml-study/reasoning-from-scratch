@@ -1,6 +1,6 @@
 number = 4
 slug = "real-model-smoke"
-status = "pending"
+status = "in-progress"
 description = "Run an opt-in bounded CPU real-model viability smoke using the pinned verifie..."
 role = "production"
 context_files = []

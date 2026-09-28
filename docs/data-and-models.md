@@ -30,6 +30,7 @@ Measured from the published `config.json` on 2026-09-16:
 | tied word embeddings | yes (no separate output-head tensor in the file) |
 | dtype on disk | bfloat16 |
 | end-of-text / eos id | 151643 |
+| pinned base max positions | 32,768 (config rechecked 2026-09-28) |
 
 Chat-control ids that matter later: `<|im_start|>` 151644, `<|im_end|>`
 151645, `<think>` 151667, `</think>` 151668. The base model is prompted
@@ -51,7 +52,8 @@ no bias.
 | weights as f64 arrays in the interpreter | about 4.8 GB |
 | embedding / output matrix alone | 151,936 x 1,024 = 155.6 M values |
 | one layer's projections | 2 x 1024x2048 + 2 x 1024x1024 + 3 x 1024x3072 = 15.7 M values |
-| development machine | Apple M1 Max, 10 cores, 64 GB unified memory |
+| original development machine | Apple M1 Max, 10 cores, 64 GB unified memory |
+| current CPU smoke host | Xeon W-2135, 12 logical CPUs, about 251 GiB RAM |
 
 The interpreter stores every array as f64, so the full model fits in memory
 with room for activations, but each intermediate the size of the embedding
@@ -101,4 +103,8 @@ cached file. A replacement is installed only after verification. Transfers
 have explicit resource limits; see [integration details](extension-integration.md).
 Neither downloads nor real inference run inside `just check`. The training
 split recipe remains unavailable. Follow the [Org/Babel usage guide](using-reasoning-model.org)
-for tested commands and the outstanding real-model viability check.
+for tested commands and the [bounded CPU attempt](real-model-smoke.md).
+The smoke rechecks cached hashes before loading, validates the pinned
+configuration, and allocates only seven rotary positions for its five-token
+prompt and two-token generation budget. It runs separately as
+`just real-model-smoke`; it never joins the fixture gate.

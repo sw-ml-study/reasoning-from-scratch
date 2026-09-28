@@ -1,0 +1,32 @@
+# Fixture-only acceptance for pinned Qwen config compatibility and bounded smoke context.
+include "lib/text/text.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/smoke/smoke.mlpl";
+
+def u:smoke_fixture() {
+  "An independently authored minimal config describing the supported architecture.";
+  parse_json("{\"model_type\":\"qwen3\",\"vocab_size\":151936,\"hidden_size\":1024,\"num_hidden_layers\":28,\"num_attention_heads\":16,\"num_key_value_heads\":8,\"head_dim\":128,\"intermediate_size\":3072,\"rms_norm_eps\":0.000001,\"rope_theta\":1000000,\"max_position_embeddings\":32768,\"tie_word_embeddings\":true,\"attention_bias\":false,\"use_sliding_window\":false,\"rope_scaling\":null,\"hidden_act\":\"silu\",\"torch_dtype\":\"bfloat16\",\"eos_token_id\":151643}")?
+}
+
+@test {name: "smoke config validates architecture and bounds rope allocation", tags: ["smoke"]}
+def u:test_smoke_config() {
+  "The allocation uses the requested context after verifying the checkpoint configuration.";
+  c = u:smoke_config(u:smoke_fixture(), 16)?;
+  u:assert_eq(c.context, 16, "bounded context")?;
+  u:assert_eq(c.heads, 16, "query heads")?;
+  u:assert_err(u:smoke_config(u:smoke_fixture(), 0), "empty context")?;
+  u:assert_err(u:smoke_config(u:smoke_fixture(), 32769), "beyond checkpoint")?;
+  u:assert_err(u:smoke_config(u:smoke_fixture(), 1.5), "fractional context")
+}
+
+@test {name: "smoke config refuses missing fields and incompatible semantics", tags: ["smoke"]}
+def u:test_smoke_mismatch() {
+  "Shape-compatible checkpoints with a different activation or rotary convention must still be rejected.";
+  u:assert_err(u:smoke_config({}, 16), "missing config")?;
+  raw = to_json(u:smoke_fixture())?;
+  u:assert_err(u:smoke_config(parse_json(u:text_replace_all(raw, "silu", "gelu"))?, 16), "activation mismatch")?;
+  u:assert_err(u:smoke_config(parse_json(u:text_replace_all(raw, "1000000", "10000"))?, 16), "rotary mismatch")?;
+  u:assert_err(u:smoke_config(parse_json(u:text_replace_all(raw, "151936", "32"))?, 16), "vocabulary mismatch")
+}
+
+u:run_registered_tests()

@@ -6,6 +6,7 @@ repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 sh -n "$repo_dir"/scripts/*
 sh "$repo_dir/tests/check-tooling.sh"
 sh "$repo_dir/tests/check-extension-tooling.sh"
+sh "$repo_dir/tests/check-smoke-tooling.sh"
 "$repo_dir/scripts/check-structure"
 "$repo_dir/scripts/check-sources"
 "$repo_dir/scripts/check-doc-links"

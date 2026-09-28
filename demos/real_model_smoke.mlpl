@@ -1,0 +1,50 @@
+# Opt-in pinned Qwen3 base smoke: boxed tokenizer adapter, validated config/checkpoint, resident CPU load and two greedy tokens. Run only through scripts/run-real-model-smoke.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/generate/generate.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "lib/smoke/smoke.mlpl";
+
+def u:smoke_encode(box, text) {
+  "Pass opaque tokenizer handles inside a record until core R13 is accepted.";
+  _hftok:encode(box.handle, text)
+}
+
+def u:smoke_decode(box, ids) {
+  "Preserve the local empty-decode workaround without masking native errors.";
+  if tally(ids) { _hftok:decode(box.handle, ids) } else {
+    ""
+  }
+}
+
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+tokenizer = u:hftok_load(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+prompt = "The capital of France is"
+ids = u:smoke_encode({handle: tokenizer}, prompt)
+max_new = 2
+config = u:smoke_config(parse_json(read_text("models/qwen3-0.6b-base/config.json")?)?, tally(ids) + max_new)?
+print("template: base-smoke-v1; bare text; greedy; seed: 42 (unused); max_new: 2; eos: 151643")
+print("prompt:", prompt, "prompt ids:", ids, "context allocation:", config.context)
+path = "models/qwen3-0.6b-base/model.safetensors"
+header = u:st_open(path, {})?
+print("checkpoint:", to_json(u:st_check_model(header, config, "BF16")?)?)
+print("phase: load")
+started = clock_ms()
+model = u:st_load_model(path, config, "BF16", {})?
+load_ms = clock_ms() - started
+print("load_ms:", load_ms)
+print("phase: generation")
+started = clock_ms()
+result = u:gen_greedy(config, model, ids, max_new, 151643)?
+generation_ms = clock_ms() - started
+text = u:smoke_decode({handle: tokenizer}, result.ids)
+print("result:", to_json({template: "base-smoke-v1", prompt: prompt, prompt_ids: ids, seed: 42, decoding: "greedy", max_new: max_new, stop_id: 151643, generated_ids: result.ids, text: text, stopped: result.stopped, load_ms: load_ms, generation_ms: generation_ms})?)
+_hftok:close(tokenizer)
+ok(1)

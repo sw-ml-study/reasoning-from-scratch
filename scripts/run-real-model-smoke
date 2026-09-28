@@ -1,0 +1,53 @@
+#!/bin/sh
+# Opt-in bounded CPU viability measurement. No downloads: verify cached immutable artifacts before inference.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+[ "$#" -eq 0 ] || { echo 'usage: run-real-model-smoke' >&2; exit 2; }
+for path in tokenizer.json config.json model.safetensors; do
+    [ -f "models/qwen3-0.6b-base/$path" ] || { echo 'unavailable: run scripts/fetch-model --weights first' >&2; exit 77; }
+done
+sha256sum -c <<'HASHES'
+c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539  models/qwen3-0.6b-base/tokenizer.json
+504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59  models/qwen3-0.6b-base/config.json
+cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba  models/qwen3-0.6b-base/model.safetensors
+HASHES
+mlpl=$("$repo/scripts/select-mlpl")
+"$mlpl" --version
+sha256sum "$mlpl"
+echo 'model revision: da87bfb608c14b7cf20ba1ce41287e8de496c0cd; CPU only'
+echo 'budgets: 600 wall seconds; 32 GiB virtual memory; 2 generated tokens'
+mkdir -p out
+# Linux RLIMIT_AS bounds address space, not just resident memory.
+ulimit -v 33554432
+# Read with a shell builtin: /proc may expose host PIDs while $! is namespaced.
+read -r host_pid stat_rest < /proc/self/stat
+started=$(date +%s)
+timeout --signal=TERM --kill-after=5s 600 \
+    "$repo/scripts/run-extension-demo" hftok demos/real_model_smoke.mlpl &
+child=$!
+read -r timeout_host other_children < "/proc/$host_pid/task/$host_pid/children" || true
+trap 'kill -TERM "$child" 2>/dev/null || true' HUP INT TERM
+peak=0
+while kill -0 "$child" 2>/dev/null; do
+    # timeout's direct child execs the interpreter, retaining its PID.
+    children=$(cat "/proc/$timeout_host/task/$timeout_host/children" 2>/dev/null || true)
+    for pid in $children; do
+        sample=$(awk '/^VmHWM:/ {print $2}' "/proc/$pid/status" 2>/dev/null || true)
+        case "$sample" in
+            ''|*[!0-9]*) ;;
+            *) if [ "$sample" -gt "$peak" ]; then peak=$sample; fi ;;
+        esac
+    done
+    sleep 0.05
+done
+if wait "$child"; then status=0; else status=$?; fi
+ended=$(date +%s)
+echo "process wall seconds (coarse): $((ended - started))"
+if [ "$peak" -gt 0 ]; then
+    echo "sampled process VmHWM KiB: $peak (lower bound; 50 ms polling)"
+else
+    echo 'sampled process VmHWM: unavailable'
+fi
+echo "process exit status: $status"
+exit "$status"

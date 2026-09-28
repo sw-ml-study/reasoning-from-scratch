@@ -9,10 +9,10 @@ This document explains *how to run the project*. The companion
 [[file:reasoning.org][How it works]] document explains the implementation, with annotated MLPL
 blocks that reproduce the library files through tangling.
 
-As of 2026-09-27, verifier, synthetic-model generation, scoring and scripted
+As of 2026-09-28, verifier, synthetic-model generation, scoring and scripted
 refinement are runnable. The real tokenizer and verified downloads work
 with the [[file:extension-integration.md][documented adapters]]. The named-tensor loader passes authored-file
-tests. Real checkpoint inference is the next viability check. No trained
+tests. The bounded real-checkpoint attempt is documented below. No trained
 reasoning checkpoint, real-model accuracy or learning improvement is claimed.
 
 Open this file in Emacs Org mode. Enable shell Babel evaluation in your own
@@ -92,7 +92,7 @@ Missing real data and wrong ids or round trips fail; fixture-only acceptance
 must be requested explicitly and does not establish real tokenizer parity.
 
 The following separate block also fetches the real weights. Run it only
-when ready for the next real-model smoke step; it can transfer 1.19 GB.
+when ready for the real-model smoke; it can transfer 1.19 GB.
 A verified transfer is an artifact-readiness check, not proof of inference.
 
 #+begin_src sh
@@ -100,12 +100,49 @@ A verified transfer is an artifact-readiness check, not proof of inference.
 scripts/fetch-model --weights
 #+end_src
 
-* 5. Real prompting and method selection — awaiting viability
+* 5. Bounded real-checkpoint viability
 
-There is not yet a validated operator command for real-model generation.
-The next smoke step will add an exact prompt command, a small explicit token
-budget/seed, an observed output and CPU load/time/memory measurements here.
-Until then, use the demos above and do not treat synthetic outputs as answers.
+The Linux CPU attempt is separate from =just check=. After fetching weights,
+this command rechecks their SHA-256 and runs the MLPL driver under a
+600-second wall deadline and a 32 GiB virtual-memory limit. It requests two
+greedy tokens for the bare base-model prompt =The capital of France is=.
+Template =base-smoke-v1= records seed 42 (unused by greedy), EOS 151643 and
+all generated ids. There is no chat wrapper or thinking instruction.
+
+#+begin_src sh
+<<tested-tools>>
+just real-model-smoke
+#+end_src
+
+Observed artifact/configuration acceptance on 2026-09-28:
+
+#+begin_example
+models/qwen3-0.6b-base/tokenizer.json: OK
+models/qwen3-0.6b-base/config.json: OK
+models/qwen3-0.6b-base/model.safetensors: OK
+prompt: The capital of France is prompt ids: 785 6722 315 9625 374 context allocation: 7
+checkpoint: {"bytes":1192099840,"dtype":"BF16","parameters":596049920,"tensors":310,"tied":1}
+phase: load
+process wall seconds (coarse): 600
+sampled process VmHWM KiB: 14830820 (lower bound; 50 ms polling)
+process exit status: 124
+#+end_example
+
+*Result: unavailable within the budget.* The loader never returned, so
+generation did not start. The sampled peak is about 14.14 GiB; no completed
+load time, generated continuation, tokens/second or accuracy can be reported.
+The next task profiles loader copying and allocation before another bounded
+attempt. Continue using the fixture demos for generation/scaling examples.
+
+The seven-position rotary allocation is deliberately small. The config guard
+checks the pinned base checkpoint's actual 32,768-position limit, along with
+dimensions, activation, rotary convention and tying. A shape-compatible but
+semantically different checkpoint fails. See [[file:real-model-smoke.md][the measurement report]] for
+the full hashes, result and limits. Required missing artifacts return 77;
+hash failures never start inference. A timeout returns 124 from the script
+(=just= may translate this into its own nonzero recipe status).
+
+* Real method selection — awaiting responder acceptance
 
 Once the real responder is validated, the guide will show the same prompt
 under each supported method, with explicit budgets and provenance:
