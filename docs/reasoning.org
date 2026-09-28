@@ -5226,8 +5226,9 @@ def u:scaling_refine(problem, responder, scorer, seeds, options) {
 
 Chapter 2's checkpoint loading is now implemented over core =unpack=.
 The [[file:tensor-loader.md][loader contract]] covers packed reads, finite weights, projection
-orientation and tied embeddings. Tests use authored tiny files; real-model
-loading and inference remain unmeasured.
+orientation and tied embeddings. Tests use authored tiny and scaled files;
+the bounded real attempts and scope measurements are recorded in the
+[[file:loader-profile.md][loader profile]].
 
 The loader composes the validated directory with native byte kernels. Model names, shapes, finite-value policy and weight orientation remain MLPL decisions.
 
@@ -5298,24 +5299,37 @@ def u:st_read_projection(header, config, layer, role, dtype) {
 }
 #+end_src
 
-Each role is stacked across decoder layers before the model is returned. This keeps file I/O out of the generation loop, while leaving array-copy performance to be measured.
+Each role is stacked across decoder layers before the model is returned.
+The interpreter snapshots named bindings on user calls, so a growing named
+stack made every nested tensor-reader call more expensive. Here each
+projection stays in a temporary concat operand while the remaining layers
+are read recursively. The 28-layer Qwen bound keeps recursion shallow. This
+preserves the leading layer axis and file order, including singleton stacks;
+it reduces snapshot copying but does not make concat or callbacks zero-copy.
 
 #+begin_src mlpl :tangle ../lib/safetensors/load.mlpl
 def u:st_read_stack(header, config, role, dtype) {
-  "Load one role across layers into a leading layer axis; no file reads remain in the inference callback.";
-  layer = 0;
-  stack = [];
-  while lt(layer, config.layers) {
-    values = u:st_read_projection(header, config, layer, role, dtype)?;
-    piece = reshape(values, concat([1], shape(values)));
-    stack = if layer {
-      concat(stack, piece, 0)
-    } else {
-      piece
-    };
-    layer = layer + 1
+  "Load a resident role stack without binding a growing accumulator across tensor-reader calls. Recursion is bounded by the trusted model layer count (28 for Qwen3-0.6B).";
+  if gt(config.layers, 0) {
+    u:st_read_stack_from(header, config, role, dtype, 0)
+  } else {
+    ok([])
+  }
+}
+
+def u:st_read_stack_from(header, config, role, dtype, layer) {
+  "Keep each decoded projection as a temporary concat operand, outside the named call scope; preserve file order, orientation and fail-fast Results.";
+  stored_shape = u:st_expected_shape(config, role);
+  dims = if gt(tally(stored_shape), 1) {
+    [1, at(stored_shape, 1), at(stored_shape, 0)]
+  } else {
+    concat([1], stored_shape)
   };
-  ok(stack)
+  if lt(layer + 1, config.layers) {
+    ok(concat(reshape(u:st_read_projection(header, config, layer, role, dtype)?, dims), u:st_read_stack_from(header, config, role, dtype, layer + 1)?, 0))
+  } else {
+    ok(reshape(u:st_read_projection(header, config, layer, role, dtype)?, dims))
+  }
 }
 #+end_src
 
@@ -5328,7 +5342,25 @@ def u:st_resident_layer(stacks, layer) {
 }
 #+end_src
 
+The layer callback is assembled from temporary role values. Avoiding a named
+stack-record binding prevents that large record from entering later user-call
+snapshots. Errors remain Results and propagate to the whole-model caller.
+
+#+begin_src mlpl :tangle ../lib/safetensors/load.mlpl
+def u:st_load_layers(header, config, dtype) {
+  "Build the resident callback directly from temporary role values, avoiding a second named binding for the full stack record.";
+  ok(call(:u:st_resident_layer, {wq: u:st_read_stack(header, config, "wq", dtype)?, wk: u:st_read_stack(header, config, "wk", dtype)?, wv: u:st_read_stack(header, config, "wv", dtype)?, wo: u:st_read_stack(header, config, "wo", dtype)?, qn: u:st_read_stack(header, config, "qn", dtype)?, kn: u:st_read_stack(header, config, "kn", dtype)?, n1: u:st_read_stack(header, config, "n1", dtype)?, n2: u:st_read_stack(header, config, "n2", dtype)?, gate: u:st_read_stack(header, config, "gate", dtype)?, up: u:st_read_stack(header, config, "up", dtype)?, down: u:st_read_stack(header, config, "down", dtype)?}))
+}
+#+end_src
+
 Whole-model validation precedes payload reads. The model uses the embedding for its tied output head and refuses an independent head that the current forward pass would otherwise ignore.
+
+Model fields are evaluated directly into the returned record. In particular,
+the large embedding is not retained in a named local during layer loading.
+Temporary record operands are outside the variable snapshot tables on the
+pinned interpreter. This is a measured MLPL workaround, not a general
+guarantee of constant-cost function calls; the new scalar-call probe records
+that remaining core limitation.
 
 #+begin_src mlpl :tangle ../lib/safetensors/load.mlpl
 def u:st_load_model(path, config, dtype, options) {
@@ -5337,10 +5369,7 @@ def u:st_load_model(path, config, dtype, options) {
   header = u:st_open(path, options)?;
   if u:st_tied(header) {
     summary = u:st_check_model(header, config, dtype)?;
-    embedding = u:st_read_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?;
-    final_norm = u:st_read_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?;
-    stacks = {wq: u:st_read_stack(header, config, "wq", dtype)?, wk: u:st_read_stack(header, config, "wk", dtype)?, wv: u:st_read_stack(header, config, "wv", dtype)?, wo: u:st_read_stack(header, config, "wo", dtype)?, qn: u:st_read_stack(header, config, "qn", dtype)?, kn: u:st_read_stack(header, config, "kn", dtype)?, n1: u:st_read_stack(header, config, "n1", dtype)?, n2: u:st_read_stack(header, config, "n2", dtype)?, gate: u:st_read_stack(header, config, "gate", dtype)?, up: u:st_read_stack(header, config, "up", dtype)?, down: u:st_read_stack(header, config, "down", dtype)?};
-    ok({embedding: embedding, final_norm: final_norm, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: call(:u:st_resident_layer, stacks), checkpoint: summary})
+    ok({embedding: u:st_read_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?, final_norm: u:st_read_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: u:st_load_layers(header, config, dtype)?, checkpoint: summary})
   } else {
     err({kind: "untied_head", message: "the Qwen forward contract requires tied embeddings; a separate output head is unsupported"})
   }
@@ -5523,12 +5552,13 @@ scaling measurements remain unavailable pending end-to-end viability.
 
 * Bounded real-checkpoint viability
 
-The 2026-09-28 CPU repeat reached checkpoint validation but timed out after
-600 seconds inside the loader, at a sampled peak of about 14.14 GiB. The
-driver below specifies the complete intended path; its generation phase was
-not reached. See [[file:real-model-smoke.md][the measurement report]] and the separate usage guide
-for the observed output. Loader profiling is next; no real continuation or
-accuracy result is claimed here.
+The initial 2026-09-28 CPU repeat timed out after 600 seconds inside the
+loader. The scope changes above now load the same checkpoint in 101.45 s,
+but generation fails an allocation under the same 32 GiB limit, at a sampled
+peak of about 31.48 GiB. See [[file:loader-profile.md][the profile and abort interpretation]],
+the [[file:real-model-smoke.md][original measurement]] and the usage guide. The driver specifies
+the intended end-to-end path; it has not produced real output. Resident
+inference copying is next; no accuracy result is claimed here.
 
 Before allocating weights, the operator wrapper checks all three artifact
 hashes. The configuration guard below rejects mismatched dimensions,
@@ -5632,5 +5662,151 @@ generation_ms = clock_ms() - started
 text = u:smoke_decode({handle: tokenizer}, result.ids)
 print("result:", to_json({template: "base-smoke-v1", prompt: prompt, prompt_ids: ids, seed: 42, decoding: "greedy", max_new: max_new, stop_id: 151643, generated_ids: result.ids, text: text, stopped: result.stopped, load_ms: load_ms, generation_ms: generation_ms})?)
 _hftok:close(tokenizer)
+ok(1)
+#+end_src
+
+* Authored loader profiling fixtures
+
+The following builder creates exact positive BF16 values from their global
+parameter positions. Vocabulary, layer count and width can vary without
+using real weights. Nonsquare projections and distinct layers catch layout
+errors; the test suite also corrupts the last projection to require late
+error propagation. Profiling uses separate interpreter processes so earlier
+arrays cannot contaminate the next mode's scope snapshots.
+
+#+begin_src mlpl :tangle ../fixtures/safetensors/scaled.mlpl :mkdirp yes
+# Authored BF16 checkpoint builder for scaled loader regression tests and opt-in profiling. Requires lib/text/text.mlpl and lib/safetensors/names.mlpl. Payloads are positive exact BF16 values determined by global parameter position, not copied weights.
+
+def u:st_fixture_config(vocab, layers) {
+  "A modest decoder with nonsquare key and feed-forward matrices and a variable embedding size.";
+  u:st_fixture_wide_config(vocab, layers, 32)
+}
+
+def u:st_fixture_wide_config(vocab, layers, width) {
+  "Scale decoder width in multiples of four while preserving grouped-query and nonsquare projection geometry.";
+  {vocab: vocab, emb: width, layers: layers, heads: 4, kv_heads: 2, head_dim: width / 4, hidden: width * 2, rope_base: 1000000, eps: 0.000001, context: 8}
+}
+
+def u:st_fixture_entry(name, dims, start) {
+  "Encode one BF16 header entry and return its end offset; dimensions and offsets are measured in the safetensors convention.";
+  count = reduce(:mul, dims);
+  {text: str_concat(to_json(name)?, str_concat(":", to_json({dtype: "BF16", shape: dims, data_offsets: [start, start + count * 2]})?)), end: start + count * 2}
+}
+
+def u:st_fixture_write(path, config) {
+  "Write an independently authored checkpoint whose value at global index i is 1 plus i modulo 127 divided by 128.";
+  first = u:st_fixture_entry(u:st_embedding_name(), [config.vocab, config.emb], 0);
+  last = u:st_fixture_entry(u:st_final_norm_name(), [config.emb], first.end);
+  text = str_concat(first.text, str_concat(",", last.text));
+  offset = last.end;
+  roles = ["wq", "wk", "wv", "wo", "qn", "kn", "n1", "n2", "gate", "up", "down"];
+  layer = 0;
+  while lt(layer, config.layers) {
+    i = 0;
+    while lt(i, list_len(roles)) {
+      role = list_get(roles, i)?;
+      entry = u:st_fixture_entry(u:st_layer_name(layer, role)?, u:st_expected_shape(config, role), offset);
+      text = str_concat(text, str_concat(",", entry.text));
+      offset = entry.end;
+      i = i + 1
+    };
+    layer = layer + 1
+  };
+  bytes = tokenize_bytes(str_concat("{", str_concat(text, "}")));
+  n = tally(bytes);
+  prefix = [mod(n, 256), mod(floor(n / 256), 256), mod(floor(n / 65536), 256), 0, 0, 0, 0, 0];
+  count = offset / 2;
+  payload = flatten(concat(reshape(128 + mod(range(count), 127), [count, 1]), zeros([count, 1]) + 63, 1));
+  write_bytes(path, concat(concat(prefix, bytes), payload))
+}
+#+end_src
+
+The diagnostic below separates packed reading, unpacking, finite validation,
+reshape, transpose, stack assembly, unused caller bindings and partial
+callback costs. These clocks include interpreter value/binding overhead;
+they are not native-kernel-only timings. =just loader-profile= runs the
+modes with authored files, at 120 seconds and 8 GiB per process, outside the
+fixture gate. The [[file:loader-profile.md][profile report]] explains the observed improvements
+and remaining core limit.
+
+#+begin_src mlpl :tangle ../demos/loader_profile.mlpl :mkdirp yes
+# Opt-in authored-fixture loader profiling; each mode runs in a fresh interpreter to separate stage, scope and model costs. Requires scripts/run-loader-profile.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "fixtures/safetensors/scaled.mlpl";
+
+def u:st_profile_identity(value) {
+  "Return a scalar without using any unrelated array in the caller environment.";
+  value
+}
+
+def u:st_profile_first(data, row) {
+  "Select one resident row to measure a bound array callback independently of file I/O.";
+  take(data, 0, row)
+}
+
+mode = env("LOADER_PROFILE_MODE")?
+vocab = parse_json(env("LOADER_PROFILE_VOCAB")?)?
+config = u:st_fixture_wide_config(vocab, parse_json(env("LOADER_PROFILE_LAYERS")?)?, parse_json(env("LOADER_PROFILE_WIDTH")?)?)
+path = "out/fixtures/profile-checkpoint.safetensors"
+if str_eq(mode, "fixture") {
+  u:st_fixture_write(path, config)?;
+  print("fixture vocab:", vocab, "layers:", config.layers, "width:", config.emb)
+}
+if str_eq(mode, "scope") {
+  held = zeros([vocab * config.emb]);
+  started = clock_ms();
+  i = 0;
+  while lt(i, 100) {
+    u:st_profile_identity(1);
+    i = i + 1
+  };
+  print("unused caller array values:", tally(held), "100 scalar calls ms:", clock_ms() - started)
+}
+if str_eq(mode, "stages") {
+  header = u:st_open(path, {})?;
+  entry = u:st_entry(header, u:st_embedding_name())?;
+  started = clock_ms();
+  bytes = read_bytes_packed(path, 8 + header.header_length + entry.start, entry.end - entry.start)?;
+  read_ms = clock_ms() - started;
+  started = clock_ms();
+  decoded = unpack(bytes, "bf16");
+  unpack_ms = clock_ms() - started;
+  started = clock_ms();
+  finite = reduce(:and, flatten(eq(decoded - decoded, 0)));
+  finite_ms = clock_ms() - started;
+  started = clock_ms();
+  matrix = reshape(decoded, entry.shape);
+  reshape_ms = clock_ms() - started;
+  started = clock_ms();
+  transposed = transpose(matrix);
+  transpose_ms = clock_ms() - started;
+  print("stage values:", tally(decoded), "read_ms:", read_ms, "unpack_ms:", unpack_ms, "finite_ms:", finite_ms, "reshape_ms:", reshape_ms, "transpose_ms:", transpose_ms, "finite:", finite)
+}
+if str_eq(mode, "stack") {
+  header = u:st_open(path, {})?;
+  started = clock_ms();
+  stack = u:st_read_stack(header, config, "gate", "BF16")?;
+  print("stack shape:", shape(stack), "stack_ms:", clock_ms() - started)
+}
+if str_eq(mode, "callback") {
+  started = clock_ms();
+  callback = call(:u:st_profile_first, zeros([vocab, config.emb]));
+  capture_ms = clock_ms() - started;
+  started = clock_ms();
+  row = call(callback, 0);
+  print("callback values:", vocab * config.emb, "capture_ms:", capture_ms, "invoke_ms:", clock_ms() - started, "row values:", tally(row))
+}
+if str_eq(mode, "model") {
+  started = clock_ms();
+  model = u:st_load_model(path, config, "BF16", {})?;
+  elapsed = clock_ms() - started;
+  print("model vocab:", vocab, "load_ms:", elapsed, "parameters:", model.checkpoint.parameters)
+}
 ok(1)
 #+end_src

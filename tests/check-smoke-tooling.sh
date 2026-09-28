@@ -23,6 +23,7 @@ echo /bin/true
 EOF
 cat > "$work/scripts/run-extension-demo" <<'EOF'
 #!/bin/sh
+echo "core-limit: $(ulimit -c)"
 sleep 0.2
 exit 7
 EOF
@@ -30,6 +31,7 @@ chmod +x "$work/bin/sha256sum" "$work/scripts/select-mlpl" "$work/scripts/run-ex
 status=0
 PATH="$work/bin:$PATH" "$work/scripts/run-real-model-smoke" > "$work/log" 2>&1 || status=$?
 [ "$status" -eq 7 ] || { cat "$work/log"; exit 1; }
+grep -q '^core-limit: 0$' "$work/log"
 awk '/sampled process VmHWM KiB:/ {found=1; if ($5 <= 0) exit 1} END {if (!found) exit 1}' "$work/log"
 status=0
 FAKE_HASH_STATUS=1 PATH="$work/bin:$PATH" "$work/scripts/run-real-model-smoke" > "$work/log" 2>&1 || status=$?

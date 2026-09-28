@@ -1,0 +1,79 @@
+# Opt-in authored-fixture loader profiling; each mode runs in a fresh interpreter to separate stage, scope and model costs. Requires scripts/run-loader-profile.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "fixtures/safetensors/scaled.mlpl";
+
+def u:st_profile_identity(value) {
+  "Return a scalar without using any unrelated array in the caller environment.";
+  value
+}
+
+def u:st_profile_first(data, row) {
+  "Select one resident row to measure a bound array callback independently of file I/O.";
+  take(data, 0, row)
+}
+
+mode = env("LOADER_PROFILE_MODE")?
+vocab = parse_json(env("LOADER_PROFILE_VOCAB")?)?
+config = u:st_fixture_wide_config(vocab, parse_json(env("LOADER_PROFILE_LAYERS")?)?, parse_json(env("LOADER_PROFILE_WIDTH")?)?)
+path = "out/fixtures/profile-checkpoint.safetensors"
+if str_eq(mode, "fixture") {
+  u:st_fixture_write(path, config)?;
+  print("fixture vocab:", vocab, "layers:", config.layers, "width:", config.emb)
+}
+if str_eq(mode, "scope") {
+  held = zeros([vocab * config.emb]);
+  started = clock_ms();
+  i = 0;
+  while lt(i, 100) {
+    u:st_profile_identity(1);
+    i = i + 1
+  };
+  print("unused caller array values:", tally(held), "100 scalar calls ms:", clock_ms() - started)
+}
+if str_eq(mode, "stages") {
+  header = u:st_open(path, {})?;
+  entry = u:st_entry(header, u:st_embedding_name())?;
+  started = clock_ms();
+  bytes = read_bytes_packed(path, 8 + header.header_length + entry.start, entry.end - entry.start)?;
+  read_ms = clock_ms() - started;
+  started = clock_ms();
+  decoded = unpack(bytes, "bf16");
+  unpack_ms = clock_ms() - started;
+  started = clock_ms();
+  finite = reduce(:and, flatten(eq(decoded - decoded, 0)));
+  finite_ms = clock_ms() - started;
+  started = clock_ms();
+  matrix = reshape(decoded, entry.shape);
+  reshape_ms = clock_ms() - started;
+  started = clock_ms();
+  transposed = transpose(matrix);
+  transpose_ms = clock_ms() - started;
+  print("stage values:", tally(decoded), "read_ms:", read_ms, "unpack_ms:", unpack_ms, "finite_ms:", finite_ms, "reshape_ms:", reshape_ms, "transpose_ms:", transpose_ms, "finite:", finite)
+}
+if str_eq(mode, "stack") {
+  header = u:st_open(path, {})?;
+  started = clock_ms();
+  stack = u:st_read_stack(header, config, "gate", "BF16")?;
+  print("stack shape:", shape(stack), "stack_ms:", clock_ms() - started)
+}
+if str_eq(mode, "callback") {
+  started = clock_ms();
+  callback = call(:u:st_profile_first, zeros([vocab, config.emb]));
+  capture_ms = clock_ms() - started;
+  started = clock_ms();
+  row = call(callback, 0);
+  print("callback values:", vocab * config.emb, "capture_ms:", capture_ms, "invoke_ms:", clock_ms() - started, "row values:", tally(row))
+}
+if str_eq(mode, "model") {
+  started = clock_ms();
+  model = u:st_load_model(path, config, "BF16", {})?;
+  elapsed = clock_ms() - started;
+  print("model vocab:", vocab, "load_ms:", elapsed, "parameters:", model.checkpoint.parameters)
+}
+ok(1)

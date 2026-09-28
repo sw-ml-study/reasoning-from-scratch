@@ -1,5 +1,31 @@
 # sw-MLPL capability ledger
 
+## Loader scope profile and inference boundary, 2026-09-28
+
+**MLPL workaround supported; core call-scope scaling missing; real generation
+unavailable within 32 GiB.** Keeping model fields and recursive role-stack
+operands temporary avoids copying large named intermediates on nested calls.
+The 1,085,792-parameter authored model loads in 295 ms versus 1,499 ms before.
+All 12 loader tests pass, including every scaled role/layer, late NaN error
+propagation and no-inference-I/O parity. See [the profile](loader-profile.md).
+
+The minimal `call-scope-scaling` probe takes 0.40 ms for 100 scalar calls
+with a 16-value unused caller array, versus 106.93 ms with 1,048,576 values;
+expected result **fail**, acceptance `max(10 ms, 8 * small_ms)` plus preserved
+return values and local/caller scope. Read-only pinned source inspection
+confirms per-call scope-table cloning. The required fundamental frame/value
+semantics belong in core under R10; no native model extension is proposed.
+
+The same real checkpoint now loads in 101.45 s. Generation reports a failed
+1,244,659,712-byte allocation under the unchanged 32 GiB virtual-address
+limit. Sampled peak RSS is 33,010,784 KiB (about 31.48 GiB). Its core dump was
+manually interrupted, so the 194-second final process time/status 137 is not
+a generation timing or kernel OOM-kill claim. No tokens, throughput or
+accuracy were produced. Future smoke children receive core-file limit zero.
+The next task isolates resident inference copying on scaled fixtures and
+refines R10 acceptance before another real attempt. CUDA remains unvalidated;
+the tokenizer adapters remain required. Toy GRPO is independent.
+
 ## Bounded real-checkpoint attempt, 2026-09-28
 
 **Bulk decoding: supported. Whole-model loading: awkward. Real inference:

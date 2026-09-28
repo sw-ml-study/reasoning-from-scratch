@@ -2,8 +2,9 @@
 
 `lib/safetensors/load.mlpl` implements chapter 2 checkpoint loading in MLPL.
 It consumes validated safetensors directories and uses core packed reads and
-bulk unpack. Nine native tests use authored tiny payloads; no real checkpoint
-has been loaded and no real-model accuracy is reported.
+bulk unpack. Twelve native tests use authored tiny and scaled payloads.
+The [scope profile](loader-profile.md) completes real loading in 101.45 s;
+generation still fails its memory budget, and no accuracy is reported.
 
 ## Interface
 
@@ -44,6 +45,14 @@ callback selects resident arrays; it does not open files during inference.
 The model also contains the embedding, final gain, RoPE tables and a
 `checkpoint` validation summary. The summary is structural metadata, not a
 checkpoint hash or an accuracy record.
+
+The pinned interpreter snapshots named bindings on every user call. To
+avoid copying the embedding during layer reads, model fields are evaluated
+as temporary record operands. Role stacks similarly use temporary concat
+operands with recursion bounded by the trusted layer count (28 for the real
+checkpoint). No growing stack is bound across nested reader calls. The
+partial is built directly from temporary role fields. These scope changes
+preserve the existing Result contract, including errors in the final layer.
 
 **Only tied output embeddings are supported**, matching Qwen3-0.6B and the
 current forward contract. A separate `lm_head.weight` produces `untied_head`;
@@ -95,13 +104,14 @@ just tests tests/test_safetensors_loader.mlpl
 just check
 ```
 
-Nine loader tests cover exact spans and values, F32 support, shape/dtype/name
+Twelve loader tests cover exact spans and values, F32 support, shape/dtype/name
 errors, malformed directories, stale-file truncation, finite policy,
 projection orientation, resident tied assembly, cache parity and refusal of
-untied heads. The full suite has 138 tests, 26 probe outcomes and 21 tangled
-library sources.
+untied heads, every role of four scaled layers, late payload failures, and
+zero/singleton stacks. The current suite has 148 tests, 27 probe outcomes and
+27 tangled sources (24 libraries, two drivers and one fixture builder).
 
-Next integrate the delivered tokenizer facade and checksum-verified downloads
-with pinned artifacts and strict real-golden failure handling. After that,
-run an opt-in bounded real-model smoke on CPU if feasible. CUDA remains
-blocked by R12 and is not required to test this loader on CPU.
+Tokenizer/download integration and loader profiling are delivered. Next
+isolate resident-model copies in forward/generation calls and pursue the
+R10 frame/value semantics handoff. CUDA remains unvalidated and is not
+required to test the loader on CPU.

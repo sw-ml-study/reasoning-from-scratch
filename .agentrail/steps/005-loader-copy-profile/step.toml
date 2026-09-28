@@ -1,6 +1,6 @@
 number = 5
 slug = "loader-copy-profile"
-status = "pending"
+status = "in-progress"
 description = "Profile the real-model loader after the bounded CPU attempt in docs/real-mode..."
 role = "production"
 context_files = []

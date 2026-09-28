@@ -52,25 +52,37 @@ def u:st_read_projection(header, config, layer, role, dtype) {
 }
 
 def u:st_read_stack(header, config, role, dtype) {
-  "Load one role across layers into a leading layer axis; no file reads remain in the inference callback.";
-  layer = 0;
-  stack = [];
-  while lt(layer, config.layers) {
-    values = u:st_read_projection(header, config, layer, role, dtype)?;
-    piece = reshape(values, concat([1], shape(values)));
-    stack = if layer {
-      concat(stack, piece, 0)
-    } else {
-      piece
-    };
-    layer = layer + 1
+  "Load a resident role stack without binding a growing accumulator across tensor-reader calls. Recursion is bounded by the trusted model layer count (28 for Qwen3-0.6B).";
+  if gt(config.layers, 0) {
+    u:st_read_stack_from(header, config, role, dtype, 0)
+  } else {
+    ok([])
+  }
+}
+
+def u:st_read_stack_from(header, config, role, dtype, layer) {
+  "Keep each decoded projection as a temporary concat operand, outside the named call scope; preserve file order, orientation and fail-fast Results.";
+  stored_shape = u:st_expected_shape(config, role);
+  dims = if gt(tally(stored_shape), 1) {
+    [1, at(stored_shape, 1), at(stored_shape, 0)]
+  } else {
+    concat([1], stored_shape)
   };
-  ok(stack)
+  if lt(layer + 1, config.layers) {
+    ok(concat(reshape(u:st_read_projection(header, config, layer, role, dtype)?, dims), u:st_read_stack_from(header, config, role, dtype, layer + 1)?, 0))
+  } else {
+    ok(reshape(u:st_read_projection(header, config, layer, role, dtype)?, dims))
+  }
 }
 
 def u:st_resident_layer(stacks, layer) {
   "Select a resident layer from parallel role stacks. Container and slice copying remain an interpreter performance limitation, not a zero-copy claim.";
   {wq: take(stacks.wq, 0, layer), wk: take(stacks.wk, 0, layer), wv: take(stacks.wv, 0, layer), wo: take(stacks.wo, 0, layer), qn: take(stacks.qn, 0, layer), kn: take(stacks.kn, 0, layer), n1: take(stacks.n1, 0, layer), n2: take(stacks.n2, 0, layer), gate: take(stacks.gate, 0, layer), up: take(stacks.up, 0, layer), down: take(stacks.down, 0, layer)}
+}
+
+def u:st_load_layers(header, config, dtype) {
+  "Build the resident callback directly from temporary role values, avoiding a second named binding for the full stack record.";
+  ok(call(:u:st_resident_layer, {wq: u:st_read_stack(header, config, "wq", dtype)?, wk: u:st_read_stack(header, config, "wk", dtype)?, wv: u:st_read_stack(header, config, "wv", dtype)?, wo: u:st_read_stack(header, config, "wo", dtype)?, qn: u:st_read_stack(header, config, "qn", dtype)?, kn: u:st_read_stack(header, config, "kn", dtype)?, n1: u:st_read_stack(header, config, "n1", dtype)?, n2: u:st_read_stack(header, config, "n2", dtype)?, gate: u:st_read_stack(header, config, "gate", dtype)?, up: u:st_read_stack(header, config, "up", dtype)?, down: u:st_read_stack(header, config, "down", dtype)?}))
 }
 
 def u:st_load_model(path, config, dtype, options) {
@@ -79,10 +91,7 @@ def u:st_load_model(path, config, dtype, options) {
   header = u:st_open(path, options)?;
   if u:st_tied(header) {
     summary = u:st_check_model(header, config, dtype)?;
-    embedding = u:st_read_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?;
-    final_norm = u:st_read_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?;
-    stacks = {wq: u:st_read_stack(header, config, "wq", dtype)?, wk: u:st_read_stack(header, config, "wk", dtype)?, wv: u:st_read_stack(header, config, "wv", dtype)?, wo: u:st_read_stack(header, config, "wo", dtype)?, qn: u:st_read_stack(header, config, "qn", dtype)?, kn: u:st_read_stack(header, config, "kn", dtype)?, n1: u:st_read_stack(header, config, "n1", dtype)?, n2: u:st_read_stack(header, config, "n2", dtype)?, gate: u:st_read_stack(header, config, "gate", dtype)?, up: u:st_read_stack(header, config, "up", dtype)?, down: u:st_read_stack(header, config, "down", dtype)?};
-    ok({embedding: embedding, final_norm: final_norm, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: call(:u:st_resident_layer, stacks), checkpoint: summary})
+    ok({embedding: u:st_read_tensor(header, u:st_embedding_name(), [config.vocab, config.emb], dtype)?, final_norm: u:st_read_tensor(header, u:st_final_norm_name(), [config.emb], dtype)?, rope: u:qwen_rope_tables(config.head_dim, config.rope_base, config.context), layer_weights: u:st_load_layers(header, config, dtype)?, checkpoint: summary})
   } else {
     err({kind: "untied_head", message: "the Qwen forward contract requires tied embeddings; a separate output head is unsupported"})
   }

@@ -1,8 +1,11 @@
 # Bounded Qwen3 CPU viability
 
 This is a viability measurement, not a reasoning or accuracy evaluation.
-**Result: unavailable.** The unchanged repeat exhausted its 600-second
-process budget while still inside `u:st_load_model`; generation never began.
+**Current result: generation unavailable.** The subsequent
+[loader profile](loader-profile.md) reduced loading to 101.45 seconds, but
+generation failed an allocation under the same 32 GiB address-space limit.
+The original run documented below exhausted its 600-second process budget
+while still inside `u:st_load_model`; generation never began in that run.
 The post-reboot resume on 2026-09-28 found `main` clean at `55b73d8`, with
 the first three delivery-integration steps complete and the smoke pending.
 The isolated tools, tokenizer and configuration survived. The initial
@@ -100,7 +103,12 @@ timing/status acceptance. The table above comes from a repeat with the
 unchanged corrected wrapper, independently retested on offline fixtures.
 These are warm-cache viability attempts, not cold-storage benchmarks.
 
-## Next step: loader profiling
+## Follow-up: loader profiling delivered
+
+The plan below was executed in [the loader profile](loader-profile.md).
+Scoped temporary fields and role-stack operands improved authored fixtures
+and completed real loading. The next boundary is resident-model copying
+during generation; no real output or accuracy is available yet.
 
 Profile the loader before attempting evaluation. Separate packed reads,
 bulk conversion, finite checks, transposes, role-stack growth and callback

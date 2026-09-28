@@ -122,14 +122,17 @@ conditions. Saga 4 is archived at
 | `named-tensor-loader` | done: packed BF16/F32 reads, resident tied-model assembly, nine native tests and full embedding-size synthetic measurement |
 | tokenizer/download integration | done: pinned external facades, strict parity and verified downloads; boxed-handle/empty-decode workarounds, corpus throughput unavailable |
 | real-model smoke | done as unavailable: pinned weights verified; 600-second CPU deadline during loading, 14.14 GiB sampled peak; no generation |
-| loader-copy-profile | next: isolate load phases and scope/stack/callback costs, test MLPL remedies, repeat the same bounded smoke |
+| loader-copy-profile | done: scoped fields/stacks, 148 tests, scalar-call probe; real load 101.45 s, generation allocation failure under 32 GiB |
+| resident-inference-copy-profile | next: isolate model/callback copies during generation on scaled fixtures and refine the R10 acceptance handoff |
 
 See [the revalidation report](upstream-revalidation.md). Toy GRPO remains
 independent of the real-model path and retains the starting contract above.
 The [loader report](tensor-loader.md) records 138 tests, 26 probe outcomes,
 21 tangled libraries and a 1.27 s synthetic embedding decode. The later
 [real attempt](real-model-smoke.md) measures partial loading memory, but
-whole-model assembly and real inference remain unavailable.
+whole-model assembly was initially unavailable. The
+[scope refactor](loader-profile.md) now completes loading, with generation
+still unavailable under the declared memory limit.
 
 The [integration report](extension-integration.md) records 143 tests, 26
 fixture probes and 23 tangled sources, plus opt-in native parity and small
@@ -137,9 +140,10 @@ verified transfers. Two user-requested Org/Babel documents are separate:
 [usage](using-reasoning-model.org) and [implementation](reasoning.org).
 Both now include the bounded attempt, exact commands, observed acceptance
 and timeout, and the annotated driver. No generated real-model example is
-claimed. The current gate has 145 native tests, 26 probe outcomes and 25
-tangled sources (24 libraries plus the smoke driver). Next, profile the
-loader before evaluation; preserve the independent queued toy GRPO track.
+claimed. The current gate has 148 native tests, 27 probe outcomes and 27
+tangled sources (24 libraries, two drivers and one fixture builder). Next,
+profile resident inference copies before evaluation; preserve the
+independent queued toy GRPO track.
 
 ## Queued: Saga 6, `distillation`
 

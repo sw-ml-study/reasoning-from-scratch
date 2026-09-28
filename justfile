@@ -85,3 +85,7 @@ check:
 # Opt-in bounded real Qwen CPU smoke; fetch-model --weights must run first.
 real-model-smoke:
     ./scripts/run-real-model-smoke
+
+# Opt-in authored-fixture stage and call-scope timing; no real weights.
+loader-profile:
+    ./scripts/run-loader-profile

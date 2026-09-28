@@ -7,6 +7,7 @@ include "lib/generate/generate.mlpl";
 include "lib/safetensors/names.mlpl";
 include "lib/safetensors/plan.mlpl";
 include "lib/safetensors/load.mlpl";
+include "fixtures/safetensors/scaled.mlpl";
 
 def u:stl_write(path, text, data) {
   "Write a tiny authored file from JSON and a numeric byte vector, including its little-endian length prefix.";
@@ -145,6 +146,65 @@ def u:test_stl_spans() {
   u:assert_err(u:st_open(path, {}), "shape versus span")?;
   u:stl_write(path, "{\"x\":{\"dtype\":\"BF16\",\"shape\":[1],\"data_offsets\":[2,4]}}", [0, 0, 128, 63])?;
   u:assert_err(u:st_open(path, {}), "hole before data")
+}
+
+@test {name: "scaled loader preserves every resident role and layer after source removal", tags: ["safetensors", "loader"]}
+def u:test_stl_scaled() {
+  "A larger vocabulary and four distinct layers catch load-order or resident-capture regressions independently of generation.";
+  path = "out/fixtures/loader-scaled.safetensors";
+  config = u:st_fixture_config(256, 4);
+  u:st_fixture_write(path, config)?;
+  header = u:st_open(path, {})?;
+  model = u:st_load_model(path, config, "BF16", {})?;
+  roles = ["wq", "wk", "wv", "wo", "qn", "kn", "n1", "n2", "gate", "up", "down"];
+  layer = 0;
+  while lt(layer, 4) {
+    resident = call(model.layer_weights, layer);
+    i = 0;
+    while lt(i, list_len(roles)) {
+      role = list_get(roles, i)?;
+      entry = u:st_entry(header, u:st_layer_name(layer, role)?)?;
+      stored = reshape(1 + mod(range(entry.parameters) + entry.start / 2, 127) / 128, entry.shape);
+      expected = if gt(tally(entry.shape), 1) {
+        transpose(stored)
+      } else {
+        stored
+      };
+      u:assert_eq(record_get(resident, role)?, expected, "all role values and orientation")?;
+      i = i + 1
+    };
+    layer = layer + 1
+  };
+  full = u:qwen_next_logits(config, model, [1, 2]);
+  write_bytes(path, [])?;
+  u:assert_eq(u:gen_prefill(config, model, [1, 2]).logits, full, "resident cache parity without checkpoint")
+}
+
+@test {name: "model assembly propagates a late layer payload failure", tags: ["safetensors", "errors"]}
+def u:test_stl_late_nonfinite() {
+  "A valid header with a NaN in the final projection must fail the whole load, never hide an error inside the resident callback field.";
+  path = "out/fixtures/loader-late-nan.safetensors";
+  config = u:st_fixture_config(256, 4);
+  u:st_fixture_write(path, config)?;
+  n = file_size(path)?;
+  bytes = read_bytes(path, 0, n - 2)?;
+  write_bytes(path, concat(bytes, [193, 127]))?;
+  outcome = u:st_load_model(path, config, "BF16", {});
+  u:assert_err(outcome, "late payload failure")?;
+  u:assert_text_eq(err_message(outcome).kind, "nonfinite_weight", "preserved classification")
+}
+
+@test {name: "role stack preserves zero and single layer boundaries", tags: ["safetensors", "loader"]}
+def u:test_stl_stack_boundaries() {
+  "A one-layer nonsquare projection has a leading singleton axis; zero layers perform no read.";
+  path = "out/fixtures/loader-single.safetensors";
+  config = u:st_fixture_config(16, 1);
+  u:st_fixture_write(path, config)?;
+  header = u:st_open(path, {})?;
+  entry = u:st_entry(header, u:st_layer_name(0, "wk")?)?;
+  stored = reshape(1 + mod(range(entry.parameters) + entry.start / 2, 127) / 128, [16, 32]);
+  u:assert_eq(u:st_read_stack(header, config, "wk", "BF16")?, reshape(transpose(stored), [1, 32, 16]), "singleton stack")?;
+  u:assert_eq(u:st_read_stack({}, u:st_fixture_config(16, 0), "wk", "BF16")?, [], "empty stack without I/O")
 }
 
 u:run_registered_tests()

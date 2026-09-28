@@ -12,7 +12,8 @@ blocks that reproduce the library files through tangling.
 As of 2026-09-28, verifier, synthetic-model generation, scoring and scripted
 refinement are runnable. The real tokenizer and verified downloads work
 with the [[file:extension-integration.md][documented adapters]]. The named-tensor loader passes authored-file
-tests. The bounded real-checkpoint attempt is documented below. No trained
+tests and now loads the real checkpoint in 101.45 seconds. Generation still
+fails its 32 GiB address-space budget, as documented below. No trained
 reasoning checkpoint, real-model accuracy or learning improvement is claimed.
 
 Open this file in Emacs Org mode. Enable shell Babel evaluation in your own
@@ -114,7 +115,7 @@ all generated ids. There is no chat wrapper or thinking instruction.
 just real-model-smoke
 #+end_src
 
-Observed artifact/configuration acceptance on 2026-09-28:
+Observed artifact/configuration acceptance and loader improvement on 2026-09-28:
 
 #+begin_example
 models/qwen3-0.6b-base/tokenizer.json: OK
@@ -123,16 +124,20 @@ models/qwen3-0.6b-base/model.safetensors: OK
 prompt: The capital of France is prompt ids: 785 6722 315 9625 374 context allocation: 7
 checkpoint: {"bytes":1192099840,"dtype":"BF16","parameters":596049920,"tensors":310,"tied":1}
 phase: load
-process wall seconds (coarse): 600
-sampled process VmHWM KiB: 14830820 (lower bound; 50 ms polling)
-process exit status: 124
+load_ms: 101453.427203
+phase: generation
+memory allocation of 1244659712 bytes failed
 #+end_example
 
-*Result: unavailable within the budget.* The loader never returned, so
-generation did not start. The sampled peak is about 14.14 GiB; no completed
-load time, generated continuation, tokens/second or accuracy can be reported.
-The next task profiles loader copying and allocation before another bounded
-attempt. Continue using the fixture demos for generation/scaling examples.
+*Result: loading works; generation remains unavailable within the budget.*
+The sampled peak is about 31.48 GiB. The process began core dumping after
+the allocation failure and was manually stopped; its final status 137 and
+194-second process duration are not generation metrics. The wrapper now
+sets the child's core-file limit to zero. See [[file:loader-profile.md][the profile]] for the measured
+workaround and exact interpretation. There is no generated continuation,
+tokens/second or accuracy result. The next task profiles resident-model
+copies during inference; continue using the fixture demos for runnable
+generation/scaling examples.
 
 The seven-position rotary allocation is deliberately small. The config guard
 checks the pinned base checkpoint's actual 32,768-position limit, along with
@@ -141,6 +146,17 @@ semantically different checkpoint fails. See [[file:real-model-smoke.md][the mea
 the full hashes, result and limits. Required missing artifacts return 77;
 hash failures never start inference. A timeout returns 124 from the script
 (=just= may translate this into its own nonzero recipe status).
+
+For an authored-fixture demonstration of why the loader improved, run:
+
+#+begin_src sh
+<<tested-tools>>
+just loader-profile
+#+end_src
+
+This uses separate bounded processes for byte reads, conversion, finite
+checks, transposes, stack assembly, unused caller arrays and callbacks.
+It measures interpreter performance, not reasoning ability.
 
 * Real method selection — awaiting responder acceptance
 
@@ -174,6 +190,40 @@ A future model evaluation must record checkpoint hash, interpreter commit,
 example ids, prompt template, seeds, decoding controls, method budget and
 scorer. Report attempted/valid/correct counts and failures; never substitute
 confidence, vote agreement or reference self-grading for measured accuracy.
+
+** Does it reason yet, and how good is it?
+
+Learned reasoning has not been demonstrated in this repository. The verifier,
+tiny forward pass, sampling, voting, scoring and refinement components are
+tested, but the real checkpoint has emitted no answer here. GRPO and
+distillation are still queued. A passed software test, completed weight load
+or convincing scripted explanation is not a reasoning-quality score. The
+current real-model accuracy is *unknown*, not zero percent.
+
+** Measuring reasoning quality after generation becomes viable
+
+Begin with a fixed, held-out MATH-500 subset for an inexpensive integration
+check, then evaluate all 500 only after the measured runtime permits it.
+Never train on evaluation questions or select prompts/seeds on the final
+test results. Store per-question responses and verifier decisions so the
+aggregate can be audited.
+
+| Measure | What to report |
+|---------+----------------|
+| Task success | Correct verified final answers divided by attempted questions; failures/truncations remain visible |
+| Completion reliability | Valid completions, parse failures, timeouts, memory failures and exhausted token budgets |
+| Method improvement | Direct-answer versus chain-of-thought versus repeated sampling/voting, on the same questions and comparable total token/time budgets |
+| Variability | Fixed published seeds, repeated sampled runs and uncertainty for accuracy differences |
+| Efficiency | Accuracy alongside total generated tokens, wall time and peak memory |
+| Reasoning validity | Separately inspect a prespecified sample of intermediate derivations for valid arithmetic, logical steps and unsupported jumps |
+
+Final-answer correctness measures whether the task was solved; it does not
+prove that every written intermediate step is valid or reveal the model's
+internal computation. Conversely, longer explanations, confidence and
+agreement among samples are not correctness by themselves. Use exact
+checks for derivations when available and a documented manual rubric for
+steps the current verifier cannot check. Do not use the model's own score
+as the sole quality judge.
 
 * 7. Troubleshooting and the implementation map
 

@@ -1,0 +1,38 @@
+# Probe: 100 scalar user calls must not copy an unrelated 1,048,576-value caller array. Expected fail on cd3cd03f. Acceptance: large case <= max(10 ms, 8 times small case), correct return values and unchanged caller bindings. No model or file I/O required; affects real loading and forward inference (R10).
+
+def u:scope_probe_identity(value) {
+  "Use one scalar and shadow a caller name locally; unrelated payload must neither be copied per call nor mutated.";
+  scope_marker = 99;
+  value
+}
+
+scope_marker = 23
+unused_payload = zeros([16])
+started = clock_ms()
+i = 0
+sum = 0
+while lt(i, 100) {
+  sum = sum + u:scope_probe_identity(1);
+  i = i + 1
+}
+small_ms = clock_ms() - started
+unused_payload = zeros([1048576])
+started = clock_ms()
+i = 0
+sum = 0
+while lt(i, 100) {
+  sum = sum + u:scope_probe_identity(1);
+  i = i + 1
+}
+large_ms = clock_ms() - started
+limit = if gt(8 * small_ms, 10) {
+  8 * small_ms
+} else {
+  10
+}
+print("call-scope-scaling: small_ms:", small_ms, "large_ms:", large_ms, "limit_ms:", limit)
+if eq(sum, 100) * eq(scope_marker, 23) * eq(tally(unused_payload), 1048576) * eq(at(unused_payload, 0), 0) * (1 - gt(large_ms, limit)) {
+  ok(large_ms)
+} else {
+  err("user calls must preserve scope without payload-sized snapshot costs")
+}

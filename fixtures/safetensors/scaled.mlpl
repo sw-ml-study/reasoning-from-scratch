@@ -1,0 +1,44 @@
+# Authored BF16 checkpoint builder for scaled loader regression tests and opt-in profiling. Requires lib/text/text.mlpl and lib/safetensors/names.mlpl. Payloads are positive exact BF16 values determined by global parameter position, not copied weights.
+
+def u:st_fixture_config(vocab, layers) {
+  "A modest decoder with nonsquare key and feed-forward matrices and a variable embedding size.";
+  u:st_fixture_wide_config(vocab, layers, 32)
+}
+
+def u:st_fixture_wide_config(vocab, layers, width) {
+  "Scale decoder width in multiples of four while preserving grouped-query and nonsquare projection geometry.";
+  {vocab: vocab, emb: width, layers: layers, heads: 4, kv_heads: 2, head_dim: width / 4, hidden: width * 2, rope_base: 1000000, eps: 0.000001, context: 8}
+}
+
+def u:st_fixture_entry(name, dims, start) {
+  "Encode one BF16 header entry and return its end offset; dimensions and offsets are measured in the safetensors convention.";
+  count = reduce(:mul, dims);
+  {text: str_concat(to_json(name)?, str_concat(":", to_json({dtype: "BF16", shape: dims, data_offsets: [start, start + count * 2]})?)), end: start + count * 2}
+}
+
+def u:st_fixture_write(path, config) {
+  "Write an independently authored checkpoint whose value at global index i is 1 plus i modulo 127 divided by 128.";
+  first = u:st_fixture_entry(u:st_embedding_name(), [config.vocab, config.emb], 0);
+  last = u:st_fixture_entry(u:st_final_norm_name(), [config.emb], first.end);
+  text = str_concat(first.text, str_concat(",", last.text));
+  offset = last.end;
+  roles = ["wq", "wk", "wv", "wo", "qn", "kn", "n1", "n2", "gate", "up", "down"];
+  layer = 0;
+  while lt(layer, config.layers) {
+    i = 0;
+    while lt(i, list_len(roles)) {
+      role = list_get(roles, i)?;
+      entry = u:st_fixture_entry(u:st_layer_name(layer, role)?, u:st_expected_shape(config, role), offset);
+      text = str_concat(text, str_concat(",", entry.text));
+      offset = entry.end;
+      i = i + 1
+    };
+    layer = layer + 1
+  };
+  bytes = tokenize_bytes(str_concat("{", str_concat(text, "}")));
+  n = tally(bytes);
+  prefix = [mod(n, 256), mod(floor(n / 256), 256), mod(floor(n / 65536), 256), 0, 0, 0, 0, 0];
+  count = offset / 2;
+  payload = flatten(concat(reshape(128 + mod(range(count), 127), [count, 1]), zeros([count, 1]) + 63, 1));
+  write_bytes(path, concat(concat(prefix, bytes), payload))
+}

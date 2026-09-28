@@ -1,0 +1,27 @@
+#!/bin/sh
+# Opt-in diagnostic using authored BF16 weights only; fresh process per mode prevents contamination by prior arrays.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+mkdir -p "$repo/out/fixtures"
+mlpl=$("$repo/scripts/select-mlpl")
+"$mlpl" --version
+ulimit -v 8388608
+LOADER_PROFILE_LAYERS=4
+LOADER_PROFILE_WIDTH=32
+export LOADER_PROFILE_LAYERS LOADER_PROFILE_WIDTH
+for vocab in 256 32768; do
+    for mode in fixture stages stack scope callback model; do
+        echo "profile mode=$mode vocab=$vocab; limit=120s,8GiB virtual"
+        LOADER_PROFILE_MODE=$mode LOADER_PROFILE_VOCAB=$vocab \
+            timeout --signal=TERM --kill-after=5s 120 "$repo/scripts/run-mlpl-demo" demos/loader_profile.mlpl
+    done
+done
+LOADER_PROFILE_VOCAB=256
+LOADER_PROFILE_LAYERS=28
+LOADER_PROFILE_WIDTH=128
+export LOADER_PROFILE_VOCAB LOADER_PROFILE_LAYERS LOADER_PROFILE_WIDTH
+for mode in fixture stack model; do
+    echo "profile mode=$mode vocab=256 layers=28 width=128; limit=120s,8GiB virtual"
+    LOADER_PROFILE_MODE=$mode timeout --signal=TERM --kill-after=5s 120 \
+        "$repo/scripts/run-mlpl-demo" demos/loader_profile.mlpl
+done

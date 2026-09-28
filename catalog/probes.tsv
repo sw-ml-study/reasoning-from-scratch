@@ -25,3 +25,4 @@ list-index-scaling	probes/list-index-scaling.mlpl	core	fail	string-list indexing
 unpack-bulk	probes/unpack-bulk.mlpl	core	pass	a typed byte buffer decodes to a numeric array in one call	shipped
 sampling-array-ops	probes/sampling-array-ops.mlpl	library	pass	stable sorting, gather, prefix sums, seeded random and finite masks support sampling	available
 packed-range-read	probes/packed-range-read.mlpl	core	pass	bounded packed file reads preserve byte storage and clamp at EOF	available
+call-scope-scaling	probes/call-scope-scaling.mlpl	core	fail	scalar calls do not copy unrelated large caller bindings	open

@@ -203,6 +203,34 @@ the E3 extension fallback remains inactive.
 
 ## R10. Container element access that does not scale with container size
 
+### Extension: user-call scope snapshots, measured 2026-09-28
+
+The loader profile now isolates an additional cost on `cd3cd03f`:
+`probes/call-scope-scaling.mlpl` makes 100 scalar calls while retaining an
+unrelated caller array. With 16 values it takes 0.40 ms; with 1,048,576
+values it takes 106.93 ms. The callee neither reads nor receives that array.
+Read-only source inspection confirms scope-table cloning at each user call.
+This is a core binding/value/frame issue under the feature-home rule.
+
+- Required semantics: preserve return values, local shadowing, caller
+  bindings, recoverable error restoration, global-write behavior and tape
+  semantics without copying unrelated numeric payloads per call.
+- Probe expectation on the pinned build: **fail**.
+- Acceptance: 100 large-case scalar calls finish within
+  `max(10 ms, 8 * small_case_ms)`; scalar sums and caller bindings remain
+  unchanged. Retain existing scoping, recursion and differentiation tests;
+  extend acceptance to arrays nested in records and bound partials.
+- Affected work: real-model loading, resident layer callbacks, forward/cache
+  execution, subsequent evaluation and training feasibility.
+- Library workaround: keep large loader fields and role-stack operands
+  temporary instead of binding them across nested calls. The measured
+  fixture load falls from 1,499 ms to 295 ms, but this does not fix arbitrary
+  calls while the full model is resident. See [the profile](loader-profile.md).
+
+The existing field/list lookup request below remains open; the scalar-call
+probe distinguishes frame copying from lookup itself. No Rust is written or
+sibling repository modified by this consumer step.
+
 - Probes: `record-lookup-scaling`, `list-index-scaling`.
 - Today, measured on build 1ce43dc2:
 

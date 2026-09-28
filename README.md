@@ -43,21 +43,24 @@ tied embeddings; the previous Apple run validated all 310 tensors in the
 real checkpoint. The [named-tensor loader](docs/tensor-loader.md) now decodes
 BF16/F32 weights and assembles a resident tied model on authored tiny files.
 The pinned real checkpoint is now downloaded and validates all 310 tensors
-on this host. The [bounded CPU attempt](docs/real-model-smoke.md) timed out
-after 600 seconds during whole-model loading, with sampled peak RSS about
-14.14 GiB. Generation and real-model accuracy remain unavailable.
+on this host. After the original loading timeout, the
+[loader profile](docs/loader-profile.md) reduced real loading to **101.45 s**.
+Generation then failed an allocation under the same 32 GiB address-space
+limit, at sampled peak RSS about 31.48 GiB. No real answer or accuracy result
+is available. The pretrained base checkpoint has not been GRPO-trained here.
 
-The fixture suite has 145 native tests. A clean clone now generates its tiny
+The fixture suite has 148 native tests. A clean clone now generates its tiny
 checkpoint fixture automatically. The implementation document reproduces all 24
-library sources plus the real-smoke driver. Tiny cached generation matches full recomputation exactly
+library sources plus two drivers and a fixture builder (27 exact tangles).
+Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
 Core request R11 (`unpack`) has shipped and passes finite/special-value,
 malformed-buffer and full embedding-size synthetic checks. The loader passes
 projection, finite-weight and cached-forward tests. [Verified downloads and
 strict tokenizer parity](docs/extension-integration.md) are integrated;
-bounded real-model CPU smoke now records the loading deadline; loader
-profiling is next. See the
+bounded real-model CPU smoke now completes loading but exposes resident-model
+copying during generation. That is the next performance boundary. See the
 [upstream revalidation](docs/upstream-revalidation.md) and
 [decoder handoff](docs/bf16-handoff.md). Saga 4 delivered [sampling primitives](docs/sampling.md):
 temperature, nucleus filtering, seeded categorical draws, and sampled tiny
@@ -90,7 +93,7 @@ toolkit. Use the explicit CPU toolchain below for fixture checks. See
 Two separate Emacs Org/Babel guides are maintained:
 [how to use the model](docs/using-reasoning-model.org) and
 [how it works](docs/reasoning.org). They document the bounded attempt;
-successful real inference examples await loader viability.
+successful real inference examples await resident generation viability.
 
 ## Build and check
 

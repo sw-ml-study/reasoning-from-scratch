@@ -258,6 +258,15 @@ documentation = "docs/real-model-smoke.md"
 status = "unavailable"
 
 [[component]]
+id = "LOADERPROFILE"
+slug = "loader-scope-profile"
+chapter = 2
+source = "demos/loader_profile.mlpl"
+test = "tests/test_safetensors_loader.mlpl"
+documentation = "docs/loader-profile.md"
+status = "accepted"
+
+[[component]]
 id = "DIST"
 slug = "distillation"
 chapter = 8

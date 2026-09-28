@@ -20,6 +20,8 @@ echo 'budgets: 600 wall seconds; 32 GiB virtual memory; 2 generated tokens'
 mkdir -p out
 # Linux RLIMIT_AS bounds address space, not just resident memory.
 ulimit -v 33554432
+# An allocator abort must not request a multi-GiB core file from the host handler.
+ulimit -c 0
 # Read with a shell builtin: /proc may expose host PIDs while $! is namespaced.
 read -r host_pid stat_rest < /proc/self/stat
 started=$(date +%s)
