@@ -1,0 +1,11 @@
+{
+  "task_type": "mlpl-library",
+  "state": {
+    "number": 4,
+    "step": "real-model-smoke"
+  },
+  "action": "Agentrail resume; post-reboot fixture gate; explicit checksum-verified weight fetch; test-first MLPL config guard; bounded CPU attempt and unchanged measured repeat; Linux namespace-aware memory sampling with offline shell tests; exact Org tangles; named-path main commit.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-28T09:25:18"
+}
