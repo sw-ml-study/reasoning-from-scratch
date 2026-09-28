@@ -1,0 +1,9 @@
+number = 6
+slug = "resident-inference-copy-profile"
+status = "pending"
+description = "Continue from docs/loader-profile.md: real loading now completes in 101.45 se..."
+role = "production"
+context_files = []
+created_at = "2026-09-28T13:30:58"
+task_type = "mlpl-library"
+commits = []

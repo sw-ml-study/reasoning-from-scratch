@@ -1,0 +1,11 @@
+{
+  "task_type": "mlpl-library",
+  "state": {
+    "number": 5,
+    "step": "loader-copy-profile"
+  },
+  "action": "Test-first scaled BF16 semantic goldens and late-error propagation; separate-process stage, scope and callback timings; read-only pinned core inspection; MLPL temporary field and recursive operand refactor; unchanged bounded real smoke; allocator/core-dump diagnosis; tested core-file limit; exact Org tangles and named-path main commit.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-28T13:30:58"
+}
