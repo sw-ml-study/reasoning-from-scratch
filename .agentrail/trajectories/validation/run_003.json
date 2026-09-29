@@ -1,0 +1,11 @@
+{
+  "task_type": "validation",
+  "state": {
+    "number": 8,
+    "step": "reasoning-budget-report"
+  },
+  "action": "Native offline budget test; bounded local GPU ten-attempt comparison; full raw evidence/provenance/hashes; primary book/Qwen/DeepSeek references; Org ob-mlpl refresh; full gate and browser render; named git staging and main commit",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-29T13:17:53"
+}
