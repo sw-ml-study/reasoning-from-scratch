@@ -1,0 +1,11 @@
+{
+  "task_type": "validation",
+  "state": {
+    "number": 9,
+    "step": "native-reasoning-heldout"
+  },
+  "action": "Preregistered hash selection and references; test-first paired MLPL summary and Wilson goldens; bounded native GPU pilot with balanced order; local raw replay and public aggregate replay; separate manual grader audit; immutable evidence hashes; Org export, full gate, browser review and named main commits",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-09-29T15:49:06"
+}
