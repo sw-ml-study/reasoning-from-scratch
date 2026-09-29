@@ -60,4 +60,14 @@ def u:test_backend_errors() {
   u:assert_err(u:backend_decode(err("connection refused")), "transport failure")
 }
 
+@test {name: "backend larger reasoning budget remains explicit and bounded", tags: ["backend"]}
+def u:test_backend_budget() {
+  "A larger output cap must reach the serialized request without changing context or admitting invalid limits.";
+  body = u:backend_chat_body("fixture", "x", 1, 42, 3072)?;
+  u:assert_true(gt(str_find(body, "\"num_predict\":3072"), 0 - 1), "larger output cap")?;
+  u:assert_true(gt(str_find(body, "\"num_ctx\":4096"), 0 - 1), "context unchanged")?;
+  u:assert_err(u:backend_chat_body("fixture", "x", 1, 42, 4097), "oversized budget rejected")?;
+  u:assert_err(u:backend_chat_body("fixture", "x", 1, 42, 1.5), "fractional budget rejected")
+}
+
 u:run_registered_tests()

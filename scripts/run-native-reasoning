@@ -8,13 +8,16 @@ case "$DEMO_MODE" in one|eval) ;; *) echo 'usage: run-native-reasoning [one|eval
 [ "$#" -le 1 ] || { echo 'usage: run-native-reasoning [one|eval]' >&2; exit 2; }
 DEMO_CASE=${DEMO_CASE:-0}
 DEMO_THINK=${DEMO_THINK:-1}
+DEMO_MAX_NEW=${DEMO_MAX_NEW:-3072}
+case "$DEMO_MAX_NEW" in ''|0*|*[!0-9]*|?????*) echo 'DEMO_MAX_NEW must be 1..3072' >&2; exit 2 ;; esac
+[ "$DEMO_MAX_NEW" -ge 1 ] && [ "$DEMO_MAX_NEW" -le 3072 ] || { echo 'DEMO_MAX_NEW must be 1..3072' >&2; exit 2; }
 case "$DEMO_CASE" in 0|1|2|3|4) ;; *) echo 'DEMO_CASE must be 0..4' >&2; exit 2 ;; esac
 case "$DEMO_THINK" in 0|1) ;; *) echo 'DEMO_THINK must be 0 or 1' >&2; exit 2 ;; esac
 command -v jq >/dev/null || { echo 'jq is required for runtime provenance' >&2; exit 77; }
 mlpl=$("$repo/scripts/select-mlpl")
 mkdir -p out/native-reasoning
 DEMO_OUT=$(mktemp -d out/native-reasoning/run-XXXXXXXX)
-export DEMO_MODE DEMO_CASE DEMO_THINK DEMO_OUT
+export DEMO_MODE DEMO_CASE DEMO_THINK DEMO_MAX_NEW DEMO_OUT
 base=http://127.0.0.1:11434
 curl --fail --silent --show-error --max-time 10 "$base/api/version" > "$DEMO_OUT/runtime.json"
 curl --fail --silent --show-error --max-time 10 "$base/api/show" -H 'Content-Type: application/json' \

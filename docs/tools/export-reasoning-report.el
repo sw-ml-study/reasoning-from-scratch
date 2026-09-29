@@ -35,7 +35,7 @@
     (when refresh
       (let ((org-confirm-babel-evaluate nil)
             (before (buffer-string)))
-        (dolist (name '("memory-arithmetic" "replay-grades" "reward-advantages" "toy-sgd"))
+        (dolist (name '("replay-budget-grades" "replay-grades" "reward-advantages" "toy-sgd"))
           (org-babel-goto-named-src-block name)
           (let ((result (org-babel-execute-src-block)))
             (unless (and (stringp result)

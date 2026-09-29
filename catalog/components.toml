@@ -277,6 +277,7 @@ status = "planned"
 
 [[component]]
 id = "NATIVEBACKEND"
+# Accepted adapter includes explicit 1..3072 demo budgets and six offline contracts.
 slug = "inference-only-native-backend"
 chapter = 3
 source = "lib/backend/ollama.mlpl"
@@ -286,6 +287,7 @@ status = "accepted"
 
 [[component]]
 id = "RESEARCH"
+# Report separates implementation, pretrained inference, and measured reasoning benefit.
 slug = "reproducible-results-report"
 chapter = 3
 source = "docs/reasoning-results.org"

@@ -1,5 +1,5 @@
-#+title: A working reasoning demo, and what its results actually show
-#+subtitle: Reproducible experiments in MLPL, a native inference workaround, and the path toward training
+#+title: When does reasoning help? From the book to a working MLPL experiment
+#+subtitle: Methods, measured answers, compute budgets, and the next evidence required
 #+author: Michael A Wright
 #+date: 2026-09-29
 #+language: en
@@ -8,200 +8,130 @@
 #+property: header-args:sh :dir .. :results output verbatim :exports code :eval never-export :tangle no
 #+property: header-args:emacs-lisp :exports code :eval never-export :tangle no
 
-* The result in one page
+* The research question and our present result
 
-We now have a working local GPU demonstration that accepts a mathematics
-problem, generates an answer, and checks its final result in MLPL. The live
-path is *MLPL → Rust HTTP dynamic library → Ollama native inference → MLPL
-verifier*. It uses an already pretrained Qwen3 8B Q6_K model. We did not
-train that model, and this path does not execute our MLPL Qwen3 forward pass.
+Can we improve checked answers by giving a model an explicit reasoning
+procedure, more inference compute, or training with verifiable rewards?
+This report follows Sebastian Raschka's
+[[https://www.manning.com/books/build-a-reasoning-model-from-scratch][Build a Reasoning Model (From Scratch), Manning]] and its
+[[https://github.com/rasbt/reasoning-from-scratch][Python/PyTorch companion]], using independently written MLPL implementations
+and a local GPU backend for the live experiment.
 
-The distinction matters. The project's own Qwen3-0.6B-Base implementation
-loads its checkpoint, but still exhausts a 32 GiB CPU address-space limit
-before generating a token. The native workaround makes a useful demo
-possible without waiting for interpreter optimization. Both outcomes belong
-in the record.
+*We have a working reasoning experiment, but have not yet demonstrated that
+our own model benefits from reasoning.* The distinction is between three
+claims, each requiring different evidence:
 
-The first complete MLPL/extension rehearsal answered the shopping problem
-correctly in 13.6 seconds. A subsequent ten-attempt comparison found:
+| Claim | Present evidence | Verdict |
+|-------+------------------+---------|
+| Our independently implemented pipeline behaves correctly | Tiny forward/cache goldens, sampling, verification and refinement tests | Demonstrated on fixtures |
+| A pretrained model produces correct multi-step solutions through our pipeline | Saved Qwen3 8B answers checked by MLPL | Demonstrated on five authored examples |
+| Our reasoning method or training makes answers better | Requires paired held-out results; no language-model training here yet | Not demonstrated |
 
-| Configuration | Correct / attempted | Truncated | Generated tokens | MLPL wall time |
-|---------------+---------------------+-----------+------------------+----------------|
-| Thinking off  | 5 / 5               | 0         | 1,432            | 42.17 s        |
-| Thinking on   | 2 / 5               | 3         | 6,787            | 184.47 s       |
+“From scratch” describes implementing the methods, not pretraining a
+language model from random weights. Our planned learning experiment starts
+from a pretrained base and must show improvement over that same checkpoint.
 
-Both modes used the same five authored problems, seed 42, and a 1,536-token
-output cap. Thinking mode spent more of that budget before producing a
-final answer. Three outputs hit the cap and failed the declared completion
-rule. This is a *budget-limited demonstration result*, not an estimate of
-broad reasoning ability and not evidence that thinking is always worse.
+The live model is externally pretrained Qwen3 8B Q6_K. Our own MLPL
+Qwen3-0.6B-Base forward implementation has not completed real-model
+generation. Therefore the honest milestone is *working inference and
+measurement infrastructure*, not “our from-scratch model reasons, but
+ineffectively.” We have not reached that latter claim yet.
 
-#+begin_export html
-<div class="note"><strong>Claim boundary.</strong> Real generated answers: yes. GPU inference through a native backend: yes. Held-out benchmark accuracy: not yet. Training the 8B or 0.6B language model here: no. A measured scalar training illustration: yes, below.</div>
-#+end_export
+The initial experiment found five correct answers without thinking and two
+with thinking. All three thinking failures stopped at the output-token cap.
+Doubling the cap to 3,072 restored thinking to five correct answers, with
+no truncations. It still took 204.74 seconds versus 39.16 seconds for direct
+answers. We fixed completion; we have not shown a quality benefit.
 
-The project follows the method sequence in Sebastian Raschka's
-[[https://www.manning.com/books/build-a-reasoning-model-from-scratch][Build a Reasoning Model (From Scratch), Manning]]. The book develops
-generation, evaluation, inference-time methods, reinforcement learning and
-distillation. Our source is independently written. The
-[[https://github.com/rasbt/reasoning-from-scratch][author's Python/PyTorch companion repository]] is a reference, not code copied
-into this project. The comparison later in this report concerns methods and
-experimental requirements; no Python performance run was conducted here.
+* How the book, Python, and MLPL fit together
 
-* Read, replay, rerun: three different activities
+The book supplies the progression: generate text, evaluate it, allocate
+inference-time compute, refine solutions, then learn from rewards and
+teacher examples. The Python companion makes those methods concrete with
+PyTorch. We express the corresponding algorithms and contracts in MLPL,
+with Org/Babel serving as executable explanation and reproducible analysis.
+No book prose or Python source has been copied into our implementation.
 
-This document is both a report and an Emacs Org/Babel notebook using
-=ob-mlpl=. Reading or exporting it does not load a model or make network
-requests. Its recorded results are preserved in the Org source and HTML.
+| Book stage | Python companion role | Our working approach | Evidence still needed |
+|------------+-----------------------+----------------------+-----------------------|
+| Generation, chapter 2 | Model and decoding implementation | Tiny MLPL forward/cache parity; live native GPU inference | Real-weight MLPL forward feasibility |
+| Evaluation, chapter 3 | Check mathematical answers | MLPL boxed extraction, normalization, exact arithmetic and attempt accounting | Held-out model accuracy |
+| Scaling, chapter 4 | Spend more inference compute | Seeded sampling/voting fixtures; live thinking-budget comparison | Accuracy versus total cost |
+| Refinement, chapter 5 | Revise candidate solutions | Bounded critique/revision and selection contracts | Gains without access to reference answers |
+| RL, chapters 6–7 | Learn from verifiable rewards | Reward arithmetic and scalar autograd demonstration below | A trained policy with held-out reward gains |
+| Distillation, chapter 8 | Learn from teacher outputs | Native teacher generation is available | Checked corpus and trainable student |
 
-There are three levels of reproducibility:
+Sources: [[https://github.com/rasbt/reasoning-from-scratch#table-of-contents][companion chapter map]] and
+[[https://www.manning.com/books/build-a-reasoning-model-from-scratch][publisher's description]]. This is a method comparison, not a measured
+Python-versus-MLPL benchmark. We have not run the Python implementation
+against these prompts, and make no cross-language accuracy or speed claim.
 
-1. *Replay the analysis:* read the committed ten attempts, recompute grades
-   and aggregates in MLPL, and reproduce the toy calculations. This is
-   offline and does not need a GPU.
-2. *Repeat inference:* run the recorded prompts and settings against the
-   pinned local model/runtime. This requires the model and GPU backend.
-   Sampling and runtime details can change the exact generated text.
-3. *Reproduce a comparative research claim:* match models, data, prompts,
-   budgets and metrics across implementations, then repeat with enough
-   examples and seeds. We have not yet done this for MLPL versus Python.
+A future implementation comparison must match checkpoint, tokenizer,
+precision, prompt/template, examples, sampling, stopping rules and hardware.
+Compare deterministic logits or token ids first, then separate loading,
+prefill, decoding and verification timings. Changing from a 0.6B base model
+to an 8B instruction/thinking model is a model change, not a language-speed
+comparison.
 
-** Build the HTML or refresh the recorded calculations
+** What a measured reasoning benefit looks like in the Python reference
 
-#+begin_src sh
-export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
-export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
-just research-html
-just research-refresh
-#+end_src
+The companion's chapter 4 reports these results on all 500 MATH-500
+questions, using a CUDA DGX Spark system:
 
-=research-html= exports the stored results only. =research-refresh= executes
-four explicitly named offline MLPL blocks through =ob-mlpl=, saves their
-results, then exports. Neither recipe executes the live inference blocks.
-The HTML has inline CSS and no required remote fonts, scripts or images;
-it can be published as one file. The full research bundle also includes the
-Org source and committed JSONL/provenance files.
+| Published base-model method | Accuracy | Runtime |
+|-----------------------------+----------+---------|
+| Greedy baseline | 15.2% | 10.1 min |
+| Chain-of-thought prompting | 40.6% | 84.5 min |
+| CoT plus sampled self-consistency, ten candidates | 52.0% | 862.6 min |
 
-** Interactive Emacs setup
+These are [[https://github.com/rasbt/reasoning-from-scratch/tree/main/ch04/02_math500-inference-scaling-scripts][the author's published measurements]], not our reproduction. They illustrate
+the target: checked correctness improves, and the additional compute is
+reported. Our five easy 8B demo problems, quantization and hardware differ,
+so our 5/5 score cannot be ranked against those benchmark percentages.
+Reproducing an improvement over the same base checkpoint is a more relevant
+next goal than inferring a size limit from our current demo.
 
-Set =MLPL= and =MLPL_ELISP= for your host. Then evaluate this setup once.
-The temporary source directory is deliberately =out/=, so the relative
-library includes in the replay block resolve within this checkout. Each
-MLPL block runs in a fresh interpreter; no hidden session state is required.
-Your normal Babel confirmation preference is preserved.
-
-#+begin_src emacs-lisp
-(let* ((repo (file-name-as-directory
-              (locate-dominating-file buffer-file-name "AGENTS.md")))
-       (program (or (getenv "MLPL")
-                    "/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl"))
-       (support (or (getenv "MLPL_ELISP")
-                    "/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp")))
-  (add-to-list 'load-path support)
-  (require 'ob-mlpl)
-  (make-directory (expand-file-name "out" repo) t)
-  (setq temporary-file-directory (expand-file-name "out/" repo)
-        org-babel-mlpl-line-threshold 10000
-        org-babel-mlpl-command
-        (mapconcat #'shell-quote-argument
-                   (list program "--source-dir" repo "--data-dir" repo) " ")))
-#+end_src
-
-Press =C-c C-c= in an MLPL block to reproduce that calculation. The separate
-[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/reasoning.org][implementation document]] explains and tangles the full libraries; the
-[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/using-reasoning-model.org][operator guide]] covers the wider project.
-
-* Experiment 1: explain the memory failure before changing the budget
-
-** CPU memory and GPU memory are different resources
-
-The 32 GiB limit was Linux =RLIMIT_AS=, a bound on the CPU process's virtual
-address space. It was a containment budget on a machine with approximately
-251 GiB RAM. It was not chosen from the GPU's capacity and was not evidence
-that the model inherently requires 32 GiB. The measured interpreter builds
-were CPU-only; they did not put the model on the 16 GiB RTX 5060 Ti.
-
-The real base checkpoint contains 596,049,920 parameters. Stored as BF16,
-its tensor payload is 1,192,099,840 bytes. The interpreter represents the
-unpacked numerical arrays with f64 elements, so the same values occupy four
-times as many bytes before any copies. The following calculation is exact
-integer arithmetic expressed in MLPL; the final units are binary GiB.
-
-#+name: memory-arithmetic
-#+begin_src mlpl
-# Exact storage accounting; this is not an allocation or model run.
-parameters = 596049920
-bf16_bytes = parameters * 2
-f64_bytes = parameters * 8
-print("BF16 payload bytes:", bf16_bytes)
-print("f64 payload bytes:", f64_bytes)
-print("f64 payload GiB:", f64_bytes / 1073741824)
-print("storage expansion:", f64_bytes / bf16_bytes)
-if eq(bf16_bytes, 1192099840) * eq(f64_bytes, 4768399360) {
-  ok(1)
-} else {
-  err("storage accounting disagrees with checkpoint manifest")
-}
-#+end_src
-
-#+RESULTS: memory-arithmetic
-: BF16 payload bytes: 1192099840
-: f64 payload bytes: 4768399360
-: f64 payload GiB: 4.44091796875
-: storage expansion: 4
-: Ok(1)
-
-The working set also includes evaluated arguments, saved bindings,
-projection temporaries and caches. A language runtime can copy the same
-large record several times along a short call chain. This is why model
-file size is not a useful upper bound on process memory here.
-
-** What changed, and what did not
-
-| Attempt | Loading outcome | Generation outcome | Interpretation |
-|---------+-----------------+--------------------+----------------|
-| Original CPU loader | Did not finish in 600 s | Never started | Loading was the first measured bottleneck |
-| Scoped loader on =cd3cd03f= | 101.45 s | Allocation failure under 32 GiB | Loader improvement did not make inference viable |
-| Shipped frame fix on =49c15b3e= | 102.89 s | Same-size allocation failure; status 134 | Unrelated-global fix alone was insufficient |
-
-The newest upstream code journals the names a function writes instead of
-snapshotting every unrelated global binding. Our scalar-call probe changes
-from failure to success: small/large cases took 1.11/1.25 ms, below a 10 ms
-acceptance threshold. All original 148 native tests also passed. We built
-already-shipped upstream code in an isolated directory; we did not modify
-or optimize the interpreter in this task.
-
-Nevertheless, the unchanged real smoke failed a 1,244,659,712-byte
-allocation after loading. The process lasted 114 seconds, exited 134, and
-had sampled peak VmHWM 33,011,188 KiB. The child had core-file limit zero.
-No tokens were produced. The 114 seconds is process lifetime, *not generation
-throughput*. An earlier status 137 came from manually stopping a core dump;
-it must not be described as a kernel OOM kill.
-
-These measurements justify the user's short-term extension workaround.
-They do not justify simply declaring the GPU too small or increasing CPU
-memory and calling the problem solved.
-
-* Experiment 2: put the resident model behind a native boundary
+* The working experiment: generate, finish, verify, retain
 
 ** Division of responsibility
 
-| Layer | Responsibility | Evidence |
-|-------+----------------+----------|
-| MLPL | Authored problems, prompt text, seed and budgets, final-answer verification, attempt accounting | Native tests and replay block below |
-| Rust HTTP dynamic library | Bounded request/response transport | Existing pinned =demo-extensions= public facade and =.so= |
-| Ollama native backend | Tokenization, model weights, forward pass, sampling and cache | Runtime response and GPU residency metadata |
-| Shell runner | Preflight identity checks and provenance files | Thin opt-in recipe; no reasoning or scoring logic |
+| Layer | Responsibility |
+|-------+----------------|
+| MLPL | Problems, prompt version, seed, output budget, extraction, verification, full attempt accounting |
+| Existing Rust HTTP dynamic library | Bounded transport to the local model service |
+| Ollama native GPU backend | Tokenization, resident weights, forward pass, sampling and KV cache |
+| Shell runner | Identity checks and provenance capture |
 
-The extension itself does not execute tensor kernels. It connects MLPL to
-a native inference service that already does. No weights or KV cache cross
-the MLPL boundary, so deep copies of those arrays cannot arise in this
-adapter. The model remains resident in the backend between requests.
+The live path is *MLPL → Rust HTTP extension → Ollama → MLPL verifier*.
+Large weights and caches stay resident in the backend. This lets us study
+reasoning methods on the available 16 GiB GPU today. It is inference-only:
+there is no gradient connection from the external model to MLPL parameters.
 
-This route is inference-only. An HTTP request has no differentiable link
-back to MLPL parameters. It is suitable for a live pretrained demo and
-potential teacher-output collection. It does not make GRPO training of
-our MLPL model work automatically.
+For each problem we render a versioned prompt that requests a boxed final
+answer. The expected answer is never sent to the model. We save the request,
+complete raw response, generated thinking text, final answer and grade.
+Only final content is graded; a correct number buried in thinking cannot
+rescue an incorrect final answer.
+
+A successful attempt must stop normally, have nonempty final content, and
+pass the verifier. Token-limit stops, transport errors and malformed answers
+remain in the denominator. This completion rule is deliberately conservative
+and is the same for both modes. The transport uses Ollama's
+[[https://docs.ollama.com/api/chat][chat API]] and [[https://docs.ollama.com/capabilities/thinking][thinking control]].
+
+** A worked solution and what it proves
+
+Take three red and two blue balls, and draw two without replacement.
+There are ten unordered pairs. Three pairs are all red and one is all blue,
+so the probability of matching colors is =(3+1)/10 = 2/5=.
+
+The saved non-thinking response follows that calculation and ends with
+=\boxed{\frac{2}{5}}=. Our MLPL verifier normalizes the fraction and accepts
+it against the independent reference =2/5=. It took 288 generated tokens
+and 7.72 seconds in the original run. This demonstrates a correct generated
+multi-step solution and a working checker. It does not establish that a
+thinking switch improves the answer, or that the explanation is a faithful
+transcript of internal computation.
 
 ** Exact controls
 
@@ -214,7 +144,7 @@ our MLPL model work automatically.
 | Seed | 42 for every attempt |
 | Temperature / top-p / top-k | 0.6 / 0.95 / 20 |
 | Repeat penalty | 1 |
-| Context / maximum new tokens | 4096 / 1536 |
+| Context / maximum new tokens | 4096 / 1536 initially; 3072 follow-up |
 | Prompt version | =boxed-v1= |
 | Dataset | Five authored =authored-demo-v1= cases |
 | Extraction | Last valid box from final content only |
@@ -254,7 +184,7 @@ template. The server's protected blob is not rehashed by the runner.
 A fixed seed supports investigation; it does not guarantee identical text
 across every hardware/runtime configuration or repeated request.
 
-* Experiment 3: five problems, ten attempts, no omitted failures
+* Measuring the effect of the reasoning budget
 
 ** Problems and independent references
 
@@ -292,12 +222,83 @@ which also includes transport, verification and writing the evidence.
 Summing the native durations gives 42.09 and 184.43 seconds; MLPL measured
 42.17 and 184.47 seconds. Neither is a cold-start-only benchmark.
 
-** Recompute grades from saved answers with MLPL
+** Why thinking appeared worse
 
-This block reads the ten committed attempts and runs the production verifier
-again. It ignores the stored correctness field when computing the grade,
-then checks that its recomputation agrees. It also verifies the sample
-count and aggregate token totals. There is no inference call in this block.
+The cap covers generated thinking and final-answer tokens together. The
+three failed thinking attempts each reached exactly 1,536 tokens and
+returned =done_reason=length=. Those are completion failures, not three
+completed incorrect mathematical answers. The longer route ran out of
+space before satisfying the same grading contract.
+
+For these easy questions, the direct mode already achieved five out of
+five. There is no headroom for a measured correctness gain on this sample.
+Longer thinking could at best tie that score, while spending more tokens.
+This set is useful for testing the pipeline and diagnosing truncation;
+it cannot demonstrate a general advantage from reasoning.
+
+The [[https://huggingface.co/Qwen/Qwen3-8B#best-practices][Qwen3 model card]] recommends ample output allowance and mode-specific
+sampling. Its suggested thinking temperature/top-p/top-k are 0.6/0.95/20;
+we use those values in both modes to hold sampling controls constant.
+The non-thinking recommendation is 0.7/0.8/20, which is a separate future
+comparison. Our short demo budget is not the model card's full benchmark
+budget. We change one control at a time rather than attribute every
+possible improvement to the thinking switch.
+
+** Follow-up: double the output allowance
+
+We repeated all five cases in both modes at 3,072 output tokens, holding
+the model, problem text, seed, prompt, context and sampling settings fixed.
+The model was loaded before timing. No attempt was omitted or replaced.
+
+| Output cap | Mode | Correct / attempted | Truncated | Generated tokens | MLPL wall time |
+|------------+------+---------------------+-----------+------------------+----------------|
+| 1536 | Off | 5 / 5 | 0 | 1432 | 42.17 s |
+| 1536 | On | 2 / 5 | 3 | 6787 | 184.47 s |
+| 3072 | Off | 5 / 5 | 0 | 1432 | 39.16 s |
+| 3072 | On | 5 / 5 | 0 | 7602 | 204.74 s |
+
+Every follow-up attempt is listed below. Seconds are backend total duration.
+
+| Case | Mode | Correct | Tokens | Seconds | Stop reason |
+|------+------+---------+--------+---------+-------------|
+| change | Off | 1 | 123 | 3.58 | stop |
+| discounts | Off | 1 | 114 | 3.09 | stop |
+| probability | Off | 1 | 288 | 7.97 | stop |
+| remainders | Off | 1 | 547 | 14.66 | stop |
+| work-rate | Off | 1 | 360 | 9.80 | stop |
+| change | On | 1 | 855 | 23.19 | stop |
+| discounts | On | 1 | 1324 | 35.87 | stop |
+| probability | On | 1 | 1603 | 43.27 | stop |
+| remainders | On | 1 | 2005 | 53.55 | stop |
+| work-rate | On | 1 | 1815 | 48.78 | stop |
+
+All three previously truncated answers now finish correctly: probability at
+1,603 tokens, remainders at 2,005, and work rate at 1,815. Their thinking
+text is identical to the original run, and each original final-content
+fragment is a prefix of the completed response. Across all ten pairs, the
+requests differ only in the output cap. This is direct evidence that the
+old cap cut off these otherwise successful responses.
+
+Thinking now ties direct answers at five out of five, but uses 7,602 versus
+1,432 tokens and 204.74 versus 39.16 seconds (5.23 times the wall time).
+The fix restores completion; it does not demonstrate a quality advantage.
+For this sample, direct answers are the more efficient operating point.
+
+The runner now exposes =DEMO_MAX_NEW= and defaults to 3072; use
+=DEMO_MAX_NEW=1536= to reproduce the old cap. This is a development-set
+diagnosis selected after inspecting failures, not a held-out quality claim.
+A fixed seed does not guarantee identical output on all runtime/hardware
+configurations. The 4,096-token context leaves room for these short prompts;
+the unchanged transport deadline is 120 seconds per request. Harder problems
+may need more context and a transport design allowing longer generation.
+The current cap is a tested demo setting, not a universal reasoning budget.
+
+
+** Replay the original grades in MLPL
+
+The following block recomputes final-answer grades from raw saved responses,
+checks them against the recorded grades, and verifies the original counts
+and token totals. It does not contact the model or trust the stored score.
 
 #+name: replay-grades
 #+begin_src mlpl
@@ -351,94 +352,148 @@ if matches * eq(dataset.count, 10) {
 : think: 1 attempted: 5 correct: 2 truncated: 3 tokens: 6787 native_seconds: 184.43253323599998
 : Ok(all ten grades and aggregate checks reproduced)
 
-** What the difference means
+** Replay the larger-budget experiment
 
-*** A generated solution, checked step by step
+#+name: replay-budget-grades
+#+begin_src mlpl
+# Replay every saved attempt, using the production verifier and explicit completion rule.
+include "../lib/text/text.mlpl";
+include "../lib/verify/number.mlpl";
+include "../lib/verify/expr.mlpl";
+include "../lib/verify/extract.mlpl";
+include "../lib/verify/normalize.mlpl";
+include "../lib/verify/grade.mlpl";
+include "../lib/eval/data.mlpl";
 
-In the saved probability/off response, the model counted ten unordered
-pairs, then three all-red pairs and one all-blue pair, and reduced 4/10 to
-2/5. Those steps match an independent combinatorial calculation. Its final
-answer was =\boxed{\frac{2}{5}}= and the MLPL normalizer/verifier accepted
-that as equivalent to the reference =2/5=. The request generated 288 tokens
-and completed in 7.72 seconds.
+dataset = u:eval_load_jsonl_text(read_text("docs/results/native-budget-3072-2026-09-29.jsonl")?, "recorded-demo", {})?
+mode = 0
+matches = 1
+while lt(mode, 2) {
+  attempted = 0;
+  correct = 0;
+  truncated = 0;
+  tokens = 0;
+  seconds = 0;
+  index = 0;
+  while lt(index, dataset.count) {
+    row = u:eval_record(dataset, index)?;
+    if eq(row.think, mode) {
+      raw = parse_json(row.response_json)?;
+      complete = eq(raw.done, 1) * str_eq(raw.done_reason, "stop") * gt(str_len(u:text_trim(raw.message.content)), 0);
+      grade = complete * u:verify_grade_response(raw.message.content, row.answer, "boxed_only");
+      matches = matches * eq(grade, row.correct) * eq(complete, row.complete);
+      attempted = attempted + 1;
+      correct = correct + grade;
+      truncated = truncated + str_eq(raw.done_reason, "length");
+      tokens = tokens + raw.eval_count;
+      seconds = seconds + raw.total_duration / 1000000000
+    };
+    index = index + 1
+  };
+  print("think:", mode, "attempted:", attempted, "correct:", correct, "truncated:", truncated, "tokens:", tokens, "native_seconds:", seconds);
+  matches = matches * eq(attempted, 5) * eq(correct, if mode { 5 } else { 5 }) * eq(tokens, if mode { 7602 } else { 1432 });
+  mode = mode + 1
+}
+if matches * eq(dataset.count, 10) {
+  ok("all ten grades and aggregate checks reproduced")
+} else {
+  err("recorded results disagree with independent replay")
+}
+#+end_src
 
-The corresponding thinking/on attempt reached 1,536 tokens without a
-complete final answer. Its longer generated text does not override the
-completion rule. This pair makes a useful live explanation: an answer must
-both arrive within the resource budget and satisfy the verifier.
+#+RESULTS: replay-budget-grades
+: think: 0 attempted: 5 correct: 5 truncated: 0 tokens: 1432 native_seconds: 39.088295959
+: think: 1 attempted: 5 correct: 5 truncated: 0 tokens: 7602 native_seconds: 204.647115495
+: Ok(all ten grades and aggregate checks reproduced)
 
-In the shopping/on response, the model computed 3×4=12, 5×2=10, total 22,
-then 30−22=8. Its saved thinking text repeated the calculation and checked
-the problem wording. That repetition is observable generated behavior;
-whether it improves reliability requires further experiments. The full
-texts, not just these descriptions, are preserved in the research JSONL.
+* From “it produces reasoning” to “reasoning helps”
 
-*** Budget interpretation
+** An operational success criterion
 
-Thinking mode generated approximately 4.74 times as many tokens and took
-4.37 times as much MLPL wall time. Under this cap, it completed only two
-answers. The direct mode's short solutions fit within the cap and all five
-verified. The three missing final answers are operational failures, even
-if the model's preceding text contained useful intermediate calculations.
+The next milestone is higher held-out correctness from a declared reasoning
+method, with its extra cost measured. Compare the same questions in both
+modes and count both directions: direct wrong / reasoning right, and direct
+right / reasoning wrong. Report the net paired gain, uncertainty, completion
+rate, median and tail latency, and total tokens. Preserve failures and all
+seeds. A longer explanation alone is not progress on this criterion.
 
-This does not isolate the causal value of reasoning. The mode changes the
-model's response behavior; there is only one seed per case; off-mode calls
-ran first; and the questions are small and selected for a demonstration.
-A larger cap might rescue truncated responses, but that would be a new
-experiment with a different cost allowance. We did not silently grant extra
-tokens until answers looked good.
+Use a development set to select budgets and prompts, then freeze them before
+opening a new held-out set. Include a range of difficulty chosen independently
+of these model outputs. A pilot estimates runtime and detects gross problems;
+a larger paired experiment is needed for a persuasive gain. Do not filter
+held-out questions after seeing which ones make reasoning look good.
 
-For the afternoon presentation, use the shopping question with thinking
-on, then probability with thinking off. Show the comparison table as a
-lesson in budgeting and measurement. Do not conceal the three truncated
-attempts or present 5/5 as general mathematical competence.
+Compare two useful operating points separately: equal maximum budgets,
+and equal total compute across methods. For example, one longer thinking
+response can be compared with several short independent responses plus
+answer voting. Do not use the held-out reference answer to choose a candidate;
+it is for final evaluation only. Voting agreement is not itself correctness.
 
-* How this compares with the book's Python version
+** Is the model too small?
 
-The author's companion uses Python and PyTorch, with chapters devoted to
-evaluation, inference-time scaling, self-refinement, reinforcement learning
-and distillation. Our independently implemented MLPL reference follows that
-method progression. The live native workaround is a separate operational
-choice made to meet the demonstration deadline.
+Capacity is a plausible constraint, but our measurements do not identify
+one. The 0.6B path has no real generation result, and the demonstrated 8B
+path was budget-limited on an easy set. Neither isolates parameter count.
 
-| Question | Python companion | This MLPL project |
-|----------+------------------+-------------------|
-| Readable implementation | Python/PyTorch chapter notebooks and scripts | Org source, MLPL libraries and exact tangles |
-| Forward/cache correctness | Reference implementation supplied by author | Tiny cached/full parity tests; real CPU generation still blocked |
-| Evaluation | Mathematics verification and evaluation workflows | MLPL verifier; ten native-backend demo attempts replayed here |
-| Inference-time methods | Prompting, sampling, voting and refinement | Implemented fixture methods; live off/on comparison only in this report |
-| Training | GRPO and distillation material | Future LLM work; scalar training illustration below |
-| Measured head-to-head speed | Not run for this report | No cross-language speedup claim |
+There is also no universal rule that small models cannot benefit from
+reasoning training. The [[https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B][DeepSeek distilled-model report]] publishes reasoning benchmark results for
+1.5B and larger students trained on teacher-generated examples. That is
+evidence that useful reasoning behavior can be taught at small sizes;
+it does not prove spontaneous emergence, nor that our untrained 0.6B
+checkpoint will show the same benefit.
 
-Sources: [[https://github.com/rasbt/reasoning-from-scratch#table-of-contents][companion chapter map]] and the
-[[https://www.manning.com/books/build-a-reasoning-model-from-scratch][publisher's book page]], checked 2026-09-29. No book prose or Python source
-has been copied into the implementation.
+Test a size hypothesis with a controlled ladder: related model families,
+matched training status where possible, identical tasks, budgets and seeds.
+Distinguish base from instruction-tuned or reasoning-distilled models.
+If smaller models fail to produce useful candidates even at adequate
+budgets, training quality, distillation and a larger model become sensible
+next experiments. Merely increasing token limits cannot create missing
+skills, and selecting a larger checkpoint cannot prove our training works.
 
-** Why a numeric Python-versus-MLPL ranking would be misleading today
+** ICL, feedback in context, and actual training are different tests
 
-Our blocked native reference uses a 0.6B base checkpoint stored as BF16,
-unpacked to CPU f64 arrays. The working demo uses a pretrained 8B model
-quantized to Q6_K, with a different instruction/thinking behavior and native
-GPU execution. Model size, training history, precision and hardware path
-all differ. Comparing their timings or correctness would not measure a
-language implementation effect.
+In-context learning (ICL) would require comparing zero-shot prompts with
+relevant demonstrations, on fresh problems. Our current prompt contains
+one problem and no demonstrations; this run does not measure ICL.
 
-A defensible future comparison should pin one checkpoint and tokenizer,
-precision/quantization, exact prompt text, dataset ids, stop behavior,
-sampling configuration and seed schedule. Separate cold loading, prefill,
-decode and verification timings. For implementation parity, compare logits
-or greedy token ids on a short deterministic fixture before comparing
-aggregate accuracy. Use the same hardware and distinguish wall-clock
-cost from output tokens per second. Report failures on both sides.
+If “ICRL” means in-context reinforcement learning, test whether a sequence
+of attempts and reward feedback improves later choices without weight
+updates. Use a reset-context control, equal total attempts, and a task
+where feedback is available without revealing the held-out solution.
+The current independent requests contain no such feedback history, so
+we have not tested that mechanism either.
 
-The present report therefore leaves Python throughput, Python accuracy on
-these cases, and any MLPL/Python speed ratio *unmeasured*. Previously noted
-book benchmark figures are not mixed into our demonstration score.
+GRPO is a different experiment: update policy parameters using relative
+rewards, then evaluate the resulting checkpoint on unseen cases. A useful
+small-model sequence is supervised learning or checked teacher distillation
+first when the policy rarely finds any correct answer, followed by reward
+optimization where groups contain informative successes and failures.
+This is our proposed experiment order, not a claim of a measured result.
+
+** Concrete improvement order
+
+1. Remove avoidable truncation with a measured output budget and retain the
+   wall-clock bound. Measure whether final answers actually complete.
+2. Freeze a held-out pilot and compare direct versus thinking with multiple
+   seeds. Report quality and cost, even if the result is no gain.
+3. Test voting, checked refinement and few-shot demonstrations as separate
+   interventions. Keep selection independent of the reference answer.
+4. Compare related model sizes only after controlling budgets and training
+   status. This tests the capacity hypothesis rather than assuming it.
+5. Train a tiny policy with verifiable rewards and demonstrate held-out
+   improvement against its initial checkpoint and a no-update control.
+6. Move to a small language-model student with checked teacher examples,
+   then assess whether GRPO adds value. Native inference can supply teacher
+   outputs; a differentiable training backend is still required.
+
+These are two parallel research tracks: useful inference methods with the
+working pretrained backend, and evidence that our own learning algorithms
+improve a policy. Success on one must not be reported as success on both.
 
 * Training: one real toy update, and the work still required for an LLM
 
 Turning on a pretrained model's thinking mode does not train it. No weights
-changed during the ten inference attempts. The MLPL verifier can supply a
+changed during either inference comparison. The MLPL verifier can supply a
 reward signal, but reward computation and parameter optimization are
 separate operations.
 
@@ -551,40 +606,70 @@ which model produced them, preserve licensing/provenance, and prevent
 held-out evaluation questions from entering training. A native inference
 session is not a substitute for a differentiable student training path.
 
-* Measuring reasoning quality beyond the demo
+* Read, replay, rerun: three different activities
 
-** Define the observable target
+This document is both a report and an Emacs Org/Babel notebook using
+=ob-mlpl=. Reading or exporting it does not load a model or make network
+requests. Its recorded results are preserved in the Org source and HTML.
 
-A useful first target is final-answer correctness under a declared resource
-budget. Keep attempted, completed, parseable and correct counts separate.
-Include timeouts, malformed answers and truncations in the attempted
-denominator. Report accuracy together with latency and generated tokens.
-Do not substitute confidence, vote agreement or explanation length for a
-checked result.
+There are three levels of reproducibility:
 
-Correct final answers alone cannot prove that a written explanation
-faithfully describes the model's internal computation. Review intermediate
-mathematics on a separate sample, perturb problem numbers and wording, and
-include cases that challenge superficial pattern matching. These checks
-measure different properties and should remain separate in the report.
+1. *Replay the analysis:* read the twenty committed attempts, recompute grades
+   and aggregates in MLPL, and reproduce the toy calculations. This is
+   offline and does not need a GPU.
+2. *Repeat inference:* run the recorded prompts and settings against the
+   pinned local model/runtime. This requires the model and GPU backend.
+   Sampling and runtime details can change the exact generated text.
+3. *Reproduce a comparative research claim:* match models, data, prompts,
+   budgets and metrics across implementations, then repeat with enough
+   examples and seeds. We have not yet done this for MLPL versus Python.
 
-** Freeze the evaluation before looking at answers
+** Build the HTML or refresh the recorded calculations
 
-The next queued experiment is a small frozen held-out pilot, followed by a
-larger run only when its measured cost is acceptable. Choose the examples,
-references, prompt version, seeds and stopping rules first. Compare modes
-on exactly the same cases, retain every attempt, and report uncertainty.
-If prompts or token limits are adjusted after inspecting failures, use a
-new validation set for the final claim.
+#+begin_src sh
+export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
+just research-html
+just research-refresh
+#+end_src
 
-Match both the per-response limit and the total sampling budget when
-comparing single responses with self-consistency or best-of-N. A method
-that spends ten times as many tokens may be useful, but its cost must not
-be hidden. A five-case demonstration is too small and too selected to
-support a population accuracy claim; a narrow confidence interval would
-not repair selection bias.
+=research-html= exports the stored results only. =research-refresh= executes
+four explicitly named offline MLPL blocks through =ob-mlpl=, saves their
+results, then exports. Neither recipe executes the live inference blocks.
+The HTML has inline CSS and no required remote fonts, scripts or images;
+it can be published as one file. The full research bundle also includes the
+Org source and committed JSONL/provenance files.
 
-* Rehearsal commands for this afternoon
+** Interactive Emacs setup
+
+Set =MLPL= and =MLPL_ELISP= for your host. Then evaluate this setup once.
+The temporary source directory is deliberately =out/=, so the relative
+library includes in the replay block resolve within this checkout. Each
+MLPL block runs in a fresh interpreter; no hidden session state is required.
+Your normal Babel confirmation preference is preserved.
+
+#+begin_src emacs-lisp
+(let* ((repo (file-name-as-directory
+              (locate-dominating-file buffer-file-name "AGENTS.md")))
+       (program (or (getenv "MLPL")
+                    "/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl"))
+       (support (or (getenv "MLPL_ELISP")
+                    "/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp")))
+  (add-to-list 'load-path support)
+  (require 'ob-mlpl)
+  (make-directory (expand-file-name "out" repo) t)
+  (setq temporary-file-directory (expand-file-name "out/" repo)
+        org-babel-mlpl-line-threshold 10000
+        org-babel-mlpl-command
+        (mapconcat #'shell-quote-argument
+                   (list program "--source-dir" repo "--data-dir" repo) " ")))
+#+end_src
+
+Press =C-c C-c= in an MLPL block to reproduce that calculation. The separate
+[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/reasoning.org][implementation document]] explains and tangles the full libraries; the
+[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/using-reasoning-model.org][operator guide]] covers the wider project.
+
+* Run the live experiment
 
 Start the first command shortly before the session to warm the model. The
 runner keeps it loaded for 30 minutes. These blocks are opt-in and are not
@@ -597,11 +682,13 @@ DEMO_CASE=2 DEMO_THINK=0 just reasoning-demo
 ollama ps
 #+end_src
 
-To repeat all ten attempts rather than replay saved evidence:
+The default output cap is now 3,072 tokens. To repeat both ten-attempt
+comparisons rather than replay their saved evidence:
 
 #+begin_src sh
 export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
-just reasoning-eval
+DEMO_MAX_NEW=1536 just reasoning-eval
+DEMO_MAX_NEW=3072 just reasoning-eval
 #+end_src
 
 Narrate the model/backend boundary, show the verified final answer, then
@@ -609,41 +696,27 @@ show the complete comparison including truncations. The report can be
 opened even if the inference service is unavailable during the presentation;
 saved evidence is a replay, not a secretly substituted live answer.
 
-* Reproducibility inventory and limits
+* Reproducibility inventory and remaining limits
 
-The committed research bundle contains:
+The Org source and standalone HTML are accompanied by committed raw
+request/response JSONL, provenance records and =docs/results/SHA256SUMS=.
+The original =native-demo-2026-09-29= records retain all ten attempts;
+=native-budget-3072-2026-09-29= retains all ten follow-up attempts. Both
+include independent references, mode, generated text, completion and grade.
+Each provenance file records the model identity, runtime, template,
+interpreter and native extension hashes. Weights are not redistributed.
 
-- =docs/reasoning-results.org=: narrative, executable offline blocks and
-  recorded results; =docs/reasoning-results.html=: standalone publication.
-- =docs/results/native-demo-2026-09-29.jsonl=: every problem/reference,
-  raw request and response, final text, thinking text, and recorded grade.
-- =docs/results/native-demo-2026-09-29-provenance.json=: runtime/model
-  identity, exact chat template, residency and original summaries.
-- =docs/results/SHA256SUMS=: immutable-evidence and authored-fixture hashes.
-- =lib/backend/ollama.mlpl= and =tests/test_backend.mlpl=: adapter and five
-  offline contract tests; =tests/test_research_training.mlpl=: two analytic
-  training-math goldens.
-- =demos/native_reasoning.mlpl= and =scripts/run-native-reasoning=: opt-in
-  live inference; =scripts/export-reasoning-report=: offline publication.
+The adapter has six native offline tests, covering request encoding,
+bounds, transport failures and completion/grade accounting. Two further
+tests check the training arithmetic against analytic answers. The full
+fixture gate has 156 native tests, 27 declared capability outcomes and
+29 exact tangles. These establish software behavior and replay consistency,
+not broad model quality.
 
-Weights and downloaded datasets remain outside version control. The
-research records here contain our authored questions and model-generated
-responses, not book text or copied Python code. Publishing the HTML does
-not redistribute model weights.
-
-The full fixture gate has 155 native tests and 27 declared capability
-outcomes. A capability probe with an expected failure records a known
-limitation; it is not a delivered feature. The reference implementation's
-exact tangles are checked separately. These checks support software
-correctness and report replay, not a broad model-quality claim.
-
-Future interpreter work remains documented: shared immutable/COW arrays,
-cheap container/partial access, bounded argument/frame copying with correct
-scope and gradients, batched operations, and validated device dispatch.
-If a direct in-process Rust inference library becomes necessary, keep model
-and cache buffers behind typed generational handles, expose bounded
-load/generate/close operations, and test lifecycle and memory limits. Today
-we reuse the existing transport extension and proven native engine.
-
-The next useful evidence is held-out quality and cost measurement. The
-working demo already provides the foundation for that experiment.
+Our real-weight MLPL forward path remains unavailable; its memory and
+runtime measurements are recorded in
+[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/loader-profile.md][the engineering profile]], outside this experimental narrative.
+Future interpreter efficiency work is documented in
+[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/sw-mlpl-blockers.md][the capability ledger]]. It does not block the native inference comparisons.
+The next research result to seek is a reproducible held-out quality gain,
+with the cost and the responsible intervention made explicit.

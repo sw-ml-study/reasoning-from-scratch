@@ -18,6 +18,7 @@ out_dir = env("DEMO_OUT")?
 dataset = u:eval_load_jsonl_text(read_text("fixtures/reasoning-demo.jsonl")?, "authored-demo-v1", {})?
 case_index = parse_json(env("DEMO_CASE")?)?
 thinking = parse_json(env("DEMO_THINK")?)?
+max_new = parse_json(env("DEMO_MAX_NEW")?)?
 count = if str_eq(mode, "eval") {
   dataset.count
 } else {
@@ -48,11 +49,11 @@ while lt(pass, passes) {
   while lt(i, count) {
     item = u:eval_record(dataset, start_case + i)?;
     prompt_text = u:eval_render_prompt(item.problem);
-    body = u:backend_chat_body("qwen3:8b-q6", prompt_text, think, 42, 1536)?;
+    body = u:backend_chat_body("qwen3:8b-q6", prompt_text, think, 42, max_new)?;
     stem = str_concat(out_dir, str_concat("/", str_concat(item.unique_id, str_concat("-think", to_string(think)))));
     write_atomic(str_concat(stem, "-request.json"), body)?;
     print("\nProblem:", item.problem);
-    print("Thinking mode:", think, "seed: 42; max_new: 1536; waiting for native GPU response...");
+    print("Thinking mode:", think, "seed: 42; max_new:", max_new, "; waiting for native GPU response...");
     reply = u:http_request(u:backend_http_request("http://127.0.0.1:11434/api/chat", body));
     if str_eq(type_of(reply), "record") {
       write_atomic(str_concat(stem, "-response.json"), u:backend_body_text(reply))?
@@ -75,7 +76,7 @@ while lt(pass, passes) {
     };
     i = i + 1
   };
-  summary = {dataset: "authored-demo-v1", template: "boxed-v1", think: think, seed: 42, attempted: count, correct: correct, incomplete: incomplete, errors: errors, elapsed_ms: clock_ms() - started};
+  summary = {dataset: "authored-demo-v1", template: "boxed-v1", think: think, seed: 42, max_new: max_new, context: 4096, attempted: count, correct: correct, incomplete: incomplete, errors: errors, elapsed_ms: clock_ms() - started};
   print("\nSUMMARY:", to_json(summary)?);
   write_atomic(str_concat(out_dir, str_concat("/summary-think", str_concat(to_string(think), ".json"))), to_json(summary)?)?;
   pass = pass + 1

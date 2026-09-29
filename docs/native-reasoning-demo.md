@@ -56,6 +56,12 @@ model's thinking mode. The full opt-in comparison is:
 just reasoning-eval
 ```
 
+The default output cap is now 3,072 tokens, within a 4,096-token context and
+the unchanged 120-second request deadline. Set `DEMO_MAX_NEW=1536` to reproduce
+the original cap. The runner accepts integer caps from 1 to 3072 and saves
+the chosen cap in both requests and summaries. Warm the model before comparing
+latencies; longer output and cold loading share the request deadline.
+
 It makes ten sequential calls: all five cases with thinking off, then all
 five with thinking on. Both modes use the same seed and maximum output
 budget; their actual token consumption can differ. Raw requests, responses,
@@ -93,6 +99,15 @@ thinking is intrinsically worse. Saved attempts and provenance are committed
 under `docs/results/`; the [literate report](reasoning-results.org) replays
 the grading without a model or network.
 
+With the new 3,072-token cap, both modes complete 5/5 correctly: direct
+39.16 s / 1,432 tokens, thinking 204.74 s / 7,602 tokens. All three
+truncations disappear; thinking ties accuracy at 5.23 times the wall time.
+This is development-set diagnosis, not evidence of a held-out reasoning gain.
+
+The follow-up retained all ten attempts in `native-budget-3072-2026-09-29`
+records. The generated thinking text matches the original attempts; the
+original final-content fragments are prefixes of the completed answers.
+
 | Item | Pin / setting |
 |---|---|
 | MLPL | 0.22.0, `49c15b3e659ecc32603e10312a5197039b636397` |
@@ -104,7 +119,7 @@ the grading without a model or network.
 | Rust HTTP library SHA-256 | `360ce46da300d9ce3bda4db6d2f46c9c737a696cea9df3a1af7f9a99d1164e74` |
 | Prompt template / dataset | `boxed-v1` / `authored-demo-v1` |
 | Seed / sampling | 42; temperature 0.6; top-p 0.95; top-k 20; repeat penalty 1 |
-| Context / generation cap | 4096 / 1536 tokens including thinking |
+| Context / generation cap | 4096 / 3072 tokens including thinking (original comparison: 1536) |
 | Transport bounds | 120 s, 1 MiB response, zero redirects, localhost only in the driver |
 
 The GGUF digest was independently measured on

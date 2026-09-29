@@ -230,7 +230,10 @@ The pretrained external model now produces verified answers through the
 native extension path. On five authored cases, thinking off completed 5/5
 correct in 42.17 s; thinking on completed 2/5 correct in 184.47 s and
 truncated three responses at 1536 tokens. This is demo readiness, not
-held-out accuracy. See [[file:reasoning-results.org][the reproducible research report]] and its
+held-out accuracy. The follow-up at 3072 tokens completes 5/5 in both modes:
+direct 39.16 s, thinking 204.74 s. It fixes truncation without showing a
+quality advantage. The runner now defaults to 3072; set =DEMO_MAX_NEW=1536=
+to repeat the original cap. See [[file:reasoning-results.org][the reproducible research report]] and its
 [[file:reasoning-results.html][standalone HTML]]. No project-trained reasoning improvement is claimed.
 
 For the pure-MLPL reference model, the verifier,

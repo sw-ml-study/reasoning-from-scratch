@@ -10,6 +10,11 @@ Qwen3 8B Q6_K/Ollama inference, with 100% GPU residency reported. A warm
 end-to-end verified answer took 13.6 s. Five authored cases with thinking
 off scored 5/5 in 42.17 s; thinking on scored 2/5 in 184.47 s, including
 three token-budget truncations. These are demo cases, not held-out accuracy.
+With the new 3,072-token cap, both modes complete 5/5 correctly: direct
+39.16 s / 1,432 tokens, thinking 204.74 s / 7,602 tokens. All three
+truncations disappear; thinking ties accuracy at 5.23 times the wall time.
+This is development-set diagnosis, not evidence of a held-out reasoning gain.
+
 See [the runbook](native-reasoning-demo.md) and
 [reproducible Org report](reasoning-results.org).
 
@@ -23,11 +28,11 @@ This CPU virtual-address limit is unrelated to the GPU's 16 GiB capacity.
 
 **ABI bytes: awkward but supported with an adapter.** HTTP response bodies
 arrive as numeric byte arrays on this host; packed bytes also work when
-boxed in a record rather than passed as bare function arguments. Five new
+boxed in a record rather than passed as bare function arguments. Six
 offline backend tests cover transport/JSON boundaries, final-only grading,
 truncation and errors. Two analytic training-math tests support the report's
 scalar SGD and reward-normalization examples. The complete gate now has
-155 tests, 27 probe outcomes and 29 exact tangles. Research replay runs
+156 tests, 27 probe outcomes and 29 exact tangles. Research replay runs
 offline and verifies the generated HTML; real inference remains opt-in.
 
 Future core sharing/COW, argument copying, tape semantics and device work

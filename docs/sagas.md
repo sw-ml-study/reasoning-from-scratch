@@ -125,6 +125,7 @@ conditions. Saga 4 is archived at
 | loader-copy-profile | done: scoped fields/stacks, 148 tests, scalar-call probe; real load 101.45 s, generation allocation failure under 32 GiB |
 | afternoon-demo-readiness | delivered: native extension/GPU demo, ten recorded attempts, offline replay, Org/HTML report and scalar training illustration |
 | report-readable-type | delivered: larger body, source/result blocks, tables and navigation; regenerated standalone HTML |
+| reasoning-budget-report | delivered: configurable output budget, all-attempt follow-up, method-focused report and explicit reasoning-benefit milestones |
 | native-reasoning-heldout | next: frozen held-out pilot with failure accounting, uncertainty and matched cost budgets |
 | resident-inference-copy-profile | deferred by user: document future core efficiency work; do not let it block native inference |
 

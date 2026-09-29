@@ -1,0 +1,9 @@
+number = 8
+slug = "reasoning-budget-report"
+status = "in-progress"
+description = "Address user feedback: center the literate report on the book/Python method s..."
+role = "production"
+context_files = []
+created_at = "2026-09-29T13:06:16"
+task_type = "validation"
+commits = []

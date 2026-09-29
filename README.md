@@ -48,9 +48,10 @@ five authored demo cases; these are not a held-out benchmark.
 
 The [publishable HTML research report](docs/reasoning-results.html) and
 [executable Org/ob-mlpl source](docs/reasoning-results.org) reproduce every
-saved grade, explain the 5/5 versus 2/5 budget-limited result, compare methods
+saved grade, diagnose thinking-budget limits, compare methods
 with the book's Python companion, and run an analytic six-step scalar
-training example. `just research-refresh` replays its offline calculations;
+training example. The larger-budget follow-up restores thinking to 5/5,
+but matches direct accuracy at 5.23 times the wall time. `just research-refresh` replays its offline calculations;
 `just research-html` only exports. Neither recipe runs model inference.
 
 Revalidated on Arch Linux on 2026-09-29 with sw-MLPL 0.22.0, build
@@ -71,7 +72,7 @@ of unrelated globals but still fails the same generation allocation limit
 has not been GRPO-trained here. The 32 GiB limit is a CPU virtual-address
 budget, not GPU VRAM; these reference runs used no GPU.
 
-The fixture suite has 155 native tests. A clean clone now generates its tiny
+The fixture suite has 156 native tests. A clean clone now generates its tiny
 checkpoint fixture automatically. The implementation document reproduces all 25
 library sources plus three drivers and a fixture builder (29 exact tangles).
 Tiny cached generation matches full recomputation exactly
