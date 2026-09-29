@@ -54,6 +54,14 @@ training example. The larger-budget follow-up restores thinking to 5/5,
 but matches direct accuracy at 5.23 times the wall time. `just research-refresh` replays its offline calculations;
 `just research-html` only exports. Neither recipe runs model inference.
 
+The [frozen six-problem pilot](docs/heldout-pilot-protocol.md) is complete:
+24 calls across seeds 42/43, zero thinking gains and one truncation
+regression, at 5.85 times the request time. A shared multiple-choice
+normalization false negative is documented separately; the primary scores
+are retained. `just reasoning-pilot` reruns inference;
+`scripts/replay-heldout-pilot` regrades locally saved raw evidence offline.
+The next step fixes that narrow verifier gap, not interpreter efficiency.
+
 Revalidated on Arch Linux on 2026-09-29 with sw-MLPL 0.22.0, build
 `49c15b3e`. The verifier, evaluation harness, reference tokenizer and
 templates, tiny Qwen3 forward pass, and KV-cache generation are implemented.
@@ -72,9 +80,9 @@ of unrelated globals but still fails the same generation allocation limit
 has not been GRPO-trained here. The 32 GiB limit is a CPU virtual-address
 budget, not GPU VRAM; these reference runs used no GPU.
 
-The fixture suite has 156 native tests. A clean clone now generates its tiny
-checkpoint fixture automatically. The implementation document reproduces all 25
-library sources plus three drivers and a fixture builder (29 exact tangles).
+The fixture suite has 160 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The implementation document reproduces all 26
+library sources plus five drivers and a fixture builder (32 exact tangles).
 Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 

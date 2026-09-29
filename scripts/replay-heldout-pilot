@@ -1,0 +1,11 @@
+#!/bin/sh
+# Opt-in offline replay uses retained local data; it performs no model calls.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+[ "$#" -eq 1 ] || { echo 'usage: replay-heldout-pilot out/native-reasoning/run-XXXXXXXX' >&2; exit 2; }
+case "$1" in out/native-reasoning/run-*) ;; *) echo 'supply a repository-relative native run directory' >&2; exit 2 ;; esac
+"$repo/scripts/prepare-heldout-pilot"
+DEMO_OUT=$1
+export DEMO_OUT
+exec "$repo/scripts/run-mlpl-demo" demos/replay_native_heldout.mlpl

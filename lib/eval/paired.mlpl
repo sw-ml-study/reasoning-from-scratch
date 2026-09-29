@@ -1,0 +1,74 @@
+# Paired pilot summaries with per-seed denominators and descriptive Wilson intervals. Requires lib/text/text.mlpl. Repeated seeds are never pooled as independent problems.
+
+def u:eval_wilson(correct, total) {
+  "Return a 95 percent Wilson score interval for a nonempty integer binomial count.";
+  if lt(total, 1) + lt(correct, 0) + gt(correct, total) + (total - floor(total)) + (correct - floor(correct)) {
+    err("invalid binomial counts")
+  } else {
+    z = 1.959963984540054;
+    z2 = z * z;
+    p = correct / total;
+    denominator = 1 + z2 / total;
+    center = (p + z2 / (2 * total)) / denominator;
+    radius = z * sqrt(p * (1 - p) / total + z2 / (4 * total * total)) / denominator;
+    ok({lower: center - radius, upper: center + radius})
+  }
+}
+
+def u:eval_paired_summary(text, seed) {
+  "Summarize public paired metadata for one seed; count all attempts and reject duplicate ids within that replicate.";
+  lines = str_split(text, "\n");
+  i = 0;
+  n = 0;
+  seen = "\n";
+  off_correct = 0;
+  on_correct = 0;
+  gains = 0;
+  losses = 0;
+  off_tokens = 0;
+  on_tokens = 0;
+  off_wall = 0;
+  on_wall = 0;
+  off_errors = 0;
+  on_errors = 0;
+  off_complete = 0;
+  on_complete = 0;
+  off_truncated = 0;
+  on_truncated = 0;
+  off_parseable = 0;
+  on_parseable = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      if eq(row.seed, seed) {
+        key = str_concat(row.id, "\n");
+        if u:text_contains(seen, str_concat("\n", key)) {
+          err("duplicate problem id for this seed")?
+        };
+        seen = str_concat(seen, key);
+        n = n + 1;
+        off_correct = off_correct + row.off.correct;
+        on_correct = on_correct + row.on.correct;
+        gains = gains + lt(row.off.correct, row.on.correct);
+        losses = losses + gt(row.off.correct, row.on.correct);
+        off_tokens = off_tokens + row.off.tokens;
+        on_tokens = on_tokens + row.on.tokens;
+        off_wall = off_wall + row.off.wall_ms;
+        on_wall = on_wall + row.on.wall_ms;
+        off_errors = off_errors + row.off.error;
+        on_errors = on_errors + row.on.error;
+        off_complete = off_complete + row.off.complete;
+        on_complete = on_complete + row.on.complete;
+        off_parseable = off_parseable + row.off.parseable;
+        on_parseable = on_parseable + row.on.parseable;
+        off_truncated = off_truncated + str_eq(row.off.done_reason, "length");
+        on_truncated = on_truncated + str_eq(row.on.done_reason, "length")
+      }
+    };
+    i = i + 1
+  };
+  off_interval = u:eval_wilson(off_correct, n)?;
+  on_interval = u:eval_wilson(on_correct, n)?;
+  ok({seed: seed, pairs: n, off_correct: off_correct, on_correct: on_correct, gains: gains, losses: losses, off_complete: off_complete, on_complete: on_complete, off_errors: off_errors, on_errors: on_errors, off_truncated: off_truncated, on_truncated: on_truncated, off_parseable: off_parseable, on_parseable: on_parseable, off_tokens: off_tokens, on_tokens: on_tokens, off_wall_ms: off_wall, on_wall_ms: on_wall, off_interval: off_interval, on_interval: on_interval})
+}

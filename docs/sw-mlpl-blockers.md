@@ -32,7 +32,7 @@ boxed in a record rather than passed as bare function arguments. Six
 offline backend tests cover transport/JSON boundaries, final-only grading,
 truncation and errors. Two analytic training-math tests support the report's
 scalar SGD and reward-normalization examples. The complete gate now has
-156 tests, 27 probe outcomes and 29 exact tangles. Research replay runs
+160 tests, 27 probe outcomes and 32 exact tangles. Research replay runs
 offline and verifies the generated HTML; real inference remains opt-in.
 
 Future core sharing/COW, argument copying, tape semantics and device work
@@ -459,3 +459,23 @@ require the optional native packages or network. See
 [the integration contract](extension-integration.md). R12 CUDA is unchanged;
 R13 does not block CPU smoke through the documented adapters. Two separate
 Org/Babel usage and implementation guides are linked from that report.
+
+## Held-out pilot verifier finding, 2026-09-29
+
+The completed 24-call pilot has primary off/on scores 5/6 versus 4/6
+(seed 42) and 5/6 versus 5/6 (seed 43), zero gains and one token-cap
+regression. Thinking consumed 744.75 s and 26,903 tokens; direct mode
+127.41 s and 4,734 tokens. Four completed choice answers were false
+negatives (one per mode and seed), retained in the primary metric and
+identified by separate manual review. All 24 requests and grades replay
+locally without inference.
+
+**Application normalization: awkward; no missing core capability.** The
+frozen native pilot found a multiple-choice false negative: a boxed bare
+letter is rejected against the same letter parenthesized inside a LaTeX
+text wrapper. The synthetic case `boxed A` versus `text (A)` reproduces the
+mismatch, whereas `boxed A` versus `A` passes. This is an MLPL verifier
+contract gap, not a language/runtime limitation or a Rust extension request.
+The frozen primary scores remain unchanged; manual review is reported
+separately. Step `verifier-choice-equivalence` will add positive and negative
+native tests before a narrow normalization change and versioned replay.

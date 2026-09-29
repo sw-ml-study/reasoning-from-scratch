@@ -1,0 +1,65 @@
+# Offline regrading of a local frozen-pilot run; downloaded questions and raw responses never enter the published report. Requires the local pinned dataset and retained run directory.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/eval/paired.mlpl";
+include "lib/backend/ollama.mlpl";
+
+out_dir = env("DEMO_OUT")?
+dataset = u:eval_load_jsonl_text(read_text("data/math500/native-heldout-v1.jsonl")?, "native-heldout-v1", {})?
+rows = read_text(str_concat(out_dir, "/pairs.jsonl"))?
+pair_lines = str_split(u:text_trim(rows), "\n")
+matches = 1
+count = 0
+i = 0
+while lt(i, dataset.count) {
+  item = u:eval_record(dataset, i)?;
+  seed = 42;
+  while lt(seed, 44) {
+    think = 0;
+    while lt(think, 2) {
+      stem = str_concat(out_dir, str_concat("/case-", str_concat(to_string(i), str_concat("-seed", str_concat(to_string(seed), str_concat("-think", to_string(think)))))));
+      request = read_text(str_concat(stem, "-request.json"))?;
+      expected = u:backend_chat_body("qwen3:8b-q6", u:eval_render_prompt(item.problem), think, seed, 3072)?;
+      matches = matches * str_eq(request, expected);
+      metrics = parse_json(read_text(str_concat(stem, "-metrics.json"))?)?;
+      pair = parse_json(list_get(pair_lines, 2 * i + seed - 42)?)?;
+      public_metrics = if think {
+        pair.on
+      } else {
+        pair.off
+      };
+      matches = matches * str_eq(pair.id, item.unique_id) * eq(pair.seed, seed) * str_eq(to_json(metrics)?, to_json(public_metrics)?);
+      raw = read_text(str_concat(stem, "-response.json"));
+      if metrics.error {
+        read_text(str_concat(stem, "-error.json"))?;
+        matches = matches * metrics.error * eq(metrics.correct, 0)
+      } else {
+        decoded = u:backend_decode({status: 200, body: tokenize_bytes(unwrap(raw))});
+        if is_err(decoded) {
+          matches = matches * metrics.error * eq(metrics.correct, 0)
+        } else {
+          answer = unwrap(decoded);
+          matches = matches * eq(metrics.error, 0) * eq(metrics.correct, u:backend_grade(answer, item.answer)) * eq(metrics.complete, answer.complete) * eq(metrics.tokens, answer.eval_count) * eq(metrics.parseable, gt(str_len(u:verify_final_candidate(answer.content, "boxed_only")), 0))
+        }
+      };
+      count = count + 1;
+      think = think + 1
+    };
+    seed = seed + 1
+  };
+  i = i + 1
+}
+if matches * eq(count, 24) {
+  print("Verified reference-free requests and independently replayed grades:", count);
+  print("seed 42:", to_json(u:eval_paired_summary(rows, 42)?)?);
+  print("seed 43:", to_json(u:eval_paired_summary(rows, 43)?)?);
+  ok("local raw evidence replayed without inference")
+} else {
+  err("pilot replay disagrees with saved requests or grades")
+}

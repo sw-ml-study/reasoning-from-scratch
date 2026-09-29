@@ -25,7 +25,7 @@ claims, each requiring different evidence:
 |-------+------------------+---------|
 | Our independently implemented pipeline behaves correctly | Tiny forward/cache goldens, sampling, verification and refinement tests | Demonstrated on fixtures |
 | A pretrained model produces correct multi-step solutions through our pipeline | Saved Qwen3 8B answers checked by MLPL | Demonstrated on five authored examples |
-| Our reasoning method or training makes answers better | Requires paired held-out results; no language-model training here yet | Not demonstrated |
+| Our reasoning method or training makes answers better | Frozen paired pilot: zero thinking gains, one truncation regression; no language-model training here yet | Not demonstrated |
 
 “From scratch” describes implementing the methods, not pretraining a
 language model from random weights. Our planned learning experiment starts
@@ -43,6 +43,10 @@ Doubling the cap to 3,072 restored thinking to five correct answers, with
 no truncations. It still took 204.74 seconds versus 39.16 seconds for direct
 answers. We fixed completion; we have not shown a quality benefit.
 
+The new frozen six-problem pilot also finds no thinking gains across two
+seeds, with one truncation regression and 5.85 times the request time. A
+shared multiple-choice verifier false negative is reported separately below.
+
 * How the book, Python, and MLPL fit together
 
 The book supplies the progression: generate text, evaluate it, allocate
@@ -55,7 +59,7 @@ No book prose or Python source has been copied into our implementation.
 | Book stage | Python companion role | Our working approach | Evidence still needed |
 |------------+-----------------------+----------------------+-----------------------|
 | Generation, chapter 2 | Model and decoding implementation | Tiny MLPL forward/cache parity; live native GPU inference | Real-weight MLPL forward feasibility |
-| Evaluation, chapter 3 | Check mathematical answers | MLPL boxed extraction, normalization, exact arithmetic and attempt accounting | Held-out model accuracy |
+| Evaluation, chapter 3 | Check mathematical answers | MLPL boxed extraction, normalization, exact arithmetic and attempt accounting | Broader evaluation with the corrected verifier |
 | Scaling, chapter 4 | Spend more inference compute | Seeded sampling/voting fixtures; live thinking-budget comparison | Accuracy versus total cost |
 | Refinement, chapter 5 | Revise candidate solutions | Bounded critique/revision and selection contracts | Gains without access to reference answers |
 | RL, chapters 6–7 | Learn from verifiable rewards | Reward arithmetic and scalar autograd demonstration below | A trained policy with held-out reward gains |
@@ -406,6 +410,209 @@ if matches * eq(dataset.count, 10) {
 : think: 1 attempted: 5 correct: 5 truncated: 0 tokens: 7602 native_seconds: 204.647115495
 : Ok(all ten grades and aggregate checks reproduced)
 
+* A frozen held-out pilot: does the benefit transfer?
+
+We next tested six MATH-500 problems that were not used in our five-case
+prompt/budget development. Selection used the first six unique ids ranked
+by SHA-256 of =native-heldout-v1:= followed by the id. We committed
+[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/heldout-pilot-protocol.md][the protocol]] and
+[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/results/heldout-pilot-v1-selection.jsonl][selection hashes]] in =826f467= before inference. We did not choose problems
+based on whether they helped thinking mode.
+
+Each problem ran with seeds 42 and 43 in both modes, giving 24 attempts.
+We alternated mode order within pairs. Both modes received 12 calls with
+the same 3,072-token cap and 120-second request deadline. This matches the
+maximum allowance, not actual compute consumed. Temperature, top-p/top-k,
+model, prompt and context were unchanged. No failed answer was replaced.
+
+This is held out from *our development*, not necessarily from the external
+model's pretraining. Public MATH-500 contamination is unknown. Six problems
+are too few to establish a broad quality advantage, especially with repeated
+seeds on the same questions.
+
+** Results and cost
+
+| Seed | Mode | Primary correct | 95% interval | Truncated | Errors | Tokens | Wall time |
+|------+------+-----------------+--------------+-----------+--------+--------+-----------|
+| 42 | off | 5 / 6 | 43.6–97.0% | 0 | 0 | 2554 | 68.83 s |
+| 42 | on | 4 / 6 | 30.0–90.3% | 1 | 0 | 13855 | 392.76 s |
+| 43 | off | 5 / 6 | 43.6–97.0% | 0 | 0 | 2180 | 58.58 s |
+| 43 | on | 5 / 6 | 43.6–97.0% | 0 | 0 | 13048 | 351.99 s |
+
+| Seed | Thinking gains | Thinking regressions | Net change |
+|------+----------------+----------------------+------------|
+| 42 | 0 | 1 | -1 / 6 |
+| 43 | 0 | 0 | +0 / 6 |
+
+Every pair is retained below. Scores use the frozen verifier, including its
+known multiple-choice false negative.
+
+| Problem id | Seed | Off correct | On correct | Off stop | On stop |
+|------------+------+-------------+------------+----------+---------|
+| test/prealgebra/1743.json | 42 | 1 | 1 | stop | stop |
+| test/prealgebra/1743.json | 43 | 1 | 1 | stop | stop |
+| test/precalculus/819.json | 42 | 0 | 0 | stop | stop |
+| test/precalculus/819.json | 43 | 0 | 0 | stop | stop |
+| test/prealgebra/1251.json | 42 | 1 | 0 | stop | length |
+| test/prealgebra/1251.json | 43 | 1 | 1 | stop | stop |
+| test/counting_and_probability/216.json | 42 | 1 | 1 | stop | stop |
+| test/counting_and_probability/216.json | 43 | 1 | 1 | stop | stop |
+| test/algebra/2391.json | 42 | 1 | 1 | stop | stop |
+| test/algebra/2391.json | 43 | 1 | 1 | stop | stop |
+| test/algebra/2570.json | 42 | 1 | 1 | stop | stop |
+| test/algebra/2570.json | 43 | 1 | 1 | stop | stop |
+
+
+Intervals use the [[https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/agcoulci.htm][Wilson score formula documented by NIST]] at 95% confidence over six problems, shown separately
+for each seed. They illustrate the large uncertainty of this pilot; they do
+not correct selection bias or unknown training overlap. The two seeds are
+replicates on the same six problems, not twelve independent examples.
+A gain means direct was wrong and thinking correct; a regression means the
+reverse. Incomplete attempts and errors stay in the denominator.
+
+Thinking produced zero paired gains, with one regression at seed 42 and
+none at seed 43. The regression is the token-limit stop on
+=test/prealgebra/1251.json=. That question completed correctly in direct
+mode at both seeds and in thinking mode at seed 43. Across the two-seed
+averages, one problem worsened and five tied; none improved.
+
+Across all 24 calls, direct mode used 4,734 tokens and 127.41 seconds;
+thinking used 26,903 tokens and 744.75 seconds. The measured request-time
+ratio is 5.85, and the generated-token ratio is 5.68. These are cost totals,
+not a pooling of the two seeds into an independent accuracy sample.
+No transport errors occurred. All prompt token counts plus generated
+lengths fit the configured 4,096-token context.
+
+
+
+** Verifier review is separate from the primary score
+
+One selected multiple-choice problem exposed a false negative in our
+normalizer. All four completed responses selected the correct option,
+but a bare letter did not match the parenthesized letter inside a LaTeX
+text wrapper. An independently authored diagnostic reproduces this class:
+=\boxed{A}= matches =A=, but not =\text{(A)}= in the current verifier.
+
+These four primary failures are not mathematical failures by the model.
+The public manual-review record identifies them individually. The primary
+scores above retain the frozen verifier; a corrected analysis must carry a
+new verifier version. This finding is an application-level MLPL change,
+not a missing language feature or an interpreter optimization task.
+
+Final answers also do not certify every explanation step. One direct answer
+selected the correct option but incorrectly described constant cylindrical
+radius as a sphere in a distractor discussion. That is an explanation error
+separate from final-answer correctness. A future reasoning-quality audit
+should sample intermediate steps as well as final answers.
+
+The immediate next step is a narrowly scoped normalization fix, with
+positive and negative native tests so that ordinary algebra and tuples
+are not accidentally collapsed. Replay these same raw answers as a labelled
+post-hoc verifier correction; do not regenerate favorable replacements.
+
+The off-mode responses already contain multi-step solutions. This experiment
+measures the benefit of enabling the additional thinking channel. It does
+not toggle mathematical reasoning itself on and off, and cannot establish
+which internal computations caused a correct answer.
+
+** What these results establish
+
+The extra thinking channel did not earn its cost in this pilot. The model
+already solved every selected problem in direct mode according to final-answer
+review. Once the four formatting false negatives are identified, reviewed
+completion-and-answer counts are 6/6 versus 5/6 for seed 42, and 6/6 versus
+6/6 for seed 43. This is a separately labelled manual review, not a change
+to the recorded primary verifier results. The paired gain/regression
+conclusion is unchanged.
+
+The useful improvements are now concrete: repair the choice-format verifier,
+keep truncation separate from mathematical error, and measure the quality
+and cost of a changed reasoning method on new frozen data. Direct mode is
+the efficient demonstrated baseline here. A larger experiment, or a matched
+base-model/CoT comparison closer to the book, is needed to find whether
+extra reasoning improves answers where that baseline actually fails.
+The 0.6B from-scratch execution and training claims remain unproved.
+
+
+A useful next comparison must keep the original results and use a fresh
+holdout after any changes to budgets, prompts or selection. More samples
+of already examined questions are development evidence. A gain from an
+external pretrained model also cannot stand in for a before/after training
+result on our own base checkpoint.
+
+** Reproduce the public analysis, or regrade local raw evidence
+
+Downloaded questions and references remain in ignored =data/=. Raw requests,
+responses and grading sidecars remain in the local run directory under
+=out/=. The published record contains every pair's numeric measurements,
+source ids, full provenance and hashes of the local evidence, without
+redistributing the downloaded dataset or model-generated restatements of it.
+
+This offline block recomputes summaries from the committed numeric pairs.
+It does *not* independently regrade answers, because the public report does
+not carry the downloaded questions or raw responses. The separate local
+replay command below reconstructs every request and regrades every saved
+successful transport response against the pinned local references; recorded
+transport/protocol failures remain failures.
+
+#+name: replay-heldout-summary
+#+begin_src mlpl
+# Summarize all public paired measurements without pooling repeated seeds.
+include "../lib/text/text.mlpl";
+include "../lib/eval/paired.mlpl";
+rows = read_text("docs/results/native-heldout-v1-pairs.jsonl")?
+expected = parse_json(read_text("docs/results/native-heldout-v1-summary.json")?)?
+first = u:eval_paired_summary(rows, 42)?
+second = u:eval_paired_summary(rows, 43)?
+print("seed 42:", to_json(first)?)
+print("seed 43:", to_json(second)?)
+lines = str_split(u:text_trim(rows), "\n")
+i = 0
+gains = 0
+losses = 0
+matches = eq(list_len(lines), 12)
+while lt(i, 6) {
+  a = parse_json(list_get(lines, 2 * i)?)?;
+  b = parse_json(list_get(lines, 2 * i + 1)?)?;
+  matches = matches * str_eq(a.id, b.id) * eq(a.seed, 42) * eq(b.seed, 43);
+  off = a.off.correct + b.off.correct;
+  on = a.on.correct + b.on.correct;
+  gains = gains + lt(off, on);
+  losses = losses + gt(off, on);
+  i = i + 1
+}
+print("problem-average gains:", gains, "regressions:", losses, "ties:", 6 - gains - losses)
+if matches * eq(first.pairs, 6) * eq(second.pairs, 6) * str_eq(to_json(first)?, to_json(expected.seed42)?) * str_eq(to_json(second)?, to_json(expected.seed43)?) {
+  ok("all 24 attempted outcomes accounted for; seeds kept separate")
+} else {
+  err("paired pilot summary drift")
+}
+#+end_src
+
+#+RESULTS: replay-heldout-summary
+: seed 42: {"gains":0,"losses":1,"off_complete":6,"off_correct":5,"off_errors":0,"off_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"off_parseable":6,"off_tokens":2554,"off_truncated":0,"off_wall_ms":68834.13074700003,"on_complete":5,"on_correct":4,"on_errors":0,"on_interval":{"lower":0.299993315138392,"upper":0.9032285888942195},"on_parseable":5,"on_tokens":13855,"on_truncated":1,"on_wall_ms":392760.52146099997,"pairs":6,"seed":42}
+: seed 43: {"gains":0,"losses":0,"off_complete":6,"off_correct":5,"off_errors":0,"off_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"off_parseable":6,"off_tokens":2180,"off_truncated":0,"off_wall_ms":58578.99063300021,"on_complete":6,"on_correct":5,"on_errors":0,"on_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"on_parseable":6,"on_tokens":13048,"on_truncated":0,"on_wall_ms":351990.87873,"pairs":6,"seed":43}
+: problem-average gains: 0 regressions: 1 ties: 5
+: Ok(all 24 attempted outcomes accounted for; seeds kept separate)
+
+To regrade the locally retained evidence, without inference:
+
+#+begin_src sh
+export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+scripts/replay-heldout-pilot out/native-reasoning/run-s69Yj0sQ
+#+end_src
+
+To repeat inference on the frozen ids (24 new calls, saved in a fresh directory):
+
+#+begin_src sh
+export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+just reasoning-pilot
+#+end_src
+
+The runner verifies the frozen protocol, selection and source-data hashes.
+Repetition is opt-in and excluded from =just check=. Changes to this protocol
+require a separately named experiment, not silently replacing these results.
+
 * From “it produces reasoning” to “reasoning helps”
 
 ** An operational success criterion
@@ -474,8 +681,10 @@ This is our proposed experiment order, not a claim of a measured result.
 
 1. Remove avoidable truncation with a measured output budget and retain the
    wall-clock bound. Measure whether final answers actually complete.
-2. Freeze a held-out pilot and compare direct versus thinking with multiple
-   seeds. Report quality and cost, even if the result is no gain.
+2. The frozen pilot is complete: zero gains, one truncation regression,
+   and a shared verifier false negative. Fix that normalization gap with
+   tests, retain the primary results, and confirm any method changes on a
+   new frozen holdout.
 3. Test voting, checked refinement and few-shot demonstrations as separate
    interventions. Keep selection independent of the reference answer.
 4. Compare related model sizes only after controlling budgets and training
@@ -615,7 +824,9 @@ requests. Its recorded results are preserved in the Org source and HTML.
 There are three levels of reproducibility:
 
 1. *Replay the analysis:* read the twenty committed attempts, recompute grades
-   and aggregates in MLPL, and reproduce the toy calculations. This is
+   and aggregates in MLPL, summarize the 24 held-out measurements, and
+   reproduce the toy calculations. Independent held-out regrading additionally
+   needs the retained local raw evidence and dataset. This is
    offline and does not need a GPU.
 2. *Repeat inference:* run the recorded prompts and settings against the
    pinned local model/runtime. This requires the model and GPU backend.
@@ -634,7 +845,7 @@ just research-refresh
 #+end_src
 
 =research-html= exports the stored results only. =research-refresh= executes
-four explicitly named offline MLPL blocks through =ob-mlpl=, saves their
+five explicitly named offline MLPL blocks through =ob-mlpl=, saves their
 results, then exports. Neither recipe executes the live inference blocks.
 The HTML has inline CSS and no required remote fonts, scripts or images;
 it can be published as one file. The full research bundle also includes the
@@ -703,14 +914,17 @@ request/response JSONL, provenance records and =docs/results/SHA256SUMS=.
 The original =native-demo-2026-09-29= records retain all ten attempts;
 =native-budget-3072-2026-09-29= retains all ten follow-up attempts. Both
 include independent references, mode, generated text, completion and grade.
+The separate =native-heldout-v1= bundle contains public paired metadata,
+per-seed summaries, manual-review annotations, provenance and hashes of
+locally retained raw evidence; it does not redistribute MATH-500 text.
 Each provenance file records the model identity, runtime, template,
 interpreter and native extension hashes. Weights are not redistributed.
 
 The adapter has six native offline tests, covering request encoding,
 bounds, transport failures and completion/grade accounting. Two further
 tests check the training arithmetic against analytic answers. The full
-fixture gate has 156 native tests, 27 declared capability outcomes and
-29 exact tangles. These establish software behavior and replay consistency,
+fixture gate has 160 native tests, 27 declared capability outcomes and
+32 exact tangles. These establish software behavior and replay consistency,
 not broad model quality.
 
 Our real-weight MLPL forward path remains unavailable; its memory and

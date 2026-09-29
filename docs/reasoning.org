@@ -6018,3 +6018,250 @@ while lt(pass, passes) {
 print("These authored demonstration cases are not a held-out reasoning benchmark. This pretrained model has not been trained by this project.")
 ok(1)
 #+end_src
+
+* Paired held-out evaluation
+
+The opt-in native pilot freezes dataset ids and controls before inference.
+It alternates mode order and keeps each seed as a separate replicate. Raw
+questions and answers stay local because the downloaded dataset is not
+redistributed. Public per-pair measurements support an offline summary,
+including failures, gains, regressions, cost and descriptive Wilson bounds.
+See [[file:heldout-pilot-protocol.md][the frozen protocol]]; a small pilot is not a broad quality claim.
+
+#+begin_src mlpl :tangle ../lib/eval/paired.mlpl
+# Paired pilot summaries with per-seed denominators and descriptive Wilson intervals. Requires lib/text/text.mlpl. Repeated seeds are never pooled as independent problems.
+
+def u:eval_wilson(correct, total) {
+  "Return a 95 percent Wilson score interval for a nonempty integer binomial count.";
+  if lt(total, 1) + lt(correct, 0) + gt(correct, total) + (total - floor(total)) + (correct - floor(correct)) {
+    err("invalid binomial counts")
+  } else {
+    z = 1.959963984540054;
+    z2 = z * z;
+    p = correct / total;
+    denominator = 1 + z2 / total;
+    center = (p + z2 / (2 * total)) / denominator;
+    radius = z * sqrt(p * (1 - p) / total + z2 / (4 * total * total)) / denominator;
+    ok({lower: center - radius, upper: center + radius})
+  }
+}
+
+def u:eval_paired_summary(text, seed) {
+  "Summarize public paired metadata for one seed; count all attempts and reject duplicate ids within that replicate.";
+  lines = str_split(text, "\n");
+  i = 0;
+  n = 0;
+  seen = "\n";
+  off_correct = 0;
+  on_correct = 0;
+  gains = 0;
+  losses = 0;
+  off_tokens = 0;
+  on_tokens = 0;
+  off_wall = 0;
+  on_wall = 0;
+  off_errors = 0;
+  on_errors = 0;
+  off_complete = 0;
+  on_complete = 0;
+  off_truncated = 0;
+  on_truncated = 0;
+  off_parseable = 0;
+  on_parseable = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      if eq(row.seed, seed) {
+        key = str_concat(row.id, "\n");
+        if u:text_contains(seen, str_concat("\n", key)) {
+          err("duplicate problem id for this seed")?
+        };
+        seen = str_concat(seen, key);
+        n = n + 1;
+        off_correct = off_correct + row.off.correct;
+        on_correct = on_correct + row.on.correct;
+        gains = gains + lt(row.off.correct, row.on.correct);
+        losses = losses + gt(row.off.correct, row.on.correct);
+        off_tokens = off_tokens + row.off.tokens;
+        on_tokens = on_tokens + row.on.tokens;
+        off_wall = off_wall + row.off.wall_ms;
+        on_wall = on_wall + row.on.wall_ms;
+        off_errors = off_errors + row.off.error;
+        on_errors = on_errors + row.on.error;
+        off_complete = off_complete + row.off.complete;
+        on_complete = on_complete + row.on.complete;
+        off_parseable = off_parseable + row.off.parseable;
+        on_parseable = on_parseable + row.on.parseable;
+        off_truncated = off_truncated + str_eq(row.off.done_reason, "length");
+        on_truncated = on_truncated + str_eq(row.on.done_reason, "length")
+      }
+    };
+    i = i + 1
+  };
+  off_interval = u:eval_wilson(off_correct, n)?;
+  on_interval = u:eval_wilson(on_correct, n)?;
+  ok({seed: seed, pairs: n, off_correct: off_correct, on_correct: on_correct, gains: gains, losses: losses, off_complete: off_complete, on_complete: on_complete, off_errors: off_errors, on_errors: on_errors, off_truncated: off_truncated, on_truncated: on_truncated, off_parseable: off_parseable, on_parseable: on_parseable, off_tokens: off_tokens, on_tokens: on_tokens, off_wall_ms: off_wall, on_wall_ms: on_wall, off_interval: off_interval, on_interval: on_interval})
+}
+#+end_src
+
+The driver sends only the problem text, then checks final content against
+the reference in MLPL. Each request and outcome is retained, including
+transport or protocol errors. There are no retries or selection by grade.
+
+#+begin_src mlpl :tangle ../demos/native_heldout.mlpl
+# Frozen six-problem, two-seed paired native inference pilot. Raw downloaded questions and responses remain local; public records contain only measurement metadata. Run via scripts/run-native-reasoning pilot.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/eval/paired.mlpl";
+include "lib/backend/ollama.mlpl";
+
+def u:eval_pilot_attempt(item, seed, think, stem) {
+  "Save the reference-free request and raw response, grade only the final answer, and return public numeric accounting including failures.";
+  body = u:backend_chat_body("qwen3:8b-q6", u:eval_render_prompt(item.problem), think, seed, 3072)?;
+  write_atomic(str_concat(stem, "-request.json"), body)?;
+  print("Attempt:", item.unique_id, "seed:", seed, "think:", think);
+  started = clock_ms();
+  reply = u:http_request(u:backend_http_request("http://127.0.0.1:11434/api/chat", body));
+  wall_ms = clock_ms() - started;
+  if str_eq(type_of(reply), "record") {
+    write_atomic(str_concat(stem, "-response.json"), u:backend_body_text(reply))?
+  };
+  decoded = u:backend_decode(reply);
+  if is_err(decoded) {
+    result = {correct: 0, complete: 0, error: 1, parseable: 0, tokens: 0, wall_ms: wall_ms, done_reason: "transport_or_protocol_error"};
+    write_atomic(str_concat(stem, "-error.json"), to_json({error: err_message(decoded)})?)?
+  } else {
+    answer = unwrap(decoded);
+    candidate = u:verify_final_candidate(answer.content, "boxed_only");
+    result = {correct: u:backend_grade(answer, item.answer), complete: answer.complete, error: 0, parseable: gt(str_len(candidate), 0), tokens: answer.eval_count, wall_ms: wall_ms, done_reason: answer.done_reason};
+    write_atomic(str_concat(stem, "-private-grade.json"), to_json({reference: item.answer, candidate: candidate, content: answer.content})?)?
+  };
+  write_atomic(str_concat(stem, "-metrics.json"), to_json(result)?)?;
+  print("Outcome:", to_json(result)?);
+  result
+}
+
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+out_dir = env("DEMO_OUT")?
+dataset = u:eval_load_jsonl_text(read_text("data/math500/native-heldout-v1.jsonl")?, "native-heldout-v1", {})?
+if dataset.count - 6 {
+  err("pilot requires six frozen problems")?
+}
+pairs_path = str_concat(out_dir, "/pairs.jsonl")
+i = 0
+while lt(i, dataset.count) {
+  item = u:eval_record(dataset, i)?;
+  replicate = 0;
+  while lt(replicate, 2) {
+    seed = 42 + replicate;
+    first_mode = mod(i + replicate, 2);
+    prefix = str_concat(out_dir, str_concat("/case-", str_concat(to_string(i), str_concat("-seed", to_string(seed)))));
+    first = u:eval_pilot_attempt(item, seed, first_mode, str_concat(prefix, str_concat("-think", to_string(first_mode))));
+    second = u:eval_pilot_attempt(item, seed, 1 - first_mode, str_concat(prefix, str_concat("-think", to_string(1 - first_mode))));
+    pair = {id: item.unique_id, index: i, seed: seed, first_mode: first_mode, off: if first_mode {
+        second
+      } else {
+        first
+      }, on: if first_mode {
+        first
+      } else {
+        second
+      }};
+    u:eval_write_line(pairs_path, str_concat(to_json(pair)?, "\n"), eq(i + replicate, 0))?;
+    replicate = replicate + 1
+  };
+  i = i + 1
+}
+rows = read_text(pairs_path)?
+seed = 42
+while lt(seed, 44) {
+  summary = u:eval_paired_summary(rows, seed)?;
+  write_atomic(str_concat(out_dir, str_concat("/summary-seed", str_concat(to_string(seed), ".json"))), to_json(summary)?)?;
+  print("SUMMARY:", to_json(summary)?);
+  seed = seed + 1
+}
+ok("24 attempts retained; this pretrained pilot is not project training")
+#+end_src
+
+Local raw-evidence replay reconstructs all 24 requests from the frozen
+problems and settings and independently grades each saved response. It
+performs no inference. Public report replay uses only numeric metadata;
+this additional opt-in replay requires the locally retained raw files.
+
+#+begin_src mlpl :tangle ../demos/replay_native_heldout.mlpl
+# Offline regrading of a local frozen-pilot run; downloaded questions and raw responses never enter the published report. Requires the local pinned dataset and retained run directory.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/eval/paired.mlpl";
+include "lib/backend/ollama.mlpl";
+
+out_dir = env("DEMO_OUT")?
+dataset = u:eval_load_jsonl_text(read_text("data/math500/native-heldout-v1.jsonl")?, "native-heldout-v1", {})?
+rows = read_text(str_concat(out_dir, "/pairs.jsonl"))?
+pair_lines = str_split(u:text_trim(rows), "\n")
+matches = 1
+count = 0
+i = 0
+while lt(i, dataset.count) {
+  item = u:eval_record(dataset, i)?;
+  seed = 42;
+  while lt(seed, 44) {
+    think = 0;
+    while lt(think, 2) {
+      stem = str_concat(out_dir, str_concat("/case-", str_concat(to_string(i), str_concat("-seed", str_concat(to_string(seed), str_concat("-think", to_string(think)))))));
+      request = read_text(str_concat(stem, "-request.json"))?;
+      expected = u:backend_chat_body("qwen3:8b-q6", u:eval_render_prompt(item.problem), think, seed, 3072)?;
+      matches = matches * str_eq(request, expected);
+      metrics = parse_json(read_text(str_concat(stem, "-metrics.json"))?)?;
+      pair = parse_json(list_get(pair_lines, 2 * i + seed - 42)?)?;
+      public_metrics = if think {
+        pair.on
+      } else {
+        pair.off
+      };
+      matches = matches * str_eq(pair.id, item.unique_id) * eq(pair.seed, seed) * str_eq(to_json(metrics)?, to_json(public_metrics)?);
+      raw = read_text(str_concat(stem, "-response.json"));
+      if metrics.error {
+        read_text(str_concat(stem, "-error.json"))?;
+        matches = matches * metrics.error * eq(metrics.correct, 0)
+      } else {
+        decoded = u:backend_decode({status: 200, body: tokenize_bytes(unwrap(raw))});
+        if is_err(decoded) {
+          matches = matches * metrics.error * eq(metrics.correct, 0)
+        } else {
+          answer = unwrap(decoded);
+          matches = matches * eq(metrics.error, 0) * eq(metrics.correct, u:backend_grade(answer, item.answer)) * eq(metrics.complete, answer.complete) * eq(metrics.tokens, answer.eval_count) * eq(metrics.parseable, gt(str_len(u:verify_final_candidate(answer.content, "boxed_only")), 0))
+        }
+      };
+      count = count + 1;
+      think = think + 1
+    };
+    seed = seed + 1
+  };
+  i = i + 1
+}
+if matches * eq(count, 24) {
+  print("Verified reference-free requests and independently replayed grades:", count);
+  print("seed 42:", to_json(u:eval_paired_summary(rows, 42)?)?);
+  print("seed 43:", to_json(u:eval_paired_summary(rows, 43)?)?);
+  ok("local raw evidence replayed without inference")
+} else {
+  err("pilot replay disagrees with saved requests or grades")
+}
+#+end_src

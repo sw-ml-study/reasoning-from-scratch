@@ -1,0 +1,58 @@
+# Offline goldens for paired holdout accounting and descriptive Wilson intervals; repeated seeds must not be pooled.
+include "lib/text/text.mlpl";
+include "lib/eval/paired.mlpl";
+
+def u:eval_paired_fixture(id, seed, off, on) {
+  "One synthetic paired measurement with known token and latency totals.";
+  str_concat(to_json({id: id, seed: seed, off: {correct: off, complete: 1, error: 0, parseable: 1, tokens: 10, wall_ms: 100, done_reason: "stop"}, on: {correct: on, complete: 1, error: 0, parseable: 1, tokens: 20, wall_ms: 200, done_reason: "stop"}})?, "\n")
+}
+
+@test {name: "Wilson interval matches independent published-formula goldens", tags: ["eval", "paired"]}
+def u:test_eval_wilson() {
+  "Check symmetry, boundary successes and invalid counts without real inference.";
+  half = u:eval_wilson(5, 10)?;
+  u:assert_true(lt(abs(half.lower - 0.236593090512564), 0.000000001), "five of ten lower")?;
+  u:assert_true(lt(abs(half.upper - 0.763406909487436), 0.000000001), "five of ten upper")?;
+  zero = u:eval_wilson(0, 10)?;
+  u:assert_true(lt(abs(zero.upper - 0.277532799862889), 0.000000001), "zero success upper")?;
+  u:assert_err(u:eval_wilson(0, 0), "empty sample")?;
+  u:assert_err(u:eval_wilson(11, 10), "too many successes")?;
+  u:assert_err(u:eval_wilson(1.5, 10), "fractional successes")
+}
+
+@test {name: "paired summary preserves gains losses and seed separation", tags: ["eval", "paired"]}
+def u:test_eval_paired_counts() {
+  "Two successes each can conceal opposite changes; another seed is a separate replicate.";
+  rows = str_concat(u:eval_paired_fixture("a", 42, 1, 0), str_concat(u:eval_paired_fixture("b", 42, 0, 1), str_concat(u:eval_paired_fixture("c", 42, 1, 1), u:eval_paired_fixture("a", 43, 0, 0))));
+  result = u:eval_paired_summary(rows, 42)?;
+  u:assert_eq(result.pairs, 3, "three independent problem ids")?;
+  u:assert_eq(result.off_correct, 2, "off successes")?;
+  u:assert_eq(result.on_correct, 2, "on successes")?;
+  u:assert_eq(result.gains, 1, "one gain")?;
+  u:assert_eq(result.losses, 1, "one regression")?;
+  u:assert_eq(result.off_tokens, 30, "off cost")?;
+  u:assert_eq(result.on_wall_ms, 600, "on wall time")?;
+  u:assert_eq(u:eval_paired_summary(rows, 43)?.pairs, 1, "seed kept separate")
+}
+
+@test {name: "paired summary counts errors and truncations as failed attempts", tags: ["eval", "paired"]}
+def u:test_eval_paired_failures() {
+  "Unavailable token counts remain zero known cost and have an explicit error count.";
+  row = to_json({id: "a", seed: 42, off: {correct: 0, complete: 0, error: 1, parseable: 0, tokens: 0, wall_ms: 120000, done_reason: "transport_error"}, on: {correct: 0, complete: 0, error: 0, parseable: 1, tokens: 3072, wall_ms: 80000, done_reason: "length"}})?;
+  result = u:eval_paired_summary(row, 42)?;
+  u:assert_eq(result.pairs, 1, "failed pair stays in denominator")?;
+  u:assert_eq(result.off_errors, 1, "transport failure visible")?;
+  u:assert_eq(result.on_truncated, 1, "truncation visible")?;
+  u:assert_eq(result.on_correct, 0, "partial box not a success")?;
+  u:assert_eq(result.off_wall_ms, 120000, "failed request latency retained")
+}
+
+@test {name: "paired summary rejects duplicates and missing replicates", tags: ["eval", "paired"]}
+def u:test_eval_paired_invalid() {
+  "Duplicate problem ids would inflate the denominator and narrow uncertainty.";
+  row = u:eval_paired_fixture("a", 42, 1, 1);
+  u:assert_err(u:eval_paired_summary(str_concat(row, row), 42), "duplicate pair")?;
+  u:assert_err(u:eval_paired_summary(row, 43), "no matching seed")
+}
+
+u:run_registered_tests()

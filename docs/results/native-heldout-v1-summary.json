@@ -1,0 +1,58 @@
+{
+  "seed42": {
+    "gains": 0,
+    "losses": 1,
+    "off_complete": 6,
+    "off_correct": 5,
+    "off_errors": 0,
+    "off_interval": {
+      "lower": 0.43649717781352987,
+      "upper": 0.9699466302516935
+    },
+    "off_parseable": 6,
+    "off_tokens": 2554,
+    "off_truncated": 0,
+    "off_wall_ms": 68834.13074700003,
+    "on_complete": 5,
+    "on_correct": 4,
+    "on_errors": 0,
+    "on_interval": {
+      "lower": 0.299993315138392,
+      "upper": 0.9032285888942195
+    },
+    "on_parseable": 5,
+    "on_tokens": 13855,
+    "on_truncated": 1,
+    "on_wall_ms": 392760.52146099997,
+    "pairs": 6,
+    "seed": 42
+  },
+  "seed43": {
+    "gains": 0,
+    "losses": 0,
+    "off_complete": 6,
+    "off_correct": 5,
+    "off_errors": 0,
+    "off_interval": {
+      "lower": 0.43649717781352987,
+      "upper": 0.9699466302516935
+    },
+    "off_parseable": 6,
+    "off_tokens": 2180,
+    "off_truncated": 0,
+    "off_wall_ms": 58578.99063300021,
+    "on_complete": 6,
+    "on_correct": 5,
+    "on_errors": 0,
+    "on_interval": {
+      "lower": 0.43649717781352987,
+      "upper": 0.9699466302516935
+    },
+    "on_parseable": 6,
+    "on_tokens": 13048,
+    "on_truncated": 0,
+    "on_wall_ms": 351990.87873,
+    "pairs": 6,
+    "seed": 43
+  }
+}

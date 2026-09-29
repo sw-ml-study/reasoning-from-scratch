@@ -74,29 +74,37 @@ blockquote { margin:1.5rem 0; padding:8px 24px; border-left:4px solid var(--acce
 <li><a href="#org0218a13">4.6. Replay the larger-budget experiment</a></li>
 </ul>
 </li>
-<li><a href="#org3285ba6">5. From “it produces reasoning” to “reasoning helps”</a>
+<li><a href="#org4180c98">5. A frozen held-out pilot: does the benefit transfer?</a>
 <ul>
-<li><a href="#org2ebe7a9">5.1. An operational success criterion</a></li>
-<li><a href="#org95d58d5">5.2. Is the model too small?</a></li>
-<li><a href="#org1225600">5.3. ICL, feedback in context, and actual training are different tests</a></li>
-<li><a href="#org0b6a3d6">5.4. Concrete improvement order</a></li>
+<li><a href="#org2ebe7a9">5.1. Results and cost</a></li>
+<li><a href="#org95d58d5">5.2. Verifier review is separate from the primary score</a></li>
+<li><a href="#org1225600">5.3. What these results establish</a></li>
+<li><a href="#org3285ba6">5.4. Reproduce the public analysis, or regrade local raw evidence</a></li>
 </ul>
 </li>
-<li><a href="#org91b8ed7">6. Training: one real toy update, and the work still required for an LLM</a>
+<li><a href="#org91b8ed7">6. From “it produces reasoning” to “reasoning helps”</a>
 <ul>
-<li><a href="#orgd7654b5">6.1. From checked answers to relative rewards</a></li>
-<li><a href="#org1566902">6.2. A small, actual MLPL training experiment</a></li>
-<li><a href="#orgd5c0387">6.3. The next training evidence we would require</a></li>
+<li><a href="#orgd7654b5">6.1. An operational success criterion</a></li>
+<li><a href="#orgb33cf44">6.2. Is the model too small?</a></li>
+<li><a href="#org1566902">6.3. ICL, feedback in context, and actual training are different tests</a></li>
+<li><a href="#orgd5c0387">6.4. Concrete improvement order</a></li>
 </ul>
 </li>
-<li><a href="#org67f5a36">7. Read, replay, rerun: three different activities</a>
+<li><a href="#org67a8f30">7. Training: one real toy update, and the work still required for an LLM</a>
 <ul>
-<li><a href="#orge0576d7">7.1. Build the HTML or refresh the recorded calculations</a></li>
-<li><a href="#org6165353">7.2. Interactive Emacs setup</a></li>
+<li><a href="#org6165353">7.1. From checked answers to relative rewards</a></li>
+<li><a href="#orgdfca9b1">7.2. A small, actual MLPL training experiment</a></li>
+<li><a href="#org3b83232">7.3. The next training evidence we would require</a></li>
 </ul>
 </li>
-<li><a href="#orgdfca9b1">8. Run the live experiment</a></li>
-<li><a href="#org3b83232">9. Reproducibility inventory and remaining limits</a></li>
+<li><a href="#org22925db">8. Read, replay, rerun: three different activities</a>
+<ul>
+<li><a href="#orgdf31732">8.1. Build the HTML or refresh the recorded calculations</a></li>
+<li><a href="#org1f7e03e">8.2. Interactive Emacs setup</a></li>
+</ul>
+</li>
+<li><a href="#org8231f23">9. Run the live experiment</a></li>
+<li><a href="#org7426fbe">10. Reproducibility inventory and remaining limits</a></li>
 </ul>
 </div>
 </div>
@@ -150,7 +158,7 @@ claims, each requiring different evidence:
 
 <tr>
 <td class="org-left">Our reasoning method or training makes answers better</td>
-<td class="org-left">Requires paired held-out results; no language-model training here yet</td>
+<td class="org-left">Frozen paired pilot: zero thinking gains, one truncation regression; no language-model training here yet</td>
 <td class="org-left">Not demonstrated</td>
 </tr>
 </tbody>
@@ -176,6 +184,12 @@ with thinking. All three thinking failures stopped at the output-token cap.
 Doubling the cap to 3,072 restored thinking to five correct answers, with
 no truncations. It still took 204.74 seconds versus 39.16 seconds for direct
 answers. We fixed completion; we have not shown a quality benefit.
+</p>
+
+<p>
+The new frozen six-problem pilot also finds no thinking gains across two
+seeds, with one truncation regression and 5.85 times the request time. A
+shared multiple-choice verifier false negative is reported separately below.
 </p>
 </div>
 </div>
@@ -223,7 +237,7 @@ No book prose or Python source has been copied into our implementation.
 <td class="org-left">Evaluation, chapter 3</td>
 <td class="org-left">Check mathematical answers</td>
 <td class="org-left">MLPL boxed extraction, normalization, exact arithmetic and attempt accounting</td>
-<td class="org-left">Held-out model accuracy</td>
+<td class="org-left">Broader evaluation with the corrected verifier</td>
 </tr>
 
 <tr>
@@ -1139,13 +1153,493 @@ Ok(all ten grades and aggregate checks reproduced)
 </div>
 </div>
 </div>
-<div id="outline-container-org3285ba6" class="outline-2">
-<h2 id="org3285ba6"><span class="section-number-2">5.</span> From “it produces reasoning” to “reasoning helps”</h2>
+<div id="outline-container-org4180c98" class="outline-2">
+<h2 id="org4180c98"><span class="section-number-2">5.</span> A frozen held-out pilot: does the benefit transfer?</h2>
 <div class="outline-text-2" id="text-5">
+<p>
+We next tested six MATH-500 problems that were not used in our five-case
+prompt/budget development. Selection used the first six unique ids ranked
+by SHA-256 of <code>native-heldout-v1:</code> followed by the id. We committed
+<a href="https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/heldout-pilot-protocol.md">the protocol</a> and
+<a href="https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/results/heldout-pilot-v1-selection.jsonl">selection hashes</a> in <code>826f467</code> before inference. We did not choose problems
+based on whether they helped thinking mode.
+</p>
+
+<p>
+Each problem ran with seeds 42 and 43 in both modes, giving 24 attempts.
+We alternated mode order within pairs. Both modes received 12 calls with
+the same 3,072-token cap and 120-second request deadline. This matches the
+maximum allowance, not actual compute consumed. Temperature, top-p/top-k,
+model, prompt and context were unchanged. No failed answer was replaced.
+</p>
+
+<p>
+This is held out from <b>our development</b>, not necessarily from the external
+model's pretraining. Public MATH-500 contamination is unknown. Six problems
+are too few to establish a broad quality advantage, especially with repeated
+seeds on the same questions.
+</p>
 </div>
 <div id="outline-container-org2ebe7a9" class="outline-3">
-<h3 id="org2ebe7a9"><span class="section-number-3">5.1.</span> An operational success criterion</h3>
+<h3 id="org2ebe7a9"><span class="section-number-3">5.1.</span> Results and cost</h3>
 <div class="outline-text-3" id="text-5-1">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">Seed</th>
+<th scope="col" class="org-left">Mode</th>
+<th scope="col" class="org-left">Primary correct</th>
+<th scope="col" class="org-left">95% interval</th>
+<th scope="col" class="org-right">Truncated</th>
+<th scope="col" class="org-right">Errors</th>
+<th scope="col" class="org-right">Tokens</th>
+<th scope="col" class="org-left">Wall time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">42</td>
+<td class="org-left">off</td>
+<td class="org-left">5 / 6</td>
+<td class="org-left">43.6–97.0%</td>
+<td class="org-right">0</td>
+<td class="org-right">0</td>
+<td class="org-right">2554</td>
+<td class="org-left">68.83 s</td>
+</tr>
+
+<tr>
+<td class="org-right">42</td>
+<td class="org-left">on</td>
+<td class="org-left">4 / 6</td>
+<td class="org-left">30.0–90.3%</td>
+<td class="org-right">1</td>
+<td class="org-right">0</td>
+<td class="org-right">13855</td>
+<td class="org-left">392.76 s</td>
+</tr>
+
+<tr>
+<td class="org-right">43</td>
+<td class="org-left">off</td>
+<td class="org-left">5 / 6</td>
+<td class="org-left">43.6–97.0%</td>
+<td class="org-right">0</td>
+<td class="org-right">0</td>
+<td class="org-right">2180</td>
+<td class="org-left">58.58 s</td>
+</tr>
+
+<tr>
+<td class="org-right">43</td>
+<td class="org-left">on</td>
+<td class="org-left">5 / 6</td>
+<td class="org-left">43.6–97.0%</td>
+<td class="org-right">0</td>
+<td class="org-right">0</td>
+<td class="org-right">13048</td>
+<td class="org-left">351.99 s</td>
+</tr>
+</tbody>
+</table>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">Seed</th>
+<th scope="col" class="org-right">Thinking gains</th>
+<th scope="col" class="org-right">Thinking regressions</th>
+<th scope="col" class="org-left">Net change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">42</td>
+<td class="org-right">0</td>
+<td class="org-right">1</td>
+<td class="org-left">-1 / 6</td>
+</tr>
+
+<tr>
+<td class="org-right">43</td>
+<td class="org-right">0</td>
+<td class="org-right">0</td>
+<td class="org-left">+0 / 6</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Every pair is retained below. Scores use the frozen verifier, including its
+known multiple-choice false negative.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Problem id</th>
+<th scope="col" class="org-right">Seed</th>
+<th scope="col" class="org-right">Off correct</th>
+<th scope="col" class="org-right">On correct</th>
+<th scope="col" class="org-left">Off stop</th>
+<th scope="col" class="org-left">On stop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">test/prealgebra/1743.json</td>
+<td class="org-right">42</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/prealgebra/1743.json</td>
+<td class="org-right">43</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/precalculus/819.json</td>
+<td class="org-right">42</td>
+<td class="org-right">0</td>
+<td class="org-right">0</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/precalculus/819.json</td>
+<td class="org-right">43</td>
+<td class="org-right">0</td>
+<td class="org-right">0</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/prealgebra/1251.json</td>
+<td class="org-right">42</td>
+<td class="org-right">1</td>
+<td class="org-right">0</td>
+<td class="org-left">stop</td>
+<td class="org-left">length</td>
+</tr>
+
+<tr>
+<td class="org-left">test/prealgebra/1251.json</td>
+<td class="org-right">43</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/counting_and_probability/216.json</td>
+<td class="org-right">42</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/counting_and_probability/216.json</td>
+<td class="org-right">43</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/algebra/2391.json</td>
+<td class="org-right">42</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/algebra/2391.json</td>
+<td class="org-right">43</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/algebra/2570.json</td>
+<td class="org-right">42</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">test/algebra/2570.json</td>
+<td class="org-right">43</td>
+<td class="org-right">1</td>
+<td class="org-right">1</td>
+<td class="org-left">stop</td>
+<td class="org-left">stop</td>
+</tr>
+</tbody>
+</table>
+
+
+<p>
+Intervals use the <a href="https://www.itl.nist.gov/div898/software/dataplot/refman2/auxillar/agcoulci.htm">Wilson score formula documented by NIST</a> at 95% confidence over six problems, shown separately
+for each seed. They illustrate the large uncertainty of this pilot; they do
+not correct selection bias or unknown training overlap. The two seeds are
+replicates on the same six problems, not twelve independent examples.
+A gain means direct was wrong and thinking correct; a regression means the
+reverse. Incomplete attempts and errors stay in the denominator.
+</p>
+
+<p>
+Thinking produced zero paired gains, with one regression at seed 42 and
+none at seed 43. The regression is the token-limit stop on
+<code>test/prealgebra/1251.json</code>. That question completed correctly in direct
+mode at both seeds and in thinking mode at seed 43. Across the two-seed
+averages, one problem worsened and five tied; none improved.
+</p>
+
+<p>
+Across all 24 calls, direct mode used 4,734 tokens and 127.41 seconds;
+thinking used 26,903 tokens and 744.75 seconds. The measured request-time
+ratio is 5.85, and the generated-token ratio is 5.68. These are cost totals,
+not a pooling of the two seeds into an independent accuracy sample.
+No transport errors occurred. All prompt token counts plus generated
+lengths fit the configured 4,096-token context.
+</p>
+</div>
+</div>
+<div id="outline-container-org95d58d5" class="outline-3">
+<h3 id="org95d58d5"><span class="section-number-3">5.2.</span> Verifier review is separate from the primary score</h3>
+<div class="outline-text-3" id="text-5-2">
+<p>
+One selected multiple-choice problem exposed a false negative in our
+normalizer. All four completed responses selected the correct option,
+but a bare letter did not match the parenthesized letter inside a LaTeX
+text wrapper. An independently authored diagnostic reproduces this class:
+<code>\boxed{A}</code> matches <code>A</code>, but not <code>\text{(A)}</code> in the current verifier.
+</p>
+
+<p>
+These four primary failures are not mathematical failures by the model.
+The public manual-review record identifies them individually. The primary
+scores above retain the frozen verifier; a corrected analysis must carry a
+new verifier version. This finding is an application-level MLPL change,
+not a missing language feature or an interpreter optimization task.
+</p>
+
+<p>
+Final answers also do not certify every explanation step. One direct answer
+selected the correct option but incorrectly described constant cylindrical
+radius as a sphere in a distractor discussion. That is an explanation error
+separate from final-answer correctness. A future reasoning-quality audit
+should sample intermediate steps as well as final answers.
+</p>
+
+<p>
+The immediate next step is a narrowly scoped normalization fix, with
+positive and negative native tests so that ordinary algebra and tuples
+are not accidentally collapsed. Replay these same raw answers as a labelled
+post-hoc verifier correction; do not regenerate favorable replacements.
+</p>
+
+<p>
+The off-mode responses already contain multi-step solutions. This experiment
+measures the benefit of enabling the additional thinking channel. It does
+not toggle mathematical reasoning itself on and off, and cannot establish
+which internal computations caused a correct answer.
+</p>
+</div>
+</div>
+<div id="outline-container-org1225600" class="outline-3">
+<h3 id="org1225600"><span class="section-number-3">5.3.</span> What these results establish</h3>
+<div class="outline-text-3" id="text-5-3">
+<p>
+The extra thinking channel did not earn its cost in this pilot. The model
+already solved every selected problem in direct mode according to final-answer
+review. Once the four formatting false negatives are identified, reviewed
+completion-and-answer counts are 6/6 versus 5/6 for seed 42, and 6/6 versus
+6/6 for seed 43. This is a separately labelled manual review, not a change
+to the recorded primary verifier results. The paired gain/regression
+conclusion is unchanged.
+</p>
+
+<p>
+The useful improvements are now concrete: repair the choice-format verifier,
+keep truncation separate from mathematical error, and measure the quality
+and cost of a changed reasoning method on new frozen data. Direct mode is
+the efficient demonstrated baseline here. A larger experiment, or a matched
+base-model/CoT comparison closer to the book, is needed to find whether
+extra reasoning improves answers where that baseline actually fails.
+The 0.6B from-scratch execution and training claims remain unproved.
+</p>
+
+
+<p>
+A useful next comparison must keep the original results and use a fresh
+holdout after any changes to budgets, prompts or selection. More samples
+of already examined questions are development evidence. A gain from an
+external pretrained model also cannot stand in for a before/after training
+result on our own base checkpoint.
+</p>
+</div>
+</div>
+<div id="outline-container-org3285ba6" class="outline-3">
+<h3 id="org3285ba6"><span class="section-number-3">5.4.</span> Reproduce the public analysis, or regrade local raw evidence</h3>
+<div class="outline-text-3" id="text-5-4">
+<p>
+Downloaded questions and references remain in ignored <code>data/</code>. Raw requests,
+responses and grading sidecars remain in the local run directory under
+<code>out/</code>. The published record contains every pair's numeric measurements,
+source ids, full provenance and hashes of the local evidence, without
+redistributing the downloaded dataset or model-generated restatements of it.
+</p>
+
+<p>
+This offline block recomputes summaries from the committed numeric pairs.
+It does <b>not</b> independently regrade answers, because the public report does
+not carry the downloaded questions or raw responses. The separate local
+replay command below reconstructs every request and regrades every saved
+successful transport response against the pinned local references; recorded
+transport/protocol failures remain failures.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mlpl" id="org0b6a3d6"><code># Summarize all public paired measurements without pooling repeated seeds.
+include "../lib/text/text.mlpl";
+include "../lib/eval/paired.mlpl";
+rows = read_text("docs/results/native-heldout-v1-pairs.jsonl")?
+expected = parse_json(read_text("docs/results/native-heldout-v1-summary.json")?)?
+first = u:eval_paired_summary(rows, 42)?
+second = u:eval_paired_summary(rows, 43)?
+print("seed 42:", to_json(first)?)
+print("seed 43:", to_json(second)?)
+lines = str_split(u:text_trim(rows), "\n")
+i = 0
+gains = 0
+losses = 0
+matches = eq(list_len(lines), 12)
+while lt(i, 6) {
+  a = parse_json(list_get(lines, 2 * i)?)?;
+  b = parse_json(list_get(lines, 2 * i + 1)?)?;
+  matches = matches * str_eq(a.id, b.id) * eq(a.seed, 42) * eq(b.seed, 43);
+  off = a.off.correct + b.off.correct;
+  on = a.on.correct + b.on.correct;
+  gains = gains + lt(off, on);
+  losses = losses + gt(off, on);
+  i = i + 1
+}
+print("problem-average gains:", gains, "regressions:", losses, "ties:", 6 - gains - losses)
+if matches * eq(first.pairs, 6) * eq(second.pairs, 6) * str_eq(to_json(first)?, to_json(expected.seed42)?) * str_eq(to_json(second)?, to_json(expected.seed43)?) {
+  ok("all 24 attempted outcomes accounted for; seeds kept separate")
+} else {
+  err("paired pilot summary drift")
+}
+</code></pre>
+</div>
+
+<pre class="example">
+seed 42: {"gains":0,"losses":1,"off_complete":6,"off_correct":5,"off_errors":0,"off_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"off_parseable":6,"off_tokens":2554,"off_truncated":0,"off_wall_ms":68834.13074700003,"on_complete":5,"on_correct":4,"on_errors":0,"on_interval":{"lower":0.299993315138392,"upper":0.9032285888942195},"on_parseable":5,"on_tokens":13855,"on_truncated":1,"on_wall_ms":392760.52146099997,"pairs":6,"seed":42}
+seed 43: {"gains":0,"losses":0,"off_complete":6,"off_correct":5,"off_errors":0,"off_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"off_parseable":6,"off_tokens":2180,"off_truncated":0,"off_wall_ms":58578.99063300021,"on_complete":6,"on_correct":5,"on_errors":0,"on_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"on_parseable":6,"on_tokens":13048,"on_truncated":0,"on_wall_ms":351990.87873,"pairs":6,"seed":43}
+problem-average gains: 0 regressions: 1 ties: 5
+Ok(all 24 attempted outcomes accounted for; seeds kept separate)
+</pre>
+
+<p>
+To regrade the locally retained evidence, without inference:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+scripts/replay-heldout-pilot out/native-reasoning/run-s69Yj0sQ
+</code></pre>
+</div>
+
+<p>
+To repeat inference on the frozen ids (24 new calls, saved in a fresh directory):
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+just reasoning-pilot
+</code></pre>
+</div>
+
+<p>
+The runner verifies the frozen protocol, selection and source-data hashes.
+Repetition is opt-in and excluded from <code>just check</code>. Changes to this protocol
+require a separately named experiment, not silently replacing these results.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org91b8ed7" class="outline-2">
+<h2 id="org91b8ed7"><span class="section-number-2">6.</span> From “it produces reasoning” to “reasoning helps”</h2>
+<div class="outline-text-2" id="text-6">
+</div>
+<div id="outline-container-orgd7654b5" class="outline-3">
+<h3 id="orgd7654b5"><span class="section-number-3">6.1.</span> An operational success criterion</h3>
+<div class="outline-text-3" id="text-6-1">
 <p>
 The next milestone is higher held-out correctness from a declared reasoning
 method, with its extra cost measured. Compare the same questions in both
@@ -1172,9 +1666,9 @@ it is for final evaluation only. Voting agreement is not itself correctness.
 </p>
 </div>
 </div>
-<div id="outline-container-org95d58d5" class="outline-3">
-<h3 id="org95d58d5"><span class="section-number-3">5.2.</span> Is the model too small?</h3>
-<div class="outline-text-3" id="text-5-2">
+<div id="outline-container-orgb33cf44" class="outline-3">
+<h3 id="orgb33cf44"><span class="section-number-3">6.2.</span> Is the model too small?</h3>
+<div class="outline-text-3" id="text-6-2">
 <p>
 Capacity is a plausible constraint, but our measurements do not identify
 one. The 0.6B path has no real generation result, and the demonstrated 8B
@@ -1201,9 +1695,9 @@ skills, and selecting a larger checkpoint cannot prove our training works.
 </p>
 </div>
 </div>
-<div id="outline-container-org1225600" class="outline-3">
-<h3 id="org1225600"><span class="section-number-3">5.3.</span> ICL, feedback in context, and actual training are different tests</h3>
-<div class="outline-text-3" id="text-5-3">
+<div id="outline-container-org1566902" class="outline-3">
+<h3 id="org1566902"><span class="section-number-3">6.3.</span> ICL, feedback in context, and actual training are different tests</h3>
+<div class="outline-text-3" id="text-6-3">
 <p>
 In-context learning (ICL) would require comparing zero-shot prompts with
 relevant demonstrations, on fresh problems. Our current prompt contains
@@ -1229,14 +1723,16 @@ This is our proposed experiment order, not a claim of a measured result.
 </p>
 </div>
 </div>
-<div id="outline-container-org0b6a3d6" class="outline-3">
-<h3 id="org0b6a3d6"><span class="section-number-3">5.4.</span> Concrete improvement order</h3>
-<div class="outline-text-3" id="text-5-4">
+<div id="outline-container-orgd5c0387" class="outline-3">
+<h3 id="orgd5c0387"><span class="section-number-3">6.4.</span> Concrete improvement order</h3>
+<div class="outline-text-3" id="text-6-4">
 <ol class="org-ol">
 <li>Remove avoidable truncation with a measured output budget and retain the
 wall-clock bound. Measure whether final answers actually complete.</li>
-<li>Freeze a held-out pilot and compare direct versus thinking with multiple
-seeds. Report quality and cost, even if the result is no gain.</li>
+<li>The frozen pilot is complete: zero gains, one truncation regression,
+and a shared verifier false negative. Fix that normalization gap with
+tests, retain the primary results, and confirm any method changes on a
+new frozen holdout.</li>
 <li>Test voting, checked refinement and few-shot demonstrations as separate
 interventions. Keep selection independent of the reference answer.</li>
 <li>Compare related model sizes only after controlling budgets and training
@@ -1256,9 +1752,9 @@ improve a policy. Success on one must not be reported as success on both.
 </div>
 </div>
 </div>
-<div id="outline-container-org91b8ed7" class="outline-2">
-<h2 id="org91b8ed7"><span class="section-number-2">6.</span> Training: one real toy update, and the work still required for an LLM</h2>
-<div class="outline-text-2" id="text-6">
+<div id="outline-container-org67a8f30" class="outline-2">
+<h2 id="org67a8f30"><span class="section-number-2">7.</span> Training: one real toy update, and the work still required for an LLM</h2>
+<div class="outline-text-2" id="text-7">
 <p>
 Turning on a pretrained model's thinking mode does not train it. No weights
 changed during either inference comparison. The MLPL verifier can supply a
@@ -1266,9 +1762,9 @@ reward signal, but reward computation and parameter optimization are
 separate operations.
 </p>
 </div>
-<div id="outline-container-orgd7654b5" class="outline-3">
-<h3 id="orgd7654b5"><span class="section-number-3">6.1.</span> From checked answers to relative rewards</h3>
-<div class="outline-text-3" id="text-6-1">
+<div id="outline-container-org6165353" class="outline-3">
+<h3 id="org6165353"><span class="section-number-3">7.1.</span> From checked answers to relative rewards</h3>
+<div class="outline-text-3" id="text-7-1">
 <p>
 Suppose four independently sampled answers receive rewards <code>[1,1,0,0]</code>.
 Subtracting the group mean identifies better and worse samples relative to
@@ -1279,7 +1775,7 @@ not implement the complete GRPO objective or a policy update.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org4180c98"><code># Educational reward normalization, not a trained policy.
+<pre class="src src-mlpl" id="orge0576d7"><code># Educational reward normalization, not a trained policy.
 rewards = [1, 1, 0, 0]
 centered = rewards - mean(rewards)
 deviation = sqrt(reduce_add(centered * centered) / (tally(rewards) - 1))
@@ -1316,9 +1812,9 @@ LLM training result.
 </p>
 </div>
 </div>
-<div id="outline-container-org1566902" class="outline-3">
-<h3 id="org1566902"><span class="section-number-3">6.2.</span> A small, actual MLPL training experiment</h3>
-<div class="outline-text-3" id="text-6-2">
+<div id="outline-container-orgdfca9b1" class="outline-3">
+<h3 id="orgdfca9b1"><span class="section-number-3">7.2.</span> A small, actual MLPL training experiment</h3>
+<div class="outline-text-3" id="text-7-2">
 <p>
 To make the difference concrete, fit the scalar model <code>prediction=w*x</code> to
 <code>y=2*x</code> for <code>x</code>[1,2,3,4]=. This is deterministic supervised regression,
@@ -1336,7 +1832,7 @@ that some number decreased.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="orgb33cf44"><code># Actual six-step scalar regression; no language-model weight is changed.
+<pre class="src src-mlpl" id="org67f5a36"><code># Actual six-step scalar regression; no language-model weight is changed.
 w = param[1]
 w = [0]
 x = [1, 2, 3, 4]
@@ -1377,9 +1873,9 @@ feasibility of differentiating the external native model.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd5c0387" class="outline-3">
-<h3 id="orgd5c0387"><span class="section-number-3">6.3.</span> The next training evidence we would require</h3>
-<div class="outline-text-3" id="text-6-3">
+<div id="outline-container-org3b83232" class="outline-3">
+<h3 id="org3b83232"><span class="section-number-3">7.3.</span> The next training evidence we would require</h3>
+<div class="outline-text-3" id="text-7-3">
 <p>
 Start with a tiny trainable policy on a synthetic task with known rewards.
 Keep training and evaluation examples separate; measure a before/after
@@ -1398,9 +1894,9 @@ session is not a substitute for a differentiable student training path.
 </div>
 </div>
 </div>
-<div id="outline-container-org67f5a36" class="outline-2">
-<h2 id="org67f5a36"><span class="section-number-2">7.</span> Read, replay, rerun: three different activities</h2>
-<div class="outline-text-2" id="text-7">
+<div id="outline-container-org22925db" class="outline-2">
+<h2 id="org22925db"><span class="section-number-2">8.</span> Read, replay, rerun: three different activities</h2>
+<div class="outline-text-2" id="text-8">
 <p>
 This document is both a report and an Emacs Org/Babel notebook using
 <code>ob-mlpl</code>. Reading or exporting it does not load a model or make network
@@ -1413,7 +1909,9 @@ There are three levels of reproducibility:
 
 <ol class="org-ol">
 <li><b>Replay the analysis:</b> read the twenty committed attempts, recompute grades
-and aggregates in MLPL, and reproduce the toy calculations. This is
+and aggregates in MLPL, summarize the 24 held-out measurements, and
+reproduce the toy calculations. Independent held-out regrading additionally
+needs the retained local raw evidence and dataset. This is
 offline and does not need a GPU.</li>
 <li><b>Repeat inference:</b> run the recorded prompts and settings against the
 pinned local model/runtime. This requires the model and GPU backend.
@@ -1423,9 +1921,9 @@ budgets and metrics across implementations, then repeat with enough
 examples and seeds. We have not yet done this for MLPL versus Python.</li>
 </ol>
 </div>
-<div id="outline-container-orge0576d7" class="outline-3">
-<h3 id="orge0576d7"><span class="section-number-3">7.1.</span> Build the HTML or refresh the recorded calculations</h3>
-<div class="outline-text-3" id="text-7-1">
+<div id="outline-container-orgdf31732" class="outline-3">
+<h3 id="orgdf31732"><span class="section-number-3">8.1.</span> Build the HTML or refresh the recorded calculations</h3>
+<div class="outline-text-3" id="text-8-1">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
@@ -1436,7 +1934,7 @@ just research-refresh
 
 <p>
 <code>research-html</code> exports the stored results only. <code>research-refresh</code> executes
-four explicitly named offline MLPL blocks through <code>ob-mlpl</code>, saves their
+five explicitly named offline MLPL blocks through <code>ob-mlpl</code>, saves their
 results, then exports. Neither recipe executes the live inference blocks.
 The HTML has inline CSS and no required remote fonts, scripts or images;
 it can be published as one file. The full research bundle also includes the
@@ -1444,9 +1942,9 @@ Org source and committed JSONL/provenance files.
 </p>
 </div>
 </div>
-<div id="outline-container-org6165353" class="outline-3">
-<h3 id="org6165353"><span class="section-number-3">7.2.</span> Interactive Emacs setup</h3>
-<div class="outline-text-3" id="text-7-2">
+<div id="outline-container-org1f7e03e" class="outline-3">
+<h3 id="org1f7e03e"><span class="section-number-3">8.2.</span> Interactive Emacs setup</h3>
+<div class="outline-text-3" id="text-8-2">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host. Then evaluate this setup once.
 The temporary source directory is deliberately <code>out/</code>, so the relative
@@ -1481,9 +1979,9 @@ Press <code>C-c C-c</code> in an MLPL block to reproduce that calculation. The s
 </div>
 </div>
 </div>
-<div id="outline-container-orgdfca9b1" class="outline-2">
-<h2 id="orgdfca9b1"><span class="section-number-2">8.</span> Run the live experiment</h2>
-<div class="outline-text-2" id="text-8">
+<div id="outline-container-org8231f23" class="outline-2">
+<h2 id="org8231f23"><span class="section-number-2">9.</span> Run the live experiment</h2>
+<div class="outline-text-2" id="text-9">
 <p>
 Start the first command shortly before the session to warm the model. The
 runner keeps it loaded for 30 minutes. These blocks are opt-in and are not
@@ -1518,15 +2016,18 @@ saved evidence is a replay, not a secretly substituted live answer.
 </p>
 </div>
 </div>
-<div id="outline-container-org3b83232" class="outline-2">
-<h2 id="org3b83232"><span class="section-number-2">9.</span> Reproducibility inventory and remaining limits</h2>
-<div class="outline-text-2" id="text-9">
+<div id="outline-container-org7426fbe" class="outline-2">
+<h2 id="org7426fbe"><span class="section-number-2">10.</span> Reproducibility inventory and remaining limits</h2>
+<div class="outline-text-2" id="text-10">
 <p>
 The Org source and standalone HTML are accompanied by committed raw
 request/response JSONL, provenance records and <code>docs/results/SHA256SUMS</code>.
 The original <code>native-demo-2026-09-29</code> records retain all ten attempts;
 <code>native-budget-3072-2026-09-29</code> retains all ten follow-up attempts. Both
 include independent references, mode, generated text, completion and grade.
+The separate <code>native-heldout-v1</code> bundle contains public paired metadata,
+per-seed summaries, manual-review annotations, provenance and hashes of
+locally retained raw evidence; it does not redistribute MATH-500 text.
 Each provenance file records the model identity, runtime, template,
 interpreter and native extension hashes. Weights are not redistributed.
 </p>
@@ -1535,8 +2036,8 @@ interpreter and native extension hashes. Weights are not redistributed.
 The adapter has six native offline tests, covering request encoding,
 bounds, transport failures and completion/grade accounting. Two further
 tests check the training arithmetic against analytic answers. The full
-fixture gate has 156 native tests, 27 declared capability outcomes and
-29 exact tangles. These establish software behavior and replay consistency,
+fixture gate has 160 native tests, 27 declared capability outcomes and
+32 exact tangles. These establish software behavior and replay consistency,
 not broad model quality.
 </p>
 

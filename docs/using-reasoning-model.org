@@ -243,6 +243,15 @@ distillation are still queued. A passed software test, completed weight load
 or convincing scripted explanation is not a reasoning-quality score. The
 current reference-path real-model accuracy is *unknown*, not zero percent.
 
+The frozen six-problem MATH-500 pilot has now run both modes at seeds 42
+and 43: zero thinking gains, one truncation regression, and 5.85 times the
+request time. Primary scores are 5/6 versus 4/6 at seed 42 and 5/6 versus
+5/6 at seed 43. Each mode and seed has one false negative from a choice-format
+normalization gap; manual review is separate. See [[file:heldout-pilot-protocol.md][the frozen protocol]]
+and the results report. =just reasoning-pilot= runs 24 new calls;
+=scripts/replay-heldout-pilot out/native-reasoning/run-s69Yj0sQ= regrades
+the retained local evidence without inference.
+
 ** Measuring reasoning quality after generation becomes viable
 
 Begin with a fixed, held-out MATH-500 subset for an inexpensive integration

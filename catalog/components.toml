@@ -294,3 +294,12 @@ source = "docs/reasoning-results.org"
 test = "scripts/export-reasoning-report"
 documentation = "docs/reasoning-results.html"
 status = "accepted"
+
+[[component]]
+id = "PAIREDEVAL"
+slug = "paired-native-pilot-accounting"
+chapter = 3
+source = "lib/eval/paired.mlpl"
+test = "tests/test_eval_paired.mlpl"
+documentation = "docs/heldout-pilot-protocol.md"
+status = "accepted"

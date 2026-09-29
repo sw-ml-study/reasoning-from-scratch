@@ -1,0 +1,14 @@
+#!/bin/sh
+# Verify frozen local-only data and select exactly the preregistered six ids.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+[ "$#" -eq 0 ] || { echo 'usage: prepare-heldout-pilot' >&2; exit 2; }
+sha256sum -c <<'HASHES'
+35dc41080a3680858b27fa7e0533d2d547825316fc5dafe5d316f4ccc5a06132  data/math500/test.jsonl
+9148e6809309faca106a2953cfe080b07b1cd9270b3e68271fcb1de5261d04ae  docs/results/heldout-pilot-v1-selection.jsonl
+95b36f53d0fda00f8eeb983f1beb9f0ffa221c70074c12d0869e477ea7647df8  docs/heldout-pilot-protocol.md
+HASHES
+jq -cn --slurpfile data data/math500/test.jsonl --slurpfile selected docs/results/heldout-pilot-v1-selection.jsonl \
+    '$selected[] as $s | $data[] | select(.unique_id==$s.id)' > data/math500/native-heldout-v1.jsonl
+[ "$(wc -l < data/math500/native-heldout-v1.jsonl)" -eq 6 ] || { echo 'expected six selected records' >&2; exit 1; }

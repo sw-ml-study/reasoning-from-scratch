@@ -126,7 +126,8 @@ conditions. Saga 4 is archived at
 | afternoon-demo-readiness | delivered: native extension/GPU demo, ten recorded attempts, offline replay, Org/HTML report and scalar training illustration |
 | report-readable-type | delivered: larger body, source/result blocks, tables and navigation; regenerated standalone HTML |
 | reasoning-budget-report | delivered: configurable output budget, all-attempt follow-up, method-focused report and explicit reasoning-benefit milestones |
-| native-reasoning-heldout | next: frozen held-out pilot with failure accounting, uncertainty and matched cost budgets |
+| native-reasoning-heldout | delivered: frozen six-problem, two-seed paired pilot with retained failures, uncertainty and cost; report distinguishes verifier false negatives |
+| verifier-choice-equivalence | next: narrow MLPL normalization fix and separately versioned post-hoc replay; frozen primary scores retained |
 | resident-inference-copy-profile | deferred by user: document future core efficiency work; do not let it block native inference |
 
 See [the revalidation report](upstream-revalidation.md). Toy GRPO remains

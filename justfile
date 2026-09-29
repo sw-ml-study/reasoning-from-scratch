@@ -98,10 +98,14 @@ reasoning-demo:
 reasoning-eval:
     ./scripts/run-native-reasoning eval
 
+# Frozen six-problem MATH-500 pilot, two seeds and two modes; opt-in local data.
+reasoning-pilot:
+    ./scripts/run-native-reasoning pilot
+
 # Export the standalone research HTML without inference or Babel execution.
 research-html:
     ./scripts/export-reasoning-report
 
-# Replay four offline ob-mlpl calculations and refresh the publication.
+# Replay five offline ob-mlpl calculations and refresh the publication.
 research-refresh:
     ./scripts/export-reasoning-report --refresh

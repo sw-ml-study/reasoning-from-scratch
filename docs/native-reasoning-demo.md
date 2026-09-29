@@ -199,3 +199,32 @@ pattern matching. Final-answer correctness is the primary measurable
 outcome; eloquent explanations, long thinking traces, or one successful
 example do not prove reliable or faithful reasoning. No held-out accuracy,
 training gain, or native-MLPL reasoning score is claimed here.
+
+## Frozen held-out pilot
+
+`just reasoning-pilot` runs six preregistered MATH-500 ids with seeds 42 and
+43 in both modes (24 calls). The [frozen protocol](heldout-pilot-protocol.md)
+was committed before inference. The runner verifies local dataset and
+selection hashes, warms the model, alternates mode order, and retains
+failures. Both modes have the same maximum token allowance; actual cost is
+reported separately. This is an external pretrained evaluation, not training.
+
+It requires the pinned local dataset (`just fetch-math500` on a new host).
+The pilot itself performs no downloads and refuses changed protocol or data
+hashes. Keep its run directory to enable independent local regrading later.
+
+The [research report](reasoning-results.html) separates its primary verifier
+scores from manual review. A multiple-choice normalization false negative
+was discovered during the pilot and queued for the next step; no original
+score or answer is replaced. Downloaded questions and raw answers remain
+local, while numeric paired measurements and evidence hashes are published.
+
+To independently regrade the retained local run without inference:
+
+```sh
+MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl \
+  scripts/replay-heldout-pilot out/native-reasoning/run-s69Yj0sQ
+```
+
+Report export replays public aggregate calculations only. Local raw replay
+requires the pinned data and retained run directory; it is not in `just check`.
