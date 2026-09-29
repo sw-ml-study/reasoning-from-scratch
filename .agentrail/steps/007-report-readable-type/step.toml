@@ -1,0 +1,9 @@
+number = 7
+slug = "report-readable-type"
+status = "in-progress"
+description = "Address the user report that the published HTML font is too small, particular..."
+role = "production"
+context_files = []
+created_at = "2026-09-29T12:02:25"
+task_type = "documentation"
+commits = []

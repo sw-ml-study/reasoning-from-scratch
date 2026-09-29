@@ -1,6 +1,6 @@
-number = 7
+number = 8
 slug = "native-reasoning-heldout"
-status = "pending"
+status = "in-progress"
 description = "Use the user-authorized inference-only native extension path to measure reaso..."
 role = "production"
 context_files = []
