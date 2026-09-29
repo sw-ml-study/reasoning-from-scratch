@@ -9,7 +9,14 @@ This document explains *how to run the project*. The companion
 [[file:reasoning.org][How it works]] document explains the implementation, with annotated MLPL
 blocks that reproduce the library files through tangling.
 
-As of 2026-09-28, verifier, synthetic-model generation, scoring and scripted
+As of 2026-09-29, a real pretrained Qwen3 8B demo runs through the existing
+Rust HTTP dynamic library and local Ollama GPU inference. MLPL owns the
+prompts, controls and final-answer verifier. Run the live commands below;
+[[file:native-reasoning-demo.md][the demo contract]] records the exact boundary, provenance and measurements.
+This is an inference-only workaround authorized by the user, not a
+project-trained checkpoint or the pure-MLPL 0.6B forward pass.
+
+Verifier, synthetic-model generation, scoring and scripted
 refinement are runnable. The real tokenizer and verified downloads work
 with the [[file:extension-integration.md][documented adapters]]. The named-tensor loader passes authored-file
 tests and now loads the real checkpoint in 101.45 seconds. Generation still
@@ -32,9 +39,9 @@ named setup so environment variables do not depend on a persistent shell.
 
 #+name: tested-tools
 #+begin_src sh :eval never :exports code
-export MLPL=/disk1/tmp/reasoning-tools/build-cd3cd03f/release/mlpl-repl
+export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPLUNIT=/disk1/tmp/reasoning-tools/mlplunit/bin/mlplunit
-export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-cd3cd03f/scripts/mlpl-fmt.sh
+export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/scripts/mlpl-fmt.sh
 #+end_src
 
 First inspect the selected interpreter and runner. CUDA is not required for
@@ -57,6 +64,32 @@ just check
 #+end_src
 
 * 3. Try the available demonstrations
+
+For the live pretrained model, use the already installed =qwen3:8b-q6= and
+local Ollama service. The model and KV cache remain native; the Rust HTTP
+extension transfers only bounded messages. A warm verified answer took
+13.6 seconds. Rehearse before presenting to load the model into VRAM.
+
+#+begin_src sh
+<<tested-tools>>
+just reasoning-demo
+#+end_src
+
+For another quick case, use =DEMO_CASE=2 DEMO_THINK=0 just reasoning-demo=.
+The full comparison below attempts all five authored problems in both
+modes and saves every raw request, response, grade and runtime identifier.
+Thinking mode can spend its budget before reaching a final answer; those
+attempts count as failures, even if the thinking text contains the answer.
+
+#+begin_src sh
+<<tested-tools>>
+just reasoning-eval
+#+end_src
+
+These calls are opt-in and are never part of =just check=. The five authored
+cases demonstrate readiness, not held-out reasoning accuracy. See
+[[file:native-reasoning-demo.md][the runbook and measured comparison]] for interpretation and presentation steps.
+The following older demonstrations use fixtures and synthetic weights.
 
 Generation uses synthetic tiny weights; refinement uses scripted responses.
 These demonstrate working components and selection decisions, not a model
@@ -193,12 +226,19 @@ confidence, vote agreement or reference self-grading for measured accuracy.
 
 ** Does it reason yet, and how good is it?
 
-Learned reasoning has not been demonstrated in this repository. The verifier,
+The pretrained external model now produces verified answers through the
+native extension path. On five authored cases, thinking off completed 5/5
+correct in 42.17 s; thinking on completed 2/5 correct in 184.47 s and
+truncated three responses at 1536 tokens. This is demo readiness, not
+held-out accuracy. See [[file:reasoning-results.org][the reproducible research report]] and its
+[[file:reasoning-results.html][standalone HTML]]. No project-trained reasoning improvement is claimed.
+
+For the pure-MLPL reference model, the verifier,
 tiny forward pass, sampling, voting, scoring and refinement components are
 tested, but the real checkpoint has emitted no answer here. GRPO and
 distillation are still queued. A passed software test, completed weight load
 or convincing scripted explanation is not a reasoning-quality score. The
-current real-model accuracy is *unknown*, not zero percent.
+current reference-path real-model accuracy is *unknown*, not zero percent.
 
 ** Measuring reasoning quality after generation becomes viable
 

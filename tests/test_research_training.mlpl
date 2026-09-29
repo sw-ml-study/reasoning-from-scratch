@@ -1,0 +1,36 @@
+# Analytic goldens for the report's educational training examples; these are scalar regression and reward arithmetic, not LLM or GRPO training.
+
+@test {name: "six scalar SGD steps match the analytic recurrence", tags: ["research", "training", "toy"]}
+def u:test_research_sgd() {
+  "For mean((w*x-2*x)^2), x=1..4 and rate .05, each step quarters the distance to w=2.";
+  w = param[1];
+  w = [0];
+  x = [1, 2, 3, 4];
+  y = 2 * x;
+  initial = mean((w * x - y) * (w * x - y));
+  i = 0;
+  while lt(i, 6) {
+    derivative = grad(mean((w * x - y) * (w * x - y)), w);
+    w = w - 0.05 * derivative;
+    i = i + 1
+  };
+  final_loss = mean((w * x - y) * (w * x - y));
+  u:assert_eq(initial, 30, "initial loss")?;
+  u:assert_true(equal(w, [1.99951171875]), "analytic parameter after six updates")?;
+  u:assert_eq(final_loss, 0.0000017881393432617188, "analytic final loss")
+}
+
+@test {name: "reward centering gives no preference to constant reward", tags: ["research", "training", "toy"]}
+def u:test_research_rewards() {
+  "Unbiased group variance and an epsilon preserve sign symmetry and produce zero advantages for constant rewards.";
+  rewards = [1, 1, 0, 0];
+  centered = rewards - mean(rewards);
+  deviation = sqrt(reduce_add(centered * centered) / (tally(rewards) - 1));
+  advantages = centered / (deviation + 0.000001);
+  u:assert_eq(reduce_add(advantages), 0, "balanced group")?;
+  u:assert_true(equal(gt(advantages, 0), [1, 1, 0, 0]), "correct answers get positive advantage")?;
+  constant = [1, 1, 1, 1];
+  u:assert_true(equal((constant - mean(constant)) / 0.000001, [0, 0, 0, 0]), "constant reward supplies no preference")
+}
+
+u:run_registered_tests()

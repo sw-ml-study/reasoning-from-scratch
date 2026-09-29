@@ -1,0 +1,83 @@
+# Inference-only native backend bridge: bounded Ollama chat requests and final-answer accounting through the generic Rust HTTP extension. Requires lib/text/text.mlpl and the verifier modules. No model arrays cross this boundary; this is not a differentiable training backend.
+
+def u:backend_chat_body(model_name, prompt_text, thinking, seed, max_new) {
+  "Encode a single user message with explicit sampling controls; JSON-escape every caller string and emit real JSON booleans.";
+  if lt(max_new, 1) + gt(max_new, 4096) + (max_new - floor(max_new)) {
+    err("max_new must be an integer from 1 to 4096")
+  } else {
+    options = to_json({seed: seed, temperature: 0.6, top_p: 0.95, top_k: 20, repeat_penalty: 1, num_ctx: 4096, num_predict: max_new})?;
+    prefix = str_concat("{\"model\":", to_json(model_name)?);
+    message = str_concat(",\"messages\":[{\"role\":\"user\",\"content\":", to_json(prompt_text)?);
+    controls = str_concat("}],\"think\":", if thinking {
+        "true"
+      } else {
+        "false"
+      });
+    ending = str_concat(",\"stream\":false,\"keep_alive\":\"30m\",\"options\":", str_concat(options, "}"));
+    ok(str_concat(str_concat(prefix, message), str_concat(controls, ending)))
+  }
+}
+
+def u:backend_http_request(url, body) {
+  "Construct the public Rust HTTP request record with bounded time, response bytes and redirects.";
+  {method: "POST", url: url, headers: {count: 1, item_0: {name: "Content-Type", value: "application/json"}}, body: pack(tokenize_bytes(body), "u8"), timeout_ms: 120000, max_response_bytes: 1048576, max_redirects: 0}
+}
+
+def u:backend_body_text(box) {
+  "Decode boxed packed bytes or the numeric-byte array returned by this host's native ABI adapter; boxing also avoids unsupported bare-byte function arguments.";
+  if str_eq(type_of(box.body), "bytes") {
+    decode_bytes(unpack(box.body, "u8"))
+  } else {
+    decode_bytes(box.body)
+  }
+}
+
+def u:backend_decode(reply) {
+  "Validate the transport and completed response, preserving truncation as a visible failed attempt rather than a successful answer.";
+  if str_eq(type_of(reply), "result") {
+    err("native HTTP transport failed")
+  } else {
+    if reply.status - 200 {
+      err("native backend returned a non-200 HTTP status")
+    } else {
+      payload = parse_json(u:backend_body_text(reply))?;
+      if str_eq(type_of(payload), "record") {
+        required = has_field(payload, "message") * has_field(payload, "done") * has_field(payload, "done_reason") * has_field(payload, "eval_count") * has_field(payload, "eval_duration") * has_field(payload, "total_duration");
+        if required {
+          if str_eq(type_of(payload.message), "record") {
+            if has_field(payload.message, "content") {
+              content = payload.message.content;
+              if str_eq(type_of(content), "string") {
+                complete = eq(payload.done, 1) * str_eq(payload.done_reason, "stop") * gt(str_len(u:text_trim(content)), 0);
+                ok({content: content, thinking: if has_field(payload.message, "thinking") {
+                      payload.message.thinking
+                    } else {
+                      ""
+                    }, complete: complete, done_reason: payload.done_reason, eval_count: payload.eval_count, total_seconds: payload.total_duration / 1000000000, tokens_per_second: if gt(payload.eval_duration, 0) {
+                      payload.eval_count * 1000000000 / payload.eval_duration
+                    } else {
+                      0
+                    }})
+              } else {
+                err("backend content is not a string")
+              }
+            } else {
+              err("backend message has no content")
+            }
+          } else {
+            err("backend message is not a record")
+          }
+        } else {
+          err("backend response is missing completion or timing fields")
+        }
+      } else {
+        err("backend response is not a record")
+      }
+    }
+  }
+}
+
+def u:backend_grade(decoded, reference) {
+  "Grade only a complete final answer using boxed-only extraction; visible thinking is never accepted as the final answer.";
+  decoded.complete * u:verify_grade_response(decoded.content, reference, "boxed_only")
+}

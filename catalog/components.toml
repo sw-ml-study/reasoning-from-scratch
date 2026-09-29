@@ -274,3 +274,21 @@ source = "lib/distill/distill.mlpl"
 test = "tests/test_distill.mlpl"
 documentation = "docs/book-map.md"
 status = "planned"
+
+[[component]]
+id = "NATIVEBACKEND"
+slug = "inference-only-native-backend"
+chapter = 3
+source = "lib/backend/ollama.mlpl"
+test = "tests/test_backend.mlpl"
+documentation = "docs/native-reasoning-demo.md"
+status = "accepted"
+
+[[component]]
+id = "RESEARCH"
+slug = "reproducible-results-report"
+chapter = 3
+source = "docs/reasoning-results.org"
+test = "scripts/export-reasoning-report"
+documentation = "docs/reasoning-results.html"
+status = "accepted"

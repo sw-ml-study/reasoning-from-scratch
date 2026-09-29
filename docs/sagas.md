@@ -123,7 +123,9 @@ conditions. Saga 4 is archived at
 | tokenizer/download integration | done: pinned external facades, strict parity and verified downloads; boxed-handle/empty-decode workarounds, corpus throughput unavailable |
 | real-model smoke | done as unavailable: pinned weights verified; 600-second CPU deadline during loading, 14.14 GiB sampled peak; no generation |
 | loader-copy-profile | done: scoped fields/stacks, 148 tests, scalar-call probe; real load 101.45 s, generation allocation failure under 32 GiB |
-| resident-inference-copy-profile | next: isolate model/callback copies during generation on scaled fixtures and refine the R10 acceptance handoff |
+| afternoon-demo-readiness | delivered: native extension/GPU demo, ten recorded attempts, offline replay, Org/HTML report and scalar training illustration |
+| native-reasoning-heldout | next: frozen held-out pilot with failure accounting, uncertainty and matched cost budgets |
+| resident-inference-copy-profile | deferred by user: document future core efficiency work; do not let it block native inference |
 
 See [the revalidation report](upstream-revalidation.md). Toy GRPO remains
 independent of the real-model path and retains the starting contract above.
@@ -140,10 +142,16 @@ verified transfers. Two user-requested Org/Babel documents are separate:
 [usage](using-reasoning-model.org) and [implementation](reasoning.org).
 Both now include the bounded attempt, exact commands, observed acceptance
 and timeout, and the annotated driver. No generated real-model example is
-claimed. The current gate has 148 native tests, 27 probe outcomes and 27
-tangled sources (24 libraries, two drivers and one fixture builder). Next,
-profile resident inference copies before evaluation; preserve the
-independent queued toy GRPO track.
+claimed for that reference path. The later user-authorized native workaround
+now generates actual answers, documented in the [live demo](native-reasoning-demo.md)
+and [Org research report](reasoning-results.org) with [publishable HTML](reasoning-results.html).
+The current gate has 155 native tests, 27 probe outcomes and 29 tangled
+sources (25 libraries, three drivers and one fixture builder), plus offline
+research replay. Thinking off/on scored 5/5 and 2/5 on five authored demo
+cases; three thinking-mode attempts truncated. No held-out quality or LLM
+training improvement is claimed. The scalar SGD example is independently
+checked against an analytic recurrence. Next, measure a frozen held-out
+native-backend pilot; retain independent queued toy GRPO work.
 
 ## Queued: Saga 6, `distillation`
 

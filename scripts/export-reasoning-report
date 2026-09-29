@@ -1,0 +1,13 @@
+#!/bin/sh
+# Reproduce recorded analysis with ob-mlpl, or export the recorded results without model/network execution.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+case "${1:-}" in '') REPORT_REFRESH=0 ;; --refresh) REPORT_REFRESH=1 ;; --check) REPORT_REFRESH=check ;; *) echo 'usage: export-reasoning-report [--refresh|--check]' >&2; exit 2 ;; esac
+[ "$#" -le 1 ] || exit 2
+MLPL=$("$repo/scripts/select-mlpl")
+MLPL_ELISP=${MLPL_ELISP:-/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp}
+REPORT_REPO=$repo
+export MLPL MLPL_ELISP REPORT_REPO REPORT_REFRESH
+cd "$repo"
+sha256sum -c docs/results/SHA256SUMS
+exec emacs -Q --batch -l "$repo/docs/tools/export-reasoning-report.el"

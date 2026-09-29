@@ -1,0 +1,84 @@
+# Live pretrained reasoning demo through the generic Rust HTTP extension and local Ollama; MLPL owns prompts and final-answer verification. Run via scripts/run-native-reasoning, never in the fixture gate.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/backend/ollama.mlpl";
+
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+mode = env("DEMO_MODE")?
+out_dir = env("DEMO_OUT")?
+dataset = u:eval_load_jsonl_text(read_text("fixtures/reasoning-demo.jsonl")?, "authored-demo-v1", {})?
+case_index = parse_json(env("DEMO_CASE")?)?
+thinking = parse_json(env("DEMO_THINK")?)?
+count = if str_eq(mode, "eval") {
+  dataset.count
+} else {
+  1
+}
+start_case = if str_eq(mode, "eval") {
+  0
+} else {
+  case_index
+}
+passes = if str_eq(mode, "eval") {
+  2
+} else {
+  1
+}
+pass = 0
+while lt(pass, passes) {
+  think = if str_eq(mode, "eval") {
+    pass
+  } else {
+    thinking
+  };
+  correct = 0;
+  incomplete = 0;
+  errors = 0;
+  i = 0;
+  started = clock_ms();
+  while lt(i, count) {
+    item = u:eval_record(dataset, start_case + i)?;
+    prompt_text = u:eval_render_prompt(item.problem);
+    body = u:backend_chat_body("qwen3:8b-q6", prompt_text, think, 42, 1536)?;
+    stem = str_concat(out_dir, str_concat("/", str_concat(item.unique_id, str_concat("-think", to_string(think)))));
+    write_atomic(str_concat(stem, "-request.json"), body)?;
+    print("\nProblem:", item.problem);
+    print("Thinking mode:", think, "seed: 42; max_new: 1536; waiting for native GPU response...");
+    reply = u:http_request(u:backend_http_request("http://127.0.0.1:11434/api/chat", body));
+    if str_eq(type_of(reply), "record") {
+      write_atomic(str_concat(stem, "-response.json"), u:backend_body_text(reply))?
+    };
+    decoded = u:backend_decode(reply);
+    if is_err(decoded) {
+      errors = errors + 1;
+      print("ERROR:", err_message(decoded));
+      write_atomic(str_concat(stem, "-grade.json"), to_json({id: item.unique_id, correct: 0, error: err_message(decoded)})?)?
+    } else {
+      answer = unwrap(decoded);
+      grade = u:backend_grade(answer, item.answer);
+      correct = correct + grade;
+      incomplete = incomplete + 1 - answer.complete;
+      print("Answer:\n", answer.content);
+      print("Verified final:", u:verify_final_candidate(answer.content, "boxed_only"), "reference:", item.answer, "correct:", grade);
+      print("Complete:", answer.complete, "stop reason:", answer.done_reason, "seconds:", answer.total_seconds, "tokens/sec:", answer.tokens_per_second, "generated tokens:", answer.eval_count);
+      print("Thinking text saved separately; characters:", str_len(answer.thinking));
+      write_atomic(str_concat(stem, "-grade.json"), to_json({id: item.unique_id, correct: grade, reference: item.answer, complete: answer.complete, done_reason: answer.done_reason, total_seconds: answer.total_seconds, eval_count: answer.eval_count, tokens_per_second: answer.tokens_per_second})?)?
+    };
+    i = i + 1
+  };
+  summary = {dataset: "authored-demo-v1", template: "boxed-v1", think: think, seed: 42, attempted: count, correct: correct, incomplete: incomplete, errors: errors, elapsed_ms: clock_ms() - started};
+  print("\nSUMMARY:", to_json(summary)?);
+  write_atomic(str_concat(out_dir, str_concat("/summary-think", str_concat(to_string(think), ".json"))), to_json(summary)?)?;
+  pass = pass + 1
+}
+print("These authored demonstration cases are not a held-out reasoning benchmark. This pretrained model has not been trained by this project.")
+ok(1)

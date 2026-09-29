@@ -204,3 +204,21 @@ Two facade/boundary findings need follow-up:
 
 Both probes require native artifacts and are outside the fixture gate.
 No sibling modifications or external messages were sent.
+
+## E4. Inference-only offload, user-authorized 2026-09-29
+
+No new extension is required for today's working demo. The existing Rust
+HTTP dynamic library posts bounded requests to local Ollama; model weights,
+KV state and inference stay in its native GPU backend. MLPL keeps prompts,
+explicit settings, answer verification and attempt accounting. See the
+[live contract](native-reasoning-demo.md) and [research report](reasoning-results.org).
+This is deliberately separate from the differentiable MLPL reference model.
+
+A future in-process extension, if needed, should expose bounded
+load/generate/close operations over typed generational handles, keep weight
+and cache buffers native, reject stale/wrong handles, and return only small
+text/token/metric results. Test lifecycle, cancellation, memory budgets,
+malformed arguments and real GPU residency. Reuse a tested inference engine;
+do not turn the extension into an untested model rewrite. No backward/tape
+support is implied. This is a documented future option, not a new request
+sent to the sibling owner. Siblings and installed tools remain unchanged.

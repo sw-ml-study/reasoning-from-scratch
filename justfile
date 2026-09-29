@@ -89,3 +89,19 @@ real-model-smoke:
 # Opt-in authored-fixture stage and call-scope timing; no real weights.
 loader-profile:
     ./scripts/run-loader-profile
+
+# Live pretrained Qwen3 8B answer through the Rust HTTP extension and local GPU backend.
+reasoning-demo:
+    ./scripts/run-native-reasoning one
+
+# Five authored cases, thinking off/on; opt-in, not a held-out benchmark.
+reasoning-eval:
+    ./scripts/run-native-reasoning eval
+
+# Export the standalone research HTML without inference or Babel execution.
+research-html:
+    ./scripts/export-reasoning-report
+
+# Replay four offline ob-mlpl calculations and refresh the publication.
+research-refresh:
+    ./scripts/export-reasoning-report --refresh

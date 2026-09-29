@@ -1,0 +1,38 @@
+#!/bin/sh
+# Opt-in native inference via the existing Rust HTTP extension; all prompt/grading semantics remain MLPL.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+DEMO_MODE=${1:-one}
+case "$DEMO_MODE" in one|eval) ;; *) echo 'usage: run-native-reasoning [one|eval]' >&2; exit 2 ;; esac
+[ "$#" -le 1 ] || { echo 'usage: run-native-reasoning [one|eval]' >&2; exit 2; }
+DEMO_CASE=${DEMO_CASE:-0}
+DEMO_THINK=${DEMO_THINK:-1}
+case "$DEMO_CASE" in 0|1|2|3|4) ;; *) echo 'DEMO_CASE must be 0..4' >&2; exit 2 ;; esac
+case "$DEMO_THINK" in 0|1) ;; *) echo 'DEMO_THINK must be 0 or 1' >&2; exit 2 ;; esac
+command -v jq >/dev/null || { echo 'jq is required for runtime provenance' >&2; exit 77; }
+mlpl=$("$repo/scripts/select-mlpl")
+mkdir -p out/native-reasoning
+DEMO_OUT=$(mktemp -d out/native-reasoning/run-XXXXXXXX)
+export DEMO_MODE DEMO_CASE DEMO_THINK DEMO_OUT
+base=http://127.0.0.1:11434
+curl --fail --silent --show-error --max-time 10 "$base/api/version" > "$DEMO_OUT/runtime.json"
+curl --fail --silent --show-error --max-time 10 "$base/api/show" -H 'Content-Type: application/json' \
+    -d '{"model":"qwen3:8b-q6"}' > "$DEMO_OUT/model-show.json"
+curl --fail --silent --show-error --max-time 10 "$base/api/tags" > "$DEMO_OUT/tags.json"
+expected=ee7613f19f946db6f549469bd24a6c77e48c591232ea97fdb7ec1f508a7e0dde
+actual=$(jq -r '.models[] | select(.name == "qwen3:8b-q6") | .digest' "$DEMO_OUT/tags.json")
+[ "$actual" = "$expected" ] || { echo 'installed model differs from validated demo pin' >&2; exit 1; }
+jq -e '.details.parent_model | endswith("sha256-cb042ccd76795a8830d6be6bd4165245847cc68e41797b13bd61aed4c2cfbce6")' "$DEMO_OUT/model-show.json" >/dev/null
+jq -r '.template' "$DEMO_OUT/model-show.json" > "$DEMO_OUT/chat-template.txt"
+"$mlpl" --version > "$DEMO_OUT/interpreter.txt"
+sha256sum "$mlpl" "$DEMO_OUT/chat-template.txt" fixtures/reasoning-demo.jsonl > "$DEMO_OUT/hashes.txt"
+printf '%s\n' 'LIVE PRETRAINED MODEL: Qwen3 8B Q6_K, local Ollama.' \
+    'MLPL: prompts, controls, answer extraction and grading. Rust HTTP extension: transport. Native Ollama backend: model inference.' \
+    'Inference-only workaround; not the MLPL 0.6B forward pass and not project-trained GRPO.' \
+    "Evidence directory: $DEMO_OUT"
+ulimit -c 0
+if "$repo/scripts/run-extension-demo" http demos/native_reasoning.mlpl; then status=0; else status=$?; fi
+curl --fail --silent --show-error --max-time 10 "$base/api/ps" > "$DEMO_OUT/residency.json" || true
+printf 'Evidence saved: %s\n' "$DEMO_OUT"
+exit "$status"

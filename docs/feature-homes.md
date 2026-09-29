@@ -1,5 +1,21 @@
 # Where a missing capability belongs
 
+## Inference-only deadline exception, 2026-09-29
+
+The user explicitly authorized native extension workarounds for expensive
+MLPL execution, with interpreter efficiency improvements documented for
+later. The live demo therefore uses the existing Rust HTTP dynamic library
+to call local Ollama. Its native backend owns model storage, forward
+execution, tokenization and decoding; MLPL owns prompts, sampling controls,
+answer verification and experiment accounting. This is an inference-only
+external pretrained baseline, not the differentiable MLPL model or a
+project-trained model. No new Rust or sibling edits were needed.
+
+The rules below still govern the reference implementation and training.
+Do not claim that an HTTP call participates in the autograd tape. See the
+[demo contract](native-reasoning-demo.md) for the current boundary and the
+future in-process extension option.
+
 This repository asks for nothing upstream and writes no Rust by default.
 When a capability is missing, three homes exist, and the rule below decides
 between them. The rule is applied in order; the first question that answers

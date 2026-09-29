@@ -1,7 +1,13 @@
 # Requests to `../sw-mlpl` (core)
 
-Current update, 2026-09-25: R11 is delivered and accepted on `cd3cd03f`;
-R3, R10 and R12 remain open. See [revalidation](upstream-revalidation.md).
+Current update, 2026-09-29: R11 remains accepted. The R10 unrelated-global
+frame-copy issue is fixed upstream in `55c65f2f` and passes on isolated
+`49c15b3e` (1.11/1.25 ms small/large scalar-call probe). Container lookup
+and model-argument copying remain costly; the unchanged CPU smoke still
+fails generation under 32 GiB. R3 and R12 remain open. The user requested
+native extension offload now, with further interpreter efficiency work
+documented for later; the [live demo](native-reasoning-demo.md) follows that
+direction. No core changes are requested as a prerequisite for the demo.
 
 This is the single list of what this repository asks of the language. Each
 item names the probe that demonstrates the gap today, the semantics
@@ -204,6 +210,16 @@ the E3 extension fallback remains inactive.
 ## R10. Container element access that does not scale with container size
 
 ### Extension: user-call scope snapshots, measured 2026-09-28
+
+Superseded in part on 2026-09-29: the snapshot mechanism below was replaced
+upstream by an undo log of written names. Existing scope acceptance passes
+on `49c15b3e`; record/list lookup probes still fail. A nested model argument
+can still be evaluated, saved when shadowed, and rebound with payload-sized
+copies. Future work should share immutable/COW arrays through records and
+partials while preserving error restoration, recursion, global writes and
+the gradient tape. Add nested-call peak-memory and alias-isolation tests,
+then repeat cached/full parity before accepting it. This is deferred core
+work; use the inference-only native extension workaround today.
 
 The loader profile now isolates an additional cost on `cd3cd03f`:
 `probes/call-scope-scaling.mlpl` makes 100 scalar calls while retaining an

@@ -1,20 +1,29 @@
 # Arch Linux toolchain and revalidation
 
-## Current tools (2026-09-25)
+## Current tools (2026-09-29)
 
-Use the new isolated build, which provides required bulk `unpack`:
+Use the new isolated build, which provides bulk `unpack` and the shipped
+undo-log function-frame fix:
 
 ```sh
-export MLPL=/disk1/tmp/reasoning-tools/build-cd3cd03f/release/mlpl-repl
+export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPLUNIT=/disk1/tmp/reasoning-tools/mlplunit/bin/mlplunit
-export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-cd3cd03f/scripts/mlpl-fmt.sh
+export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/scripts/mlpl-fmt.sh
 just check
 ```
 
-The source revision is `cd3cd03fd4eb66d1a33390a40f27c28e8a55e435`.
+The source revision is `49c15b3e659ecc32603e10312a5197039b636397`.
+Built offline with `cargo build --manifest-path
+/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/components/cli/Cargo.toml
+--target-dir /disk1/tmp/reasoning-tools/build-49c15b3e -p mlpl-repl
+--release --locked --offline`. All original 148 tests pass; only the
+scalar-call scaling probe changes from expected fail to pass. Native
+reference generation still fails the 32 GiB CPU address-space ceiling.
+The [live demo](native-reasoning-demo.md) now uses a separate native GPU
+backend through the existing Rust HTTP extension.
 The installed tools and old checkout remain untouched. The moved
 `../demo-extensions` now supplies tested Linux tokenizer binaries. CUDA is
-still unavailable; see [current evidence](upstream-revalidation.md).
+still unavailable to this CPU interpreter; see [current evidence](native-reasoning-demo.md).
 
 ## Historical migration setup
 

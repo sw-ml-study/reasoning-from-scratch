@@ -1,0 +1,63 @@
+# Offline contracts for the native-inference bridge: JSON escaping, bounded requests, completion accounting, and grading only the final answer.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/backend/ollama.mlpl";
+
+def u:backend_test_response(content, thinking, reason) {
+  "Build a transport-shaped fixture without loading an extension or model.";
+  payload = to_json({model: "fixture", message: {content: content, thinking: thinking}, done: 1, done_reason: reason, eval_count: 10, eval_duration: 200000000, total_duration: 300000000})?;
+  ok({status: 200, body: tokenize_bytes(payload)})
+}
+
+@test {name: "backend JSON preserves prompt escaping and explicit controls", tags: ["backend"]}
+def u:test_backend_body() {
+  "Quotes and newlines cannot inject request fields; booleans remain JSON booleans.";
+  body = u:backend_chat_body("fixture", "quote: \"x\"\nnext", 1, 42, 1536)?;
+  u:assert_true(gt(str_find(body, "\\\"x\\\"\\nnext"), 0 - 1), "prompt escaped")?;
+  u:assert_true(gt(str_find(body, "\"think\":true"), 0 - 1), "thinking enabled")?;
+  u:assert_true(gt(str_find(body, "\"stream\":false"), 0 - 1), "bounded complete response")?;
+  u:assert_err(u:backend_chat_body("fixture", "x", 1, 42, 0), "zero budget rejected")
+}
+
+@test {name: "backend transport is bounded and contains packed JSON", tags: ["backend"]}
+def u:test_backend_request() {
+  "Use the existing generic Rust HTTP contract, with no network in tests.";
+  request = u:backend_http_request("http://127.0.0.1:11434/api/chat", "{}");
+  u:assert_eq(request.timeout_ms, 120000, "two minute deadline")?;
+  u:assert_eq(request.max_response_bytes, 1048576, "one MiB response bound")?;
+  u:assert_eq(request.max_redirects, 0, "no redirects")?;
+  u:assert_text_eq(decode_bytes(unpack(request.body, "u8")), "{}", "body round trip")
+}
+
+@test {name: "backend grades final content without trusting the thinking text", tags: ["backend", "verify"]}
+def u:test_backend_final_only() {
+  "A correct box in thinking cannot rescue an incorrect final answer.";
+  decoded = u:backend_decode(u:backend_test_response("\\boxed{7}", "\\boxed{8}", "stop")?)?;
+  u:assert_eq(u:backend_grade(decoded, "8"), 0, "wrong final")?;
+  u:assert_eq(u:backend_grade(decoded, "7"), 1, "right final")?;
+  u:assert_eq(decoded.tokens_per_second, 50, "throughput from native duration")
+}
+
+@test {name: "backend truncation and empty answers cannot count as success", tags: ["backend", "errors"]}
+def u:test_backend_truncated() {
+  "Keep truncated results visible while excluding even a matching partial box.";
+  cut = u:backend_decode(u:backend_test_response("\\boxed{8}", "", "length")?)?;
+  u:assert_eq(cut.complete, 0, "truncation flagged")?;
+  u:assert_eq(u:backend_grade(cut, "8"), 0, "truncation is failure")?;
+  empty = u:backend_decode(u:backend_test_response("", "still thinking", "stop")?)?;
+  u:assert_eq(empty.complete, 0, "empty final is incomplete")
+}
+
+@test {name: "backend rejects HTTP and malformed response errors", tags: ["backend", "errors"]}
+def u:test_backend_errors() {
+  "Transport and protocol failures must not become empty successful answers.";
+  u:assert_err(u:backend_decode({status: 500, body: pack([], "u8")}), "HTTP failure")?;
+  u:assert_err(u:backend_decode({status: 200, body: pack(tokenize_bytes("{}"), "u8")}), "missing fields")?;
+  u:assert_err(u:backend_decode(err("connection refused")), "transport failure")
+}
+
+u:run_registered_tests()

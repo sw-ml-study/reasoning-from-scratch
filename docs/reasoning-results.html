@@ -1,0 +1,1324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>A working reasoning demo, and what its results actually show</title>
+<meta name="author" content="Michael A Wright" />
+<meta name="generator" content="Org Mode" />
+<style>
+:root { color-scheme: light; --ink:#192937; --muted:#526474; --accent:#165d78; --line:#d5e0e6; }
+* { box-sizing:border-box; }
+body { margin:0; background:#f0f4f6; color:var(--ink); font:18px/1.65 Georgia,serif; }
+#content { max-width:1100px; margin:32px auto; padding:48px 64px; background:white; border-top:8px solid var(--accent); box-shadow:0 8px 40px #19293712; }
+h1,h2,h3,h4,#table-of-contents { font-family:system-ui,sans-serif; line-height:1.3; }
+h1.title { font-size:2.5rem; text-align:left; margin-bottom:16px; }
+.subtitle { display:block; color:var(--muted); font-size:1.15rem; font-weight:400; margin-top:16px; }
+h2 { margin-top:2.8rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--accent); }
+h3 { margin-top:1.8rem; }
+a { color:#086686; text-underline-offset:.15em; }
+#table-of-contents { background:#f3f7f9; padding:20px 28px; font-size:.95rem; border:1px solid var(--line); }
+#table-of-contents h2 { margin:0 0 12px; border:0; padding:0; }
+#table-of-contents ul { margin:.25rem 0; padding-left:1.4rem; }
+pre,code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+code { font-size:.87em; overflow-wrap:anywhere; }
+pre { font-size:13px; line-height:1.55; padding:20px; overflow:auto; border:1px solid var(--line); border-radius:4px; background:#f6f8fa; white-space:pre-wrap; overflow-wrap:anywhere; }
+pre.src { background:#edf4f7; border-left:4px solid #2c7897; }
+pre.example { background:#f3f8f1; border-left:4px solid #5d824c; }
+table { border-collapse:collapse; width:100%; font:14px/1.5 system-ui,sans-serif; margin:1.5rem 0; }
+th,td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+th { background:#e8f1f5; }
+tr:nth-child(even) { background:#f7f9fa; }
+blockquote { margin:1.5rem 0; padding:8px 24px; border-left:4px solid var(--accent); background:#f4f8fa; }
+.note { border:1px solid #d5b56d; background:#fff9ea; padding:18px 22px; font-family:system-ui,sans-serif; font-size:1rem; }
+.figure { margin:1.5rem 0; } .figure svg { width:100%; height:auto; }
+.org-src-container { margin:1rem 0; }
+@media(max-width:800px) { #content { margin:0; padding:24px 18px; } h1.title { font-size:2rem; } table { display:block; overflow-x:auto; } }
+@media print { body { background:white; font-size:11pt; } #content { box-shadow:none; border:0; margin:0; padding:0; } #table-of-contents { break-after:page; } h2,h3 { break-after:avoid; } pre,tr { break-inside:avoid; } a { color:inherit; } }
+
+</style>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">A working reasoning demo, and what its results actually show
+<br />
+<span class="subtitle">Reproducible experiments in MLPL, a native inference workaround, and the path toward training</span>
+</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#orgd9d06d3">1. The result in one page</a></li>
+<li><a href="#org21abd5f">2. Read, replay, rerun: three different activities</a>
+<ul>
+<li><a href="#org28dfd3d">2.1. Build the HTML or refresh the recorded calculations</a></li>
+<li><a href="#org6a535ec">2.2. Interactive Emacs setup</a></li>
+</ul>
+</li>
+<li><a href="#org58f6755">3. Experiment 1: explain the memory failure before changing the budget</a>
+<ul>
+<li><a href="#org6ae3de8">3.1. CPU memory and GPU memory are different resources</a></li>
+<li><a href="#org3c37edf">3.2. What changed, and what did not</a></li>
+</ul>
+</li>
+<li><a href="#orgefbf27e">4. Experiment 2: put the resident model behind a native boundary</a>
+<ul>
+<li><a href="#org015c3dc">4.1. Division of responsibility</a></li>
+<li><a href="#org8a21ee4">4.2. Exact controls</a></li>
+<li><a href="#orgbfb557e">4.3. GPU and model provenance</a></li>
+</ul>
+</li>
+<li><a href="#org1225600">5. Experiment 3: five problems, ten attempts, no omitted failures</a>
+<ul>
+<li><a href="#org91baf97">5.1. Problems and independent references</a></li>
+<li><a href="#orgb069e54">5.2. Per-attempt results</a></li>
+<li><a href="#org0218a13">5.3. Recompute grades from saved answers with MLPL</a></li>
+<li><a href="#org95d58d5">5.4. What the difference means</a></li>
+</ul>
+</li>
+<li><a href="#org3285ba6">6. How this compares with the book's Python version</a>
+<ul>
+<li><a href="#org0b6a3d6">6.1. Why a numeric Python-versus-MLPL ranking would be misleading today</a></li>
+</ul>
+</li>
+<li><a href="#org91b8ed7">7. Training: one real toy update, and the work still required for an LLM</a>
+<ul>
+<li><a href="#orgd7654b5">7.1. From checked answers to relative rewards</a></li>
+<li><a href="#org1566902">7.2. A small, actual MLPL training experiment</a></li>
+<li><a href="#orgd5c0387">7.3. The next training evidence we would require</a></li>
+</ul>
+</li>
+<li><a href="#org67f5a36">8. Measuring reasoning quality beyond the demo</a>
+<ul>
+<li><a href="#orge0576d7">8.1. Define the observable target</a></li>
+<li><a href="#org6165353">8.2. Freeze the evaluation before looking at answers</a></li>
+</ul>
+</li>
+<li><a href="#orgdfca9b1">9. Rehearsal commands for this afternoon</a></li>
+<li><a href="#org3b83232">10. Reproducibility inventory and limits</a></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgd9d06d3" class="outline-2">
+<h2 id="orgd9d06d3"><span class="section-number-2">1.</span> The result in one page</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+We now have a working local GPU demonstration that accepts a mathematics
+problem, generates an answer, and checks its final result in MLPL. The live
+path is <b>MLPL → Rust HTTP dynamic library → Ollama native inference → MLPL
+verifier</b>. It uses an already pretrained Qwen3 8B Q6_K model. We did not
+train that model, and this path does not execute our MLPL Qwen3 forward pass.
+</p>
+
+<p>
+The distinction matters. The project's own Qwen3-0.6B-Base implementation
+loads its checkpoint, but still exhausts a 32 GiB CPU address-space limit
+before generating a token. The native workaround makes a useful demo
+possible without waiting for interpreter optimization. Both outcomes belong
+in the record.
+</p>
+
+<p>
+The first complete MLPL/extension rehearsal answered the shopping problem
+correctly in 13.6 seconds. A subsequent ten-attempt comparison found:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Configuration</th>
+<th scope="col" class="org-left">Correct / attempted</th>
+<th scope="col" class="org-right">Truncated</th>
+<th scope="col" class="org-left">Generated tokens</th>
+<th scope="col" class="org-left">MLPL wall time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Thinking off</td>
+<td class="org-left">5 / 5</td>
+<td class="org-right">0</td>
+<td class="org-left">1,432</td>
+<td class="org-left">42.17 s</td>
+</tr>
+
+<tr>
+<td class="org-left">Thinking on</td>
+<td class="org-left">2 / 5</td>
+<td class="org-right">3</td>
+<td class="org-left">6,787</td>
+<td class="org-left">184.47 s</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Both modes used the same five authored problems, seed 42, and a 1,536-token
+output cap. Thinking mode spent more of that budget before producing a
+final answer. Three outputs hit the cap and failed the declared completion
+rule. This is a <b>budget-limited demonstration result</b>, not an estimate of
+broad reasoning ability and not evidence that thinking is always worse.
+</p>
+
+<div class="note"><strong>Claim boundary.</strong> Real generated answers: yes. GPU inference through a native backend: yes. Held-out benchmark accuracy: not yet. Training the 8B or 0.6B language model here: no. A measured scalar training illustration: yes, below.</div>
+
+<p>
+The project follows the method sequence in Sebastian Raschka's
+<a href="https://www.manning.com/books/build-a-reasoning-model-from-scratch">Build a Reasoning Model (From Scratch), Manning</a>. The book develops
+generation, evaluation, inference-time methods, reinforcement learning and
+distillation. Our source is independently written. The
+<a href="https://github.com/rasbt/reasoning-from-scratch">author's Python/PyTorch companion repository</a> is a reference, not code copied
+into this project. The comparison later in this report concerns methods and
+experimental requirements; no Python performance run was conducted here.
+</p>
+</div>
+</div>
+<div id="outline-container-org21abd5f" class="outline-2">
+<h2 id="org21abd5f"><span class="section-number-2">2.</span> Read, replay, rerun: three different activities</h2>
+<div class="outline-text-2" id="text-2">
+<p>
+This document is both a report and an Emacs Org/Babel notebook using
+<code>ob-mlpl</code>. Reading or exporting it does not load a model or make network
+requests. Its recorded results are preserved in the Org source and HTML.
+</p>
+
+<p>
+There are three levels of reproducibility:
+</p>
+
+<ol class="org-ol">
+<li><b>Replay the analysis:</b> read the committed ten attempts, recompute grades
+and aggregates in MLPL, and reproduce the toy calculations. This is
+offline and does not need a GPU.</li>
+<li><b>Repeat inference:</b> run the recorded prompts and settings against the
+pinned local model/runtime. This requires the model and GPU backend.
+Sampling and runtime details can change the exact generated text.</li>
+<li><b>Reproduce a comparative research claim:</b> match models, data, prompts,
+budgets and metrics across implementations, then repeat with enough
+examples and seeds. We have not yet done this for MLPL versus Python.</li>
+</ol>
+</div>
+<div id="outline-container-org28dfd3d" class="outline-3">
+<h3 id="org28dfd3d"><span class="section-number-3">2.1.</span> Build the HTML or refresh the recorded calculations</h3>
+<div class="outline-text-3" id="text-2-1">
+<div class="org-src-container">
+<pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
+just research-html
+just research-refresh
+</code></pre>
+</div>
+
+<p>
+<code>research-html</code> exports the stored results only. <code>research-refresh</code> executes
+four explicitly named offline MLPL blocks through <code>ob-mlpl</code>, saves their
+results, then exports. Neither recipe executes the live inference blocks.
+The HTML has inline CSS and no required remote fonts, scripts or images;
+it can be published as one file. The full research bundle also includes the
+Org source and committed JSONL/provenance files.
+</p>
+</div>
+</div>
+<div id="outline-container-org6a535ec" class="outline-3">
+<h3 id="org6a535ec"><span class="section-number-3">2.2.</span> Interactive Emacs setup</h3>
+<div class="outline-text-3" id="text-2-2">
+<p>
+Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host. Then evaluate this setup once.
+The temporary source directory is deliberately <code>out/</code>, so the relative
+library includes in the replay block resolve within this checkout. Each
+MLPL block runs in a fresh interpreter; no hidden session state is required.
+Your normal Babel confirmation preference is preserved.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp"><code>(let* ((repo (file-name-as-directory
+              (locate-dominating-file buffer-file-name "AGENTS.md")))
+       (program (or (getenv "MLPL")
+                    "/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl"))
+       (support (or (getenv "MLPL_ELISP")
+                    "/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp")))
+  (add-to-list 'load-path support)
+  (require 'ob-mlpl)
+  (make-directory (expand-file-name "out" repo) t)
+  (setq temporary-file-directory (expand-file-name "out/" repo)
+        org-babel-mlpl-line-threshold 10000
+        org-babel-mlpl-command
+        (mapconcat #'shell-quote-argument
+                   (list program "--source-dir" repo "--data-dir" repo) " ")))
+</code></pre>
+</div>
+
+<p>
+Press <code>C-c C-c</code> in an MLPL block to reproduce that calculation. The separate
+<a href="https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/reasoning.org">implementation document</a> explains and tangles the full libraries; the
+<a href="https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/using-reasoning-model.org">operator guide</a> covers the wider project.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org58f6755" class="outline-2">
+<h2 id="org58f6755"><span class="section-number-2">3.</span> Experiment 1: explain the memory failure before changing the budget</h2>
+<div class="outline-text-2" id="text-3">
+</div>
+<div id="outline-container-org6ae3de8" class="outline-3">
+<h3 id="org6ae3de8"><span class="section-number-3">3.1.</span> CPU memory and GPU memory are different resources</h3>
+<div class="outline-text-3" id="text-3-1">
+<p>
+The 32 GiB limit was Linux <code>RLIMIT_AS</code>, a bound on the CPU process's virtual
+address space. It was a containment budget on a machine with approximately
+251 GiB RAM. It was not chosen from the GPU's capacity and was not evidence
+that the model inherently requires 32 GiB. The measured interpreter builds
+were CPU-only; they did not put the model on the 16 GiB RTX 5060 Ti.
+</p>
+
+<p>
+The real base checkpoint contains 596,049,920 parameters. Stored as BF16,
+its tensor payload is 1,192,099,840 bytes. The interpreter represents the
+unpacked numerical arrays with f64 elements, so the same values occupy four
+times as many bytes before any copies. The following calculation is exact
+integer arithmetic expressed in MLPL; the final units are binary GiB.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mlpl" id="org2c9afa6"><code># Exact storage accounting; this is not an allocation or model run.
+parameters = 596049920
+bf16_bytes = parameters * 2
+f64_bytes = parameters * 8
+print("BF16 payload bytes:", bf16_bytes)
+print("f64 payload bytes:", f64_bytes)
+print("f64 payload GiB:", f64_bytes / 1073741824)
+print("storage expansion:", f64_bytes / bf16_bytes)
+if eq(bf16_bytes, 1192099840) * eq(f64_bytes, 4768399360) {
+  ok(1)
+} else {
+  err("storage accounting disagrees with checkpoint manifest")
+}
+</code></pre>
+</div>
+
+<pre class="example">
+BF16 payload bytes: 1192099840
+f64 payload bytes: 4768399360
+f64 payload GiB: 4.44091796875
+storage expansion: 4
+Ok(1)
+</pre>
+
+<p>
+The working set also includes evaluated arguments, saved bindings,
+projection temporaries and caches. A language runtime can copy the same
+large record several times along a short call chain. This is why model
+file size is not a useful upper bound on process memory here.
+</p>
+</div>
+</div>
+<div id="outline-container-org3c37edf" class="outline-3">
+<h3 id="org3c37edf"><span class="section-number-3">3.2.</span> What changed, and what did not</h3>
+<div class="outline-text-3" id="text-3-2">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Attempt</th>
+<th scope="col" class="org-left">Loading outcome</th>
+<th scope="col" class="org-left">Generation outcome</th>
+<th scope="col" class="org-left">Interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Original CPU loader</td>
+<td class="org-left">Did not finish in 600 s</td>
+<td class="org-left">Never started</td>
+<td class="org-left">Loading was the first measured bottleneck</td>
+</tr>
+
+<tr>
+<td class="org-left">Scoped loader on <code>cd3cd03f</code></td>
+<td class="org-left">101.45 s</td>
+<td class="org-left">Allocation failure under 32 GiB</td>
+<td class="org-left">Loader improvement did not make inference viable</td>
+</tr>
+
+<tr>
+<td class="org-left">Shipped frame fix on <code>49c15b3e</code></td>
+<td class="org-left">102.89 s</td>
+<td class="org-left">Same-size allocation failure; status 134</td>
+<td class="org-left">Unrelated-global fix alone was insufficient</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+The newest upstream code journals the names a function writes instead of
+snapshotting every unrelated global binding. Our scalar-call probe changes
+from failure to success: small/large cases took 1.11/1.25 ms, below a 10 ms
+acceptance threshold. All original 148 native tests also passed. We built
+already-shipped upstream code in an isolated directory; we did not modify
+or optimize the interpreter in this task.
+</p>
+
+<p>
+Nevertheless, the unchanged real smoke failed a 1,244,659,712-byte
+allocation after loading. The process lasted 114 seconds, exited 134, and
+had sampled peak VmHWM 33,011,188 KiB. The child had core-file limit zero.
+No tokens were produced. The 114 seconds is process lifetime, <b>not generation
+throughput</b>. An earlier status 137 came from manually stopping a core dump;
+it must not be described as a kernel OOM kill.
+</p>
+
+<p>
+These measurements justify the user's short-term extension workaround.
+They do not justify simply declaring the GPU too small or increasing CPU
+memory and calling the problem solved.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-orgefbf27e" class="outline-2">
+<h2 id="orgefbf27e"><span class="section-number-2">4.</span> Experiment 2: put the resident model behind a native boundary</h2>
+<div class="outline-text-2" id="text-4">
+</div>
+<div id="outline-container-org015c3dc" class="outline-3">
+<h3 id="org015c3dc"><span class="section-number-3">4.1.</span> Division of responsibility</h3>
+<div class="outline-text-3" id="text-4-1">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Layer</th>
+<th scope="col" class="org-left">Responsibility</th>
+<th scope="col" class="org-left">Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">MLPL</td>
+<td class="org-left">Authored problems, prompt text, seed and budgets, final-answer verification, attempt accounting</td>
+<td class="org-left">Native tests and replay block below</td>
+</tr>
+
+<tr>
+<td class="org-left">Rust HTTP dynamic library</td>
+<td class="org-left">Bounded request/response transport</td>
+<td class="org-left">Existing pinned <code>demo-extensions</code> public facade and <code>.so</code></td>
+</tr>
+
+<tr>
+<td class="org-left">Ollama native backend</td>
+<td class="org-left">Tokenization, model weights, forward pass, sampling and cache</td>
+<td class="org-left">Runtime response and GPU residency metadata</td>
+</tr>
+
+<tr>
+<td class="org-left">Shell runner</td>
+<td class="org-left">Preflight identity checks and provenance files</td>
+<td class="org-left">Thin opt-in recipe; no reasoning or scoring logic</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+The extension itself does not execute tensor kernels. It connects MLPL to
+a native inference service that already does. No weights or KV cache cross
+the MLPL boundary, so deep copies of those arrays cannot arise in this
+adapter. The model remains resident in the backend between requests.
+</p>
+
+<p>
+This route is inference-only. An HTTP request has no differentiable link
+back to MLPL parameters. It is suitable for a live pretrained demo and
+potential teacher-output collection. It does not make GRPO training of
+our MLPL model work automatically.
+</p>
+</div>
+</div>
+<div id="outline-container-org8a21ee4" class="outline-3">
+<h3 id="org8a21ee4"><span class="section-number-3">4.2.</span> Exact controls</h3>
+<div class="outline-text-3" id="text-4-2">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Item</th>
+<th scope="col" class="org-left">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Model tag</td>
+<td class="org-left"><code>qwen3:8b-q6</code></td>
+</tr>
+
+<tr>
+<td class="org-left">Model size / quantization</td>
+<td class="org-left">8,190,735,360 parameters / Q6_K</td>
+</tr>
+
+<tr>
+<td class="org-left">Runtime</td>
+<td class="org-left">Ollama 0.24.0</td>
+</tr>
+
+<tr>
+<td class="org-left">Thinking modes</td>
+<td class="org-left">Off, then on</td>
+</tr>
+
+<tr>
+<td class="org-left">Seed</td>
+<td class="org-left">42 for every attempt</td>
+</tr>
+
+<tr>
+<td class="org-left">Temperature / top-p / top-k</td>
+<td class="org-left">0.6 / 0.95 / 20</td>
+</tr>
+
+<tr>
+<td class="org-left">Repeat penalty</td>
+<td class="org-left">1</td>
+</tr>
+
+<tr>
+<td class="org-left">Context / maximum new tokens</td>
+<td class="org-left">4096 / 1536</td>
+</tr>
+
+<tr>
+<td class="org-left">Prompt version</td>
+<td class="org-left"><code>boxed-v1</code></td>
+</tr>
+
+<tr>
+<td class="org-left">Dataset</td>
+<td class="org-left">Five authored <code>authored-demo-v1</code> cases</td>
+</tr>
+
+<tr>
+<td class="org-left">Extraction</td>
+<td class="org-left">Last valid box from final content only</td>
+</tr>
+
+<tr>
+<td class="org-left">HTTP deadline / response bound</td>
+<td class="org-left">120 seconds / 1 MiB</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+The request includes the problem but never its expected answer. The model
+returns final content separately from its generated thinking text. We save
+both, but only the final content is eligible for grading. The protocol is
+based on Ollama's <a href="https://docs.ollama.com/api/chat">chat API</a> and <a href="https://docs.ollama.com/capabilities/thinking">thinking controls</a>.
+</p>
+
+<p>
+For completion accounting, <code>done_reason</code> must be <code>stop</code>, the runtime must
+report completion, and the final content must be nonempty. A result stopped
+by the token limit is incomplete even if a partial answer appears earlier.
+This is a conservative, predeclared demo rule, not a universal requirement
+for every possible evaluation.
+</p>
+</div>
+</div>
+<div id="outline-container-orgbfb557e" class="outline-3">
+<h3 id="orgbfb557e"><span class="section-number-3">4.3.</span> GPU and model provenance</h3>
+<div class="outline-text-3" id="text-4-3">
+<p>
+<code>ollama ps</code> reported 100% GPU execution. The residency API reported
+7,458,144,384 bytes of model/runtime allocation, all in VRAM, with context
+</p>
+<ol class="org-ol">
+<li><code>nvidia-smi</code> showed 7,278 MiB total use including the desktop, out of</li>
+</ol>
+<p>
+16,311 MiB available. This fits on the GPU; it does not imply that our
+CPU-only MLPL forward pass has gained CUDA support.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Artifact</th>
+<th scope="col" class="org-left">SHA-256 or revision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">MLPL source</td>
+<td class="org-left"><code>49c15b3e659ecc32603e10312a5197039b636397</code></td>
+</tr>
+
+<tr>
+<td class="org-left">MLPL binary</td>
+<td class="org-left"><code>d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0</code></td>
+</tr>
+
+<tr>
+<td class="org-left">GGUF weights</td>
+<td class="org-left"><code>cb042ccd76795a8830d6be6bd4165245847cc68e41797b13bd61aed4c2cfbce6</code></td>
+</tr>
+
+<tr>
+<td class="org-left">Ollama manifest</td>
+<td class="org-left"><code>ee7613f19f946db6f549469bd24a6c77e48c591232ea97fdb7ec1f508a7e0dde</code></td>
+</tr>
+
+<tr>
+<td class="org-left">Rust HTTP library</td>
+<td class="org-left"><code>360ce46da300d9ce3bda4db6d2f46c9c737a696cea9df3a1af7f9a99d1164e74</code></td>
+</tr>
+</tbody>
+</table>
+
+<p>
+The weights hash was measured on the local GGUF copy and matches the
+content-addressed parent model returned by Ollama. Each run checks the
+installed tag's manifest and parent digest, and saves its complete chat
+template. The server's protected blob is not rehashed by the runner.
+A fixed seed supports investigation; it does not guarantee identical text
+across every hardware/runtime configuration or repeated request.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org1225600" class="outline-2">
+<h2 id="org1225600"><span class="section-number-2">5.</span> Experiment 3: five problems, ten attempts, no omitted failures</h2>
+<div class="outline-text-2" id="text-5">
+</div>
+<div id="outline-container-org91baf97" class="outline-3">
+<h3 id="org91baf97"><span class="section-number-3">5.1.</span> Problems and independent references</h3>
+<div class="outline-text-3" id="text-5-1">
+<p>
+These cases were authored before the ten-attempt comparison. They were
+chosen to make a demonstration understandable, not randomly sampled from
+a target population. The shopping case was already used in an integration
+smoke, so this set is explicitly not held out.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Case</th>
+<th scope="col" class="org-left">Problem summary</th>
+<th scope="col" class="org-left">Independent calculation</th>
+<th scope="col" class="org-right">Reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Change</td>
+<td class="org-left">Three $4 notebooks, five $2 pens, pay $30</td>
+<td class="org-left">30 - 3×4 - 5×2</td>
+<td class="org-right">8</td>
+</tr>
+
+<tr>
+<td class="org-left">Discounts</td>
+<td class="org-left">$120 reduced by 25%, then a further 20%</td>
+<td class="org-left">120×0.75×0.8</td>
+<td class="org-right">72</td>
+</tr>
+
+<tr>
+<td class="org-left">Probability</td>
+<td class="org-left">Draw two from three red and two blue, without replacement; same color</td>
+<td class="org-left">(3 + 1) / 10</td>
+<td class="org-right">2/5</td>
+</tr>
+
+<tr>
+<td class="org-left">Remainders</td>
+<td class="org-left">Smallest integer above 50 divisible by 7, remainder 2 modulo 5</td>
+<td class="org-left">Check 56, 63, 70, 77</td>
+<td class="org-right">77</td>
+</tr>
+
+<tr>
+<td class="org-left">Work rate</td>
+<td class="org-left">Pumps fill in 10 and 15 hours; both together</td>
+<td class="org-left">1 / (1/10 + 1/15)</td>
+<td class="org-right">6</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+The full wording and the raw generated text are retained in the committed
+JSONL, not reconstructed from this summary table. No retries from the
+comparison were dropped. Earlier integration rehearsals are reported
+separately and are not pooled into these counts.
+</p>
+</div>
+</div>
+<div id="outline-container-orgb069e54" class="outline-3">
+<h3 id="orgb069e54"><span class="section-number-3">5.2.</span> Per-attempt results</h3>
+<div class="outline-text-3" id="text-5-2">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Case</th>
+<th scope="col" class="org-right">Off: correct</th>
+<th scope="col" class="org-right">Off: seconds</th>
+<th scope="col" class="org-right">Off: tokens</th>
+<th scope="col" class="org-right">On: correct</th>
+<th scope="col" class="org-right">On: seconds</th>
+<th scope="col" class="org-right">On: tokens</th>
+<th scope="col" class="org-left">On: completion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Change</td>
+<td class="org-right">1</td>
+<td class="org-right">7.25</td>
+<td class="org-right">123</td>
+<td class="org-right">1</td>
+<td class="org-right">22.51</td>
+<td class="org-right">855</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">Discounts</td>
+<td class="org-right">1</td>
+<td class="org-right">3.05</td>
+<td class="org-right">114</td>
+<td class="org-right">1</td>
+<td class="org-right">35.12</td>
+<td class="org-right">1324</td>
+<td class="org-left">stop</td>
+</tr>
+
+<tr>
+<td class="org-left">Probability</td>
+<td class="org-right">1</td>
+<td class="org-right">7.72</td>
+<td class="org-right">288</td>
+<td class="org-right">0</td>
+<td class="org-right">40.62</td>
+<td class="org-right">1536</td>
+<td class="org-left">length</td>
+</tr>
+
+<tr>
+<td class="org-left">Remainders</td>
+<td class="org-right">1</td>
+<td class="org-right">14.36</td>
+<td class="org-right">547</td>
+<td class="org-right">0</td>
+<td class="org-right">44.27</td>
+<td class="org-right">1536</td>
+<td class="org-left">length</td>
+</tr>
+
+<tr>
+<td class="org-left">Work rate</td>
+<td class="org-right">1</td>
+<td class="org-right">9.70</td>
+<td class="org-right">360</td>
+<td class="org-right">0</td>
+<td class="org-right">41.92</td>
+<td class="org-right">1536</td>
+<td class="org-left">length</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Seconds in this table are the backend's total-duration field, including
+its per-request overhead. The headline aggregate uses the MLPL wall timer,
+which also includes transport, verification and writing the evidence.
+Summing the native durations gives 42.09 and 184.43 seconds; MLPL measured
+42.17 and 184.47 seconds. Neither is a cold-start-only benchmark.
+</p>
+</div>
+</div>
+<div id="outline-container-org0218a13" class="outline-3">
+<h3 id="org0218a13"><span class="section-number-3">5.3.</span> Recompute grades from saved answers with MLPL</h3>
+<div class="outline-text-3" id="text-5-3">
+<p>
+This block reads the ten committed attempts and runs the production verifier
+again. It ignores the stored correctness field when computing the grade,
+then checks that its recomputation agrees. It also verifies the sample
+count and aggregate token totals. There is no inference call in this block.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mlpl" id="orge5a4538"><code># Replay every saved attempt, using the production verifier and explicit completion rule.
+include "../lib/text/text.mlpl";
+include "../lib/verify/number.mlpl";
+include "../lib/verify/expr.mlpl";
+include "../lib/verify/extract.mlpl";
+include "../lib/verify/normalize.mlpl";
+include "../lib/verify/grade.mlpl";
+include "../lib/eval/data.mlpl";
+
+dataset = u:eval_load_jsonl_text(read_text("docs/results/native-demo-2026-09-29.jsonl")?, "recorded-demo", {})?
+mode = 0
+matches = 1
+while lt(mode, 2) {
+  attempted = 0;
+  correct = 0;
+  truncated = 0;
+  tokens = 0;
+  seconds = 0;
+  index = 0;
+  while lt(index, dataset.count) {
+    row = u:eval_record(dataset, index)?;
+    if eq(row.think, mode) {
+      raw = parse_json(row.response_json)?;
+      complete = eq(raw.done, 1) * str_eq(raw.done_reason, "stop") * gt(str_len(u:text_trim(raw.message.content)), 0);
+      grade = complete * u:verify_grade_response(raw.message.content, row.answer, "boxed_only");
+      matches = matches * eq(grade, row.correct) * eq(complete, row.complete);
+      attempted = attempted + 1;
+      correct = correct + grade;
+      truncated = truncated + str_eq(raw.done_reason, "length");
+      tokens = tokens + raw.eval_count;
+      seconds = seconds + raw.total_duration / 1000000000
+    };
+    index = index + 1
+  };
+  print("think:", mode, "attempted:", attempted, "correct:", correct, "truncated:", truncated, "tokens:", tokens, "native_seconds:", seconds);
+  matches = matches * eq(attempted, 5) * eq(correct, if mode { 2 } else { 5 }) * eq(tokens, if mode { 6787 } else { 1432 });
+  mode = mode + 1
+}
+if matches * eq(dataset.count, 10) {
+  ok("all ten grades and aggregate checks reproduced")
+} else {
+  err("recorded results disagree with independent replay")
+}
+</code></pre>
+</div>
+
+<pre class="example">
+think: 0 attempted: 5 correct: 5 truncated: 0 tokens: 1432 native_seconds: 42.089794149
+think: 1 attempted: 5 correct: 2 truncated: 3 tokens: 6787 native_seconds: 184.43253323599998
+Ok(all ten grades and aggregate checks reproduced)
+</pre>
+</div>
+</div>
+<div id="outline-container-org95d58d5" class="outline-3">
+<h3 id="org95d58d5"><span class="section-number-3">5.4.</span> What the difference means</h3>
+<div class="outline-text-3" id="text-5-4">
+</div>
+<div id="outline-container-orgd19b025" class="outline-4">
+<h4 id="orgd19b025"><span class="section-number-4">5.4.1.</span> A generated solution, checked step by step</h4>
+<div class="outline-text-4" id="text-5-4-1">
+<p>
+In the saved probability/off response, the model counted ten unordered
+pairs, then three all-red pairs and one all-blue pair, and reduced 4/10 to
+2/5. Those steps match an independent combinatorial calculation. Its final
+answer was <code>\boxed{\frac{2}{5}}</code> and the MLPL normalizer/verifier accepted
+that as equivalent to the reference <code>2/5</code>. The request generated 288 tokens
+and completed in 7.72 seconds.
+</p>
+
+<p>
+The corresponding thinking/on attempt reached 1,536 tokens without a
+complete final answer. Its longer generated text does not override the
+completion rule. This pair makes a useful live explanation: an answer must
+both arrive within the resource budget and satisfy the verifier.
+</p>
+
+<p>
+In the shopping/on response, the model computed 3×4=12, 5×2=10, total 22,
+then 30−22=8. Its saved thinking text repeated the calculation and checked
+the problem wording. That repetition is observable generated behavior;
+whether it improves reliability requires further experiments. The full
+texts, not just these descriptions, are preserved in the research JSONL.
+</p>
+</div>
+</div>
+<div id="outline-container-org2ebe7a9" class="outline-4">
+<h4 id="org2ebe7a9"><span class="section-number-4">5.4.2.</span> Budget interpretation</h4>
+<div class="outline-text-4" id="text-5-4-2">
+<p>
+Thinking mode generated approximately 4.74 times as many tokens and took
+4.37 times as much MLPL wall time. Under this cap, it completed only two
+answers. The direct mode's short solutions fit within the cap and all five
+verified. The three missing final answers are operational failures, even
+if the model's preceding text contained useful intermediate calculations.
+</p>
+
+<p>
+This does not isolate the causal value of reasoning. The mode changes the
+model's response behavior; there is only one seed per case; off-mode calls
+ran first; and the questions are small and selected for a demonstration.
+A larger cap might rescue truncated responses, but that would be a new
+experiment with a different cost allowance. We did not silently grant extra
+tokens until answers looked good.
+</p>
+
+<p>
+For the afternoon presentation, use the shopping question with thinking
+on, then probability with thinking off. Show the comparison table as a
+lesson in budgeting and measurement. Do not conceal the three truncated
+attempts or present 5/5 as general mathematical competence.
+</p>
+</div>
+</div>
+</div>
+</div>
+<div id="outline-container-org3285ba6" class="outline-2">
+<h2 id="org3285ba6"><span class="section-number-2">6.</span> How this compares with the book's Python version</h2>
+<div class="outline-text-2" id="text-6">
+<p>
+The author's companion uses Python and PyTorch, with chapters devoted to
+evaluation, inference-time scaling, self-refinement, reinforcement learning
+and distillation. Our independently implemented MLPL reference follows that
+method progression. The live native workaround is a separate operational
+choice made to meet the demonstration deadline.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Question</th>
+<th scope="col" class="org-left">Python companion</th>
+<th scope="col" class="org-left">This MLPL project</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Readable implementation</td>
+<td class="org-left">Python/PyTorch chapter notebooks and scripts</td>
+<td class="org-left">Org source, MLPL libraries and exact tangles</td>
+</tr>
+
+<tr>
+<td class="org-left">Forward/cache correctness</td>
+<td class="org-left">Reference implementation supplied by author</td>
+<td class="org-left">Tiny cached/full parity tests; real CPU generation still blocked</td>
+</tr>
+
+<tr>
+<td class="org-left">Evaluation</td>
+<td class="org-left">Mathematics verification and evaluation workflows</td>
+<td class="org-left">MLPL verifier; ten native-backend demo attempts replayed here</td>
+</tr>
+
+<tr>
+<td class="org-left">Inference-time methods</td>
+<td class="org-left">Prompting, sampling, voting and refinement</td>
+<td class="org-left">Implemented fixture methods; live off/on comparison only in this report</td>
+</tr>
+
+<tr>
+<td class="org-left">Training</td>
+<td class="org-left">GRPO and distillation material</td>
+<td class="org-left">Future LLM work; scalar training illustration below</td>
+</tr>
+
+<tr>
+<td class="org-left">Measured head-to-head speed</td>
+<td class="org-left">Not run for this report</td>
+<td class="org-left">No cross-language speedup claim</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Sources: <a href="https://github.com/rasbt/reasoning-from-scratch#table-of-contents">companion chapter map</a> and the
+<a href="https://www.manning.com/books/build-a-reasoning-model-from-scratch">publisher's book page</a>, checked 2026-09-29. No book prose or Python source
+has been copied into the implementation.
+</p>
+</div>
+<div id="outline-container-org0b6a3d6" class="outline-3">
+<h3 id="org0b6a3d6"><span class="section-number-3">6.1.</span> Why a numeric Python-versus-MLPL ranking would be misleading today</h3>
+<div class="outline-text-3" id="text-6-1">
+<p>
+Our blocked native reference uses a 0.6B base checkpoint stored as BF16,
+unpacked to CPU f64 arrays. The working demo uses a pretrained 8B model
+quantized to Q6_K, with a different instruction/thinking behavior and native
+GPU execution. Model size, training history, precision and hardware path
+all differ. Comparing their timings or correctness would not measure a
+language implementation effect.
+</p>
+
+<p>
+A defensible future comparison should pin one checkpoint and tokenizer,
+precision/quantization, exact prompt text, dataset ids, stop behavior,
+sampling configuration and seed schedule. Separate cold loading, prefill,
+decode and verification timings. For implementation parity, compare logits
+or greedy token ids on a short deterministic fixture before comparing
+aggregate accuracy. Use the same hardware and distinguish wall-clock
+cost from output tokens per second. Report failures on both sides.
+</p>
+
+<p>
+The present report therefore leaves Python throughput, Python accuracy on
+these cases, and any MLPL/Python speed ratio <b>unmeasured</b>. Previously noted
+book benchmark figures are not mixed into our demonstration score.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org91b8ed7" class="outline-2">
+<h2 id="org91b8ed7"><span class="section-number-2">7.</span> Training: one real toy update, and the work still required for an LLM</h2>
+<div class="outline-text-2" id="text-7">
+<p>
+Turning on a pretrained model's thinking mode does not train it. No weights
+changed during the ten inference attempts. The MLPL verifier can supply a
+reward signal, but reward computation and parameter optimization are
+separate operations.
+</p>
+</div>
+<div id="outline-container-orgd7654b5" class="outline-3">
+<h3 id="orgd7654b5"><span class="section-number-3">7.1.</span> From checked answers to relative rewards</h3>
+<div class="outline-text-3" id="text-7-1">
+<p>
+Suppose four independently sampled answers receive rewards <code>[1,1,0,0]</code>.
+Subtracting the group mean identifies better and worse samples relative to
+that group. Scaling by the unbiased sample standard deviation plus epsilon
+gives a dimensionless advantage. A constant-reward group supplies no
+relative preference. This block illustrates that arithmetic only; it does
+not implement the complete GRPO objective or a policy update.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mlpl" id="org4180c98"><code># Educational reward normalization, not a trained policy.
+rewards = [1, 1, 0, 0]
+centered = rewards - mean(rewards)
+deviation = sqrt(reduce_add(centered * centered) / (tally(rewards) - 1))
+advantages = centered / (deviation + 0.000001)
+constant = [1, 1, 1, 1]
+constant_advantages = (constant - mean(constant)) / 0.000001
+print("rewards:", rewards)
+print("sample deviation:", deviation)
+print("advantages:", advantages)
+print("constant-group advantages:", constant_advantages)
+if eq(reduce_add(advantages), 0) * equal(constant_advantages, [0, 0, 0, 0]) {
+  ok(1)
+} else {
+  err("reward-normalization check failed")
+}
+</code></pre>
+</div>
+
+<pre class="example">
+rewards: 1 1 0 0
+sample deviation: 0.5773502691896257
+advantages: 0.8660239037870368 0.8660239037870368 -0.8660239037870368 -0.8660239037870368
+constant-group advantages: 0 0 0 0
+Ok(1)
+</pre>
+
+<p>
+Reward alone does not specify which token probabilities should change.
+An LLM training implementation also needs differentiable sequence log
+probabilities, an explicit masking convention, policy ratios, clipping and
+any reference-policy regularization, an optimizer, and checkpointing.
+Those steps must be tested before a reward improvement can be called an
+LLM training result.
+</p>
+</div>
+</div>
+<div id="outline-container-org1566902" class="outline-3">
+<h3 id="org1566902"><span class="section-number-3">7.2.</span> A small, actual MLPL training experiment</h3>
+<div class="outline-text-3" id="text-7-2">
+<p>
+To make the difference concrete, fit the scalar model <code>prediction=w*x</code> to
+<code>y=2*x</code> for <code>x</code>[1,2,3,4]=. This is deterministic supervised regression,
+not reasoning-model training. Initialize <code>w=0</code>, compute the gradient of the
+mean squared error, and make six gradient-descent updates at rate 0.05.
+</p>
+
+<p>
+The loss is <code>7.5*(w-2)^2</code>, so its derivative is <code>15*(w-2)</code>. Each update
+therefore quarters the distance from <code>w</code> to 2. This independent analytic
+recurrence gives exact acceptance values: after six steps
+<code>w=1.99951171875</code> and loss <code>0.0000017881393432617188</code>.
+The native test suite checks these values, rather than merely asserting
+that some number decreased.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mlpl" id="orgb33cf44"><code># Actual six-step scalar regression; no language-model weight is changed.
+w = param[1]
+w = [0]
+x = [1, 2, 3, 4]
+y = 2 * x
+print("step 0 weight:", w, "loss:", mean((w * x - y) * (w * x - y)))
+step = 0
+while lt(step, 6) {
+  derivative = grad(mean((w * x - y) * (w * x - y)), w);
+  w = w - 0.05 * derivative;
+  step = step + 1;
+  print("step:", step, "weight:", w, "loss:", mean((w * x - y) * (w * x - y)))
+}
+final_loss = mean((w * x - y) * (w * x - y))
+if equal(w, [1.99951171875]) * eq(final_loss, 0.0000017881393432617188) {
+  ok("scalar training matches the analytic recurrence")
+} else {
+  err("scalar training differs from its golden result")
+}
+</code></pre>
+</div>
+
+<pre class="example">
+step 0 weight: 0 loss: 30
+step: 1 weight: 1.5 loss: 1.875
+step: 2 weight: 1.875 loss: 0.1171875
+step: 3 weight: 1.96875 loss: 0.00732421875
+step: 4 weight: 1.9921875 loss: 0.000457763671875
+step: 5 weight: 1.998046875 loss: 0.0000286102294921875
+step: 6 weight: 1.99951171875 loss: 0.0000017881393432617188
+Ok(scalar training matches the analytic recurrence)
+</pre>
+
+<p>
+This is a real parameter update with a measured loss change. It establishes
+that this toy autograd/update path works. It does not demonstrate language
+understanding, improved reasoning rewards, training throughput, or the
+feasibility of differentiating the external native model.
+</p>
+</div>
+</div>
+<div id="outline-container-orgd5c0387" class="outline-3">
+<h3 id="orgd5c0387"><span class="section-number-3">7.3.</span> The next training evidence we would require</h3>
+<div class="outline-text-3" id="text-7-3">
+<p>
+Start with a tiny trainable policy on a synthetic task with known rewards.
+Keep training and evaluation examples separate; measure a before/after
+change over fixed evaluation seeds; retain the old policy and a no-update
+control. Test constant rewards, masking, clipping boundaries and gradient
+signs. Only then test real-model gradient and memory feasibility.
+</p>
+
+<p>
+The external native model can later generate candidate teacher responses,
+but responses must be checked before becoming a training corpus. Record
+which model produced them, preserve licensing/provenance, and prevent
+held-out evaluation questions from entering training. A native inference
+session is not a substitute for a differentiable student training path.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org67f5a36" class="outline-2">
+<h2 id="org67f5a36"><span class="section-number-2">8.</span> Measuring reasoning quality beyond the demo</h2>
+<div class="outline-text-2" id="text-8">
+</div>
+<div id="outline-container-orge0576d7" class="outline-3">
+<h3 id="orge0576d7"><span class="section-number-3">8.1.</span> Define the observable target</h3>
+<div class="outline-text-3" id="text-8-1">
+<p>
+A useful first target is final-answer correctness under a declared resource
+budget. Keep attempted, completed, parseable and correct counts separate.
+Include timeouts, malformed answers and truncations in the attempted
+denominator. Report accuracy together with latency and generated tokens.
+Do not substitute confidence, vote agreement or explanation length for a
+checked result.
+</p>
+
+<p>
+Correct final answers alone cannot prove that a written explanation
+faithfully describes the model's internal computation. Review intermediate
+mathematics on a separate sample, perturb problem numbers and wording, and
+include cases that challenge superficial pattern matching. These checks
+measure different properties and should remain separate in the report.
+</p>
+</div>
+</div>
+<div id="outline-container-org6165353" class="outline-3">
+<h3 id="org6165353"><span class="section-number-3">8.2.</span> Freeze the evaluation before looking at answers</h3>
+<div class="outline-text-3" id="text-8-2">
+<p>
+The next queued experiment is a small frozen held-out pilot, followed by a
+larger run only when its measured cost is acceptable. Choose the examples,
+references, prompt version, seeds and stopping rules first. Compare modes
+on exactly the same cases, retain every attempt, and report uncertainty.
+If prompts or token limits are adjusted after inspecting failures, use a
+new validation set for the final claim.
+</p>
+
+<p>
+Match both the per-response limit and the total sampling budget when
+comparing single responses with self-consistency or best-of-N. A method
+that spends ten times as many tokens may be useful, but its cost must not
+be hidden. A five-case demonstration is too small and too selected to
+support a population accuracy claim; a narrow confidence interval would
+not repair selection bias.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-orgdfca9b1" class="outline-2">
+<h2 id="orgdfca9b1"><span class="section-number-2">9.</span> Rehearsal commands for this afternoon</h2>
+<div class="outline-text-2" id="text-9">
+<p>
+Start the first command shortly before the session to warm the model. The
+runner keeps it loaded for 30 minutes. These blocks are opt-in and are not
+executed by the report exporter or the fixture gate.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+just reasoning-demo
+DEMO_CASE=2 DEMO_THINK=0 just reasoning-demo
+ollama ps
+</code></pre>
+</div>
+
+<p>
+To repeat all ten attempts rather than replay saved evidence:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+just reasoning-eval
+</code></pre>
+</div>
+
+<p>
+Narrate the model/backend boundary, show the verified final answer, then
+show the complete comparison including truncations. The report can be
+opened even if the inference service is unavailable during the presentation;
+saved evidence is a replay, not a secretly substituted live answer.
+</p>
+</div>
+</div>
+<div id="outline-container-org3b83232" class="outline-2">
+<h2 id="org3b83232"><span class="section-number-2">10.</span> Reproducibility inventory and limits</h2>
+<div class="outline-text-2" id="text-10">
+<p>
+The committed research bundle contains:
+</p>
+
+<ul class="org-ul">
+<li><code>docs/reasoning-results.org</code>: narrative, executable offline blocks and
+recorded results; <code>docs/reasoning-results.html</code>: standalone publication.</li>
+<li><code>docs/results/native-demo-2026-09-29.jsonl</code>: every problem/reference,
+raw request and response, final text, thinking text, and recorded grade.</li>
+<li><code>docs/results/native-demo-2026-09-29-provenance.json</code>: runtime/model
+identity, exact chat template, residency and original summaries.</li>
+<li><code>docs/results/SHA256SUMS</code>: immutable-evidence and authored-fixture hashes.</li>
+<li><code>lib/backend/ollama.mlpl</code> and <code>tests/test_backend.mlpl</code>: adapter and five
+offline contract tests; <code>tests/test_research_training.mlpl</code>: two analytic
+training-math goldens.</li>
+<li><code>demos/native_reasoning.mlpl</code> and <code>scripts/run-native-reasoning</code>: opt-in
+live inference; <code>scripts/export-reasoning-report</code>: offline publication.</li>
+</ul>
+
+<p>
+Weights and downloaded datasets remain outside version control. The
+research records here contain our authored questions and model-generated
+responses, not book text or copied Python code. Publishing the HTML does
+not redistribute model weights.
+</p>
+
+<p>
+The full fixture gate has 155 native tests and 27 declared capability
+outcomes. A capability probe with an expected failure records a known
+limitation; it is not a delivered feature. The reference implementation's
+exact tangles are checked separately. These checks support software
+correctness and report replay, not a broad model-quality claim.
+</p>
+
+<p>
+Future interpreter work remains documented: shared immutable/COW arrays,
+cheap container/partial access, bounded argument/frame copying with correct
+scope and gradients, batched operations, and validated device dispatch.
+If a direct in-process Rust inference library becomes necessary, keep model
+and cache buffers behind typed generational handles, expose bounded
+load/generate/close operations, and test lifecycle and memory limits. Today
+we reuse the existing transport extension and proven native engine.
+</p>
+
+<p>
+The next useful evidence is held-out quality and cost measurement. The
+working demo already provides the foundation for that experiment.
+</p>
+</div>
+</div>
+</div>
+</body>
+</html>

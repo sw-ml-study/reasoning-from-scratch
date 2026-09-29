@@ -1,5 +1,39 @@
 # sw-MLPL capability ledger
 
+## Native demo and published research, 2026-09-29
+
+**Native inference workaround: supported. Pure-MLPL real generation:
+still unavailable within 32 GiB.** The user authorized extension offload
+instead of waiting for interpreter optimization. The existing Rust HTTP
+dynamic library now connects MLPL prompts and verification to local
+Qwen3 8B Q6_K/Ollama inference, with 100% GPU residency reported. A warm
+end-to-end verified answer took 13.6 s. Five authored cases with thinking
+off scored 5/5 in 42.17 s; thinking on scored 2/5 in 184.47 s, including
+three token-budget truncations. These are demo cases, not held-out accuracy.
+See [the runbook](native-reasoning-demo.md) and
+[reproducible Org report](reasoning-results.org).
+
+**Core frame scaling: newly supported in part.** Isolated upstream build
+`49c15b3e` includes shipped undo-log fix `55c65f2f`. The existing scalar-call
+probe now passes (1.11/1.25 ms small/large, 10 ms limit); record/list access
+probes still fail. All original 148 tests pass. The unchanged real smoke
+loads in 102.89 s, then fails the same 1,244,659,712-byte allocation under
+32 GiB; status 134 after 114 s, sampled VmHWM 33,011,188 KiB, no tokens.
+This CPU virtual-address limit is unrelated to the GPU's 16 GiB capacity.
+
+**ABI bytes: awkward but supported with an adapter.** HTTP response bodies
+arrive as numeric byte arrays on this host; packed bytes also work when
+boxed in a record rather than passed as bare function arguments. Five new
+offline backend tests cover transport/JSON boundaries, final-only grading,
+truncation and errors. Two analytic training-math tests support the report's
+scalar SGD and reward-normalization examples. The complete gate now has
+155 tests, 27 probe outcomes and 29 exact tangles. Research replay runs
+offline and verifies the generated HTML; real inference remains opt-in.
+
+Future core sharing/COW, argument copying, tape semantics and device work
+are documented in R10/R12 and deferred. No Rust or sibling source was
+changed. The live path is inference-only and does not train a language model.
+
 ## Loader scope profile and inference boundary, 2026-09-28
 
 **MLPL workaround supported; core call-scope scaling missing; real generation

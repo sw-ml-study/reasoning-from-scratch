@@ -3,7 +3,9 @@
 A reasoning language model built step by step in
 [sw-MLPL](../sw-mlpl), following the method sequence of Sebastian Raschka's
 *Build a Reasoning Model (From Scratch)* (Manning, 2026) without Python and
-without any external machine-learning library.
+without any external machine-learning library in the reference implementation.
+An explicitly labeled native inference workaround is now available for live
+demonstrations while the reference implementation's performance is repaired.
 
 The project starts from the pretrained Qwen3-0.6B base checkpoint and adds,
 in order: text generation with a key/value cache, a math-answer verifier and
@@ -35,8 +37,24 @@ the reasoning behind it.
 
 ## Status
 
-Revalidated on Arch Linux on 2026-09-28 with sw-MLPL 0.22.0, build
-`cd3cd03f`. The verifier, evaluation harness, reference tokenizer and
+**Live demo:** `just reasoning-demo` runs pretrained Qwen3 8B Q6_K through
+the existing Rust HTTP extension and local Ollama GPU backend, then grades
+its final answer in MLPL. A warm complete run answered correctly in 13.6 s
+at 40.5 tokens/s; Ollama reported 100% GPU residency, about 7 GiB on the
+16 GiB RTX 5060 Ti. See [commands, provenance and limits](docs/native-reasoning-demo.md).
+This is an inference-only external baseline, not the MLPL 0.6B model or
+project-trained GRPO. `just reasoning-eval` compares thinking off/on over
+five authored demo cases; these are not a held-out benchmark.
+
+The [publishable HTML research report](docs/reasoning-results.html) and
+[executable Org/ob-mlpl source](docs/reasoning-results.org) reproduce every
+saved grade, explain the 5/5 versus 2/5 budget-limited result, compare methods
+with the book's Python companion, and run an analytic six-step scalar
+training example. `just research-refresh` replays its offline calculations;
+`just research-html` only exports. Neither recipe runs model inference.
+
+Revalidated on Arch Linux on 2026-09-29 with sw-MLPL 0.22.0, build
+`49c15b3e`. The verifier, evaluation harness, reference tokenizer and
 templates, tiny Qwen3 forward pass, and KV-cache generation are implemented.
 The safetensors header reader validates tensor names, shapes, offsets, and
 tied embeddings; the previous Apple run validated all 310 tensors in the
@@ -47,11 +65,15 @@ on this host. After the original loading timeout, the
 [loader profile](docs/loader-profile.md) reduced real loading to **101.45 s**.
 Generation then failed an allocation under the same 32 GiB address-space
 limit, at sampled peak RSS about 31.48 GiB. No real answer or accuracy result
-is available. The pretrained base checkpoint has not been GRPO-trained here.
+is available from that reference path. The newer interpreter removes copying
+of unrelated globals but still fails the same generation allocation limit
+(102.89 s loading, status 134, 114 s total). The pretrained base checkpoint
+has not been GRPO-trained here. The 32 GiB limit is a CPU virtual-address
+budget, not GPU VRAM; these reference runs used no GPU.
 
-The fixture suite has 148 native tests. A clean clone now generates its tiny
-checkpoint fixture automatically. The implementation document reproduces all 24
-library sources plus two drivers and a fixture builder (27 exact tangles).
+The fixture suite has 155 native tests. A clean clone now generates its tiny
+checkpoint fixture automatically. The implementation document reproduces all 25
+library sources plus three drivers and a fixture builder (29 exact tangles).
 Tiny cached generation matches full recomputation exactly
 on both the original Apple machine and this Linux host.
 
@@ -84,8 +106,8 @@ handle callbacks use documented R13 and empty-decode workarounds. Training
 corpus throughput remains unavailable. Real-model scaling reports, GRPO, and
 distillation are planned; none has real-model results.
 
-The host has an RTX 5060 Ti with 16 GB VRAM, but GPU execution is not yet
-validated: the current upstream CUDA build rejects the installed CUDA 13.4
+The host has an RTX 5060 Ti with 16 GB VRAM. GPU execution of the MLPL
+reference path is not validated: the previously tested CUDA build rejects CUDA 13.4
 toolkit. Use the explicit CPU toolchain below for fixture checks. See
 [Linux setup and measurements](docs/linux-toolchain.md), the
 [saga queue](docs/sagas.md), and the [capability ledger](docs/sw-mlpl-blockers.md).
@@ -93,7 +115,7 @@ toolkit. Use the explicit CPU toolchain below for fixture checks. See
 Two separate Emacs Org/Babel guides are maintained:
 [how to use the model](docs/using-reasoning-model.org) and
 [how it works](docs/reasoning.org). They document the bounded attempt;
-successful real inference examples await resident generation viability.
+the live native-backend demo is separately documented in both guides.
 
 ## Build and check
 

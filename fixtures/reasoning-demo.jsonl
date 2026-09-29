@@ -1,0 +1,5 @@
+{"unique_id":"change","problem":"A shop sells notebooks for $4 each and pens for $2 each. Maya buys 3 notebooks and 5 pens and pays with $30. How many dollars of change does she receive?","answer":"8","subject":"arithmetic"}
+{"unique_id":"discounts","problem":"A jacket costs $120. Its price is reduced by 25%, then the reduced price is discounted by a further 20%. What is the final price in dollars?","answer":"72","subject":"percentages"}
+{"unique_id":"probability","problem":"A bag contains 3 red balls and 2 blue balls. Two balls are drawn uniformly without replacement. What is the probability that both have the same color? Give an exact fraction.","answer":"2/5","subject":"probability"}
+{"unique_id":"remainders","problem":"Find the smallest integer greater than 50 that is divisible by 7 and leaves remainder 2 when divided by 5.","answer":"77","subject":"number theory"}
+{"unique_id":"work-rate","problem":"Pump A can fill an empty tank in 10 hours. Pump B can fill the same tank in 15 hours. Both run together at constant rates. How many hours are needed to fill the empty tank?","answer":"6","subject":"rates"}

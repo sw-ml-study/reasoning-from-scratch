@@ -309,6 +309,13 @@ source. Do not create a duplicate `CLAUDE.md`.
 
 ## Implementation contract
 
+- User-authorized exception (2026-09-29): use native extension offload for
+  serious inference inefficiencies instead of blocking the demo on core
+  optimization. Keep the MLPL reference implementation and document future
+  interpreter improvements. The current inference-only path uses the Rust
+  HTTP dynamic library with local Ollama; it is an external pretrained
+  baseline, not project-trained reasoning or differentiable MLPL execution.
+  See `docs/native-reasoning-demo.md`. Siblings remain read-only.
 - All reasoning-pipeline semantics are MLPL: verification, tokenization, the
   Qwen3 forward pass, decoding, scaling, GRPO, and distillation. The
   interpreter supplies generic kernels only; no Rust is written here.

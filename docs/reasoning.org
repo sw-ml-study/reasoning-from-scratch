@@ -5810,3 +5810,210 @@ if str_eq(mode, "model") {
 }
 ok(1)
 #+end_src
+
+* Native inference workaround and reproducible research, 2026-09-29
+
+The user authorized native offload so the afternoon demo would not depend
+on fixing interpreter efficiency. The existing Rust HTTP dynamic library
+connects MLPL to local Ollama. MLPL owns prompt text, explicit controls,
+answer extraction and grading; the native backend owns weights, cache,
+forward execution, tokenization and sampling. This is an inference-only
+pretrained Qwen3 8B baseline, separate from the pure-MLPL 0.6B implementation
+above. No native call participates in this interpreter's gradient tape.
+
+The [[file:reasoning-results.org][reproducible Org report]] and [[file:reasoning-results.html][standalone HTML]] retain all ten attempts,
+replay grades offline with =ob-mlpl=, and demonstrate a separately tested
+six-step scalar regression update. The authored comparison scored 5/5 in
+42.17 s with thinking off, versus 2/5 in 184.47 s with thinking on; three
+responses truncated at 1536 tokens. This is not held-out reasoning accuracy
+or a project-trained model. The [[file:native-reasoning-demo.md][runbook]] records hashes and commands.
+
+** Adapter: small messages across the native boundary
+
+Caller strings are JSON-escaped; sampling controls are explicit. The Rust
+HTTP contract bounds time, response bytes and redirects. The byte adapter
+accepts the numeric arrays returned by this host's ABI and boxed packed
+bytes used in fixtures. Completion accounting excludes truncated and empty
+final answers. A correct box in generated thinking cannot rescue a wrong
+final answer. Five native tests enforce these contracts without networking.
+
+#+begin_src mlpl :tangle ../lib/backend/ollama.mlpl
+# Inference-only native backend bridge: bounded Ollama chat requests and final-answer accounting through the generic Rust HTTP extension. Requires lib/text/text.mlpl and the verifier modules. No model arrays cross this boundary; this is not a differentiable training backend.
+
+def u:backend_chat_body(model_name, prompt_text, thinking, seed, max_new) {
+  "Encode a single user message with explicit sampling controls; JSON-escape every caller string and emit real JSON booleans.";
+  if lt(max_new, 1) + gt(max_new, 4096) + (max_new - floor(max_new)) {
+    err("max_new must be an integer from 1 to 4096")
+  } else {
+    options = to_json({seed: seed, temperature: 0.6, top_p: 0.95, top_k: 20, repeat_penalty: 1, num_ctx: 4096, num_predict: max_new})?;
+    prefix = str_concat("{\"model\":", to_json(model_name)?);
+    message = str_concat(",\"messages\":[{\"role\":\"user\",\"content\":", to_json(prompt_text)?);
+    controls = str_concat("}],\"think\":", if thinking {
+        "true"
+      } else {
+        "false"
+      });
+    ending = str_concat(",\"stream\":false,\"keep_alive\":\"30m\",\"options\":", str_concat(options, "}"));
+    ok(str_concat(str_concat(prefix, message), str_concat(controls, ending)))
+  }
+}
+
+def u:backend_http_request(url, body) {
+  "Construct the public Rust HTTP request record with bounded time, response bytes and redirects.";
+  {method: "POST", url: url, headers: {count: 1, item_0: {name: "Content-Type", value: "application/json"}}, body: pack(tokenize_bytes(body), "u8"), timeout_ms: 120000, max_response_bytes: 1048576, max_redirects: 0}
+}
+
+def u:backend_body_text(box) {
+  "Decode boxed packed bytes or the numeric-byte array returned by this host's native ABI adapter; boxing also avoids unsupported bare-byte function arguments.";
+  if str_eq(type_of(box.body), "bytes") {
+    decode_bytes(unpack(box.body, "u8"))
+  } else {
+    decode_bytes(box.body)
+  }
+}
+
+def u:backend_decode(reply) {
+  "Validate the transport and completed response, preserving truncation as a visible failed attempt rather than a successful answer.";
+  if str_eq(type_of(reply), "result") {
+    err("native HTTP transport failed")
+  } else {
+    if reply.status - 200 {
+      err("native backend returned a non-200 HTTP status")
+    } else {
+      payload = parse_json(u:backend_body_text(reply))?;
+      if str_eq(type_of(payload), "record") {
+        required = has_field(payload, "message") * has_field(payload, "done") * has_field(payload, "done_reason") * has_field(payload, "eval_count") * has_field(payload, "eval_duration") * has_field(payload, "total_duration");
+        if required {
+          if str_eq(type_of(payload.message), "record") {
+            if has_field(payload.message, "content") {
+              content = payload.message.content;
+              if str_eq(type_of(content), "string") {
+                complete = eq(payload.done, 1) * str_eq(payload.done_reason, "stop") * gt(str_len(u:text_trim(content)), 0);
+                ok({content: content, thinking: if has_field(payload.message, "thinking") {
+                      payload.message.thinking
+                    } else {
+                      ""
+                    }, complete: complete, done_reason: payload.done_reason, eval_count: payload.eval_count, total_seconds: payload.total_duration / 1000000000, tokens_per_second: if gt(payload.eval_duration, 0) {
+                      payload.eval_count * 1000000000 / payload.eval_duration
+                    } else {
+                      0
+                    }})
+              } else {
+                err("backend content is not a string")
+              }
+            } else {
+              err("backend message has no content")
+            }
+          } else {
+            err("backend message is not a record")
+          }
+        } else {
+          err("backend response is missing completion or timing fields")
+        }
+      } else {
+        err("backend response is not a record")
+      }
+    }
+  }
+}
+
+def u:backend_grade(decoded, reference) {
+  "Grade only a complete final answer using boxed-only extraction; visible thinking is never accepted as the final answer.";
+  decoded.complete * u:verify_grade_response(decoded.content, reference, "boxed_only")
+}
+#+end_src
+
+** Live driver: preserve every attempt and keep references private
+
+The driver sends only the problem, never its reference answer. It saves
+raw request/response pairs and grades each completed final answer in MLPL.
+The full comparison attempts all five authored cases in both modes, counting
+errors and truncations instead of dropping them. This driver is opt-in and
+never executes as part of the fixture gate or HTML export.
+
+#+begin_src mlpl :tangle ../demos/native_reasoning.mlpl
+# Live pretrained reasoning demo through the generic Rust HTTP extension and local Ollama; MLPL owns prompts and final-answer verification. Run via scripts/run-native-reasoning, never in the fixture gate.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/backend/ollama.mlpl";
+
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+mode = env("DEMO_MODE")?
+out_dir = env("DEMO_OUT")?
+dataset = u:eval_load_jsonl_text(read_text("fixtures/reasoning-demo.jsonl")?, "authored-demo-v1", {})?
+case_index = parse_json(env("DEMO_CASE")?)?
+thinking = parse_json(env("DEMO_THINK")?)?
+count = if str_eq(mode, "eval") {
+  dataset.count
+} else {
+  1
+}
+start_case = if str_eq(mode, "eval") {
+  0
+} else {
+  case_index
+}
+passes = if str_eq(mode, "eval") {
+  2
+} else {
+  1
+}
+pass = 0
+while lt(pass, passes) {
+  think = if str_eq(mode, "eval") {
+    pass
+  } else {
+    thinking
+  };
+  correct = 0;
+  incomplete = 0;
+  errors = 0;
+  i = 0;
+  started = clock_ms();
+  while lt(i, count) {
+    item = u:eval_record(dataset, start_case + i)?;
+    prompt_text = u:eval_render_prompt(item.problem);
+    body = u:backend_chat_body("qwen3:8b-q6", prompt_text, think, 42, 1536)?;
+    stem = str_concat(out_dir, str_concat("/", str_concat(item.unique_id, str_concat("-think", to_string(think)))));
+    write_atomic(str_concat(stem, "-request.json"), body)?;
+    print("\nProblem:", item.problem);
+    print("Thinking mode:", think, "seed: 42; max_new: 1536; waiting for native GPU response...");
+    reply = u:http_request(u:backend_http_request("http://127.0.0.1:11434/api/chat", body));
+    if str_eq(type_of(reply), "record") {
+      write_atomic(str_concat(stem, "-response.json"), u:backend_body_text(reply))?
+    };
+    decoded = u:backend_decode(reply);
+    if is_err(decoded) {
+      errors = errors + 1;
+      print("ERROR:", err_message(decoded));
+      write_atomic(str_concat(stem, "-grade.json"), to_json({id: item.unique_id, correct: 0, error: err_message(decoded)})?)?
+    } else {
+      answer = unwrap(decoded);
+      grade = u:backend_grade(answer, item.answer);
+      correct = correct + grade;
+      incomplete = incomplete + 1 - answer.complete;
+      print("Answer:\n", answer.content);
+      print("Verified final:", u:verify_final_candidate(answer.content, "boxed_only"), "reference:", item.answer, "correct:", grade);
+      print("Complete:", answer.complete, "stop reason:", answer.done_reason, "seconds:", answer.total_seconds, "tokens/sec:", answer.tokens_per_second, "generated tokens:", answer.eval_count);
+      print("Thinking text saved separately; characters:", str_len(answer.thinking));
+      write_atomic(str_concat(stem, "-grade.json"), to_json({id: item.unique_id, correct: grade, reference: item.answer, complete: answer.complete, done_reason: answer.done_reason, total_seconds: answer.total_seconds, eval_count: answer.eval_count, tokens_per_second: answer.tokens_per_second})?)?
+    };
+    i = i + 1
+  };
+  summary = {dataset: "authored-demo-v1", template: "boxed-v1", think: think, seed: 42, attempted: count, correct: correct, incomplete: incomplete, errors: errors, elapsed_ms: clock_ms() - started};
+  print("\nSUMMARY:", to_json(summary)?);
+  write_atomic(str_concat(out_dir, str_concat("/summary-think", str_concat(to_string(think), ".json"))), to_json(summary)?)?;
+  pass = pass + 1
+}
+print("These authored demonstration cases are not a held-out reasoning benchmark. This pretrained model has not been trained by this project.")
+ok(1)
+#+end_src
