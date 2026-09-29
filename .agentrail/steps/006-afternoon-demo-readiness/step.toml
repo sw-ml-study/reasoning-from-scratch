@@ -1,9 +1,10 @@
 number = 6
 slug = "afternoon-demo-readiness"
-status = "in-progress"
+status = "completed"
 description = "Prioritize the user deadline of a working reasoning demo on September 29 afte..."
 role = "production"
 context_files = []
 created_at = "2026-09-29T08:26:40"
+completed_at = "2026-09-29T11:44:03"
 task_type = "validation"
-commits = []
+commits = ["cdc0f51ef2b71cc55da2566fe003fdcbc75ff503"]
