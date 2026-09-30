@@ -29,8 +29,11 @@ extension sibling awaits authorization. Numerical comparison to independent
 MLPL F64 now passes on the tested real prompt; PyTorch RNG/precision identity
 and the full 500-case outcome remain unproved.
 
-The completion gate has 185 native tests, 47 exact literate tangles and eight
-offline report replays. The dated sections below preserve earlier evidence;
+The completion gate has 185 native tests, 47 exact literate tangles and five
+offline publication blocks. The report explains the book methods, the actual
+MLPL/Rust boundary, measured results and planned work; its executable blocks
+cover production sampling/voting, numeric result replay and learning examples.
+The dated sections below preserve earlier evidence;
 Ollama is historical and is not part of the current experiment.
 
 ## Native demo and published research, 2026-09-29

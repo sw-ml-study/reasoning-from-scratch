@@ -213,9 +213,16 @@ answer-format loss and sampling regression. All primary scores are retained.
 The public numeric records, MLPL analysis, source/prompt hashes and readable
 Org/HTML report are the handoff; private raw evidence remains ignored.
 
-The gate now covers 185 native tests, 47 exact tangles and eight offline
-replays. Step 015, `book-scale-readiness`, profiles the measured native and
-sampling costs, closes targeted grading gaps and freezes a resumable full
-500-case protocol before paying that inference cost. Core resident-copy work
-is deferred as step 016. Provider publication still awaits sibling-write
-authorization; native language-model training needs separate acceptance.
+Step 015, `book-methods-literate-publication`, delivers the requested article
+organized around the book methods, MLPL/Rust implementation and measured
+results. Its five offline blocks demonstrate production sampling,
+extraction/voting/verification, numeric result replay, group advantages and
+an analytic-checked gradient update. The publication excludes development
+history and preserves all underlying experimental evidence. The gate covers
+185 native tests, 47 exact tangles and these five reproducible blocks.
+
+Step 016, `book-scale-readiness`, profiles native and sampling costs, closes
+targeted grading gaps and freezes a resumable full 500-case protocol before
+paying that inference cost. Core resident-copy work is deferred as step 017.
+Provider publication still awaits sibling-write authorization; native
+language-model training needs separate acceptance.

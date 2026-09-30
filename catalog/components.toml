@@ -287,7 +287,8 @@ status = "accepted"
 
 [[component]]
 id = "RESEARCH"
-# Report separates implementation, pretrained inference, and measured reasoning benefit.
+# Book-method article: five executable sampling, voting, analysis and learning examples;
+# separates measured inference gains from planned native language-model training.
 slug = "reproducible-results-report"
 chapter = 3
 source = "docs/reasoning-results.org"

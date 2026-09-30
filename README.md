@@ -60,10 +60,12 @@ a full 500-case result.
 
 Read the [publishable HTML report](docs/reasoning-results.html) or its
 [Org/ob-mlpl source](docs/reasoning-results.org) for methods, paired results,
-actual runtimes, failure analysis, comparisons with the book and the next
-steps. `just research-refresh` replays eight offline MLPL calculations;
-`just research-html` exports without inference. Earlier external 8B results
-remain in the appendix, separate from the book reproduction.
+actual runtimes, analysis of generated reasoning, comparisons with the book
+and planned work. The article explains the working implementation without
+a development-history narrative. `just research-refresh` executes five
+offline MLPL blocks: sampling, extraction/voting/verification, measured-result
+analysis, relative rewards and an analytic-checked gradient update.
+`just research-html` exports without inference.
 
 Independent real-checkpoint numerical checks now compare a layer-streamed
 MLPL F64 reference against native CUDA: F32 maximum logit difference

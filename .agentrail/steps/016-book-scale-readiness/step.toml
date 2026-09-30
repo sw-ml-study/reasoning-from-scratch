@@ -1,6 +1,6 @@
-number = 15
+number = 16
 slug = "book-scale-readiness"
-status = "pending"
+status = "in-progress"
 description = "Continue the user's book recreation in MLPL plus Rust/CUDA, using the complet..."
 role = "production"
 context_files = []

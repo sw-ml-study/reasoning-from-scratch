@@ -8,11 +8,15 @@
 
 * How to read and run this document
 
-This is the implementation guide. The separate [[file:using-reasoning-model.org][usage guide]] explains
-setup, commands and interpreting results. Each library block below has prose
-explaining its purpose and method, and tangles back to the checked source.
-The bounded real-checkpoint attempt appears at the end. Generated real-model
-examples and learning sections require measured viability, not fixture-only claims.
+This is the annotated source companion to the [[file:reasoning-results.org][research report]]:
+an independent implementation of the methods in Sebastian Raschka's
+[[https://www.manning.com/books/build-a-reasoning-model-from-scratch][Build a Reasoning Model (From Scratch)]]. MLPL owns the experiment semantics;
+a Rust/Candle CUDA provider runs the resident Qwen3 base model. The report
+presents the methods, numerical acceptance checks and measured direct,
+chain-of-thought and voting results. The separate [[file:using-reasoning-model.org][usage guide]] covers
+commands. Each library block here explains its purpose and method, and
+tangles back to checked source. Native language-model training remains
+planned work; inference uses fixed pretrained weights.
 
 The narrative begins with deciding whether an answer is right, then develops
 the tokenizer, model, loader and inference-time methods in sw-MLPL, with prose
@@ -44,11 +48,13 @@ and prefers an explicit =MLPL= override, then the tested isolated CPU build:
        (repo (or (locate-dominating-file here "AGENTS.md") (expand-file-name ".." here)))
        (sw-mlpl (expand-file-name "../sw-mlpl" repo))
        (candidates (list (getenv "MLPL")
-                         "/disk1/tmp/reasoning-tools/build-cd3cd03f/release/mlpl-repl"
+                         "/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl"
                          (executable-find "mlpl-repl")
                          (expand-file-name "components/cli/target/release/mlpl-repl" sw-mlpl)
                          (expand-file-name "~/.local/softwarewrighter/bin/mlpl-repl"))))
-  (add-to-list 'load-path (expand-file-name "elisp" sw-mlpl))
+  (add-to-list 'load-path
+               (or (getenv "MLPL_ELISP")
+                   "/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp"))
   (require 'ob-mlpl)
   (make-directory (expand-file-name "out" repo) t)
   (setq temporary-file-directory (expand-file-name "out/" repo))
@@ -5545,8 +5551,8 @@ before it returns, a harness that measures any responder with provenance
 attached, the import that turns a six-megabyte tokenizer document into
 tables a byte-level encoder can use, the encoder itself, the decoding and
 prompt conventions that surround it, the decoder forward pass those ids
-will run through, cached generation over it, the checkpoint validation
-that will eventually feed it real weights, and seeded temperature/nucleus
+run through, cached generation over it, checkpoint validation and loading
+of real weights, and seeded temperature/nucleus
 sampling with categorical selection and cached decoding. Versioned reasoning
 prompts and seeded self-consistency add answer voting, explicit abstentions,
 and a stopping bound that preserves the winner and tie outcome.
@@ -5559,16 +5565,16 @@ grades all 500 answers of the real evaluation set against themselves and a
 constant wrong answer, and reports 500 of 500 correct with no false
 positives.
 
-What is deliberately absent is as important. There is no symbolic
-simplification, so =2x + 3x= and =5x= do not match. There is no regular
-expression anywhere. Tiny synthetic weights generate tokens and prove the
-forward, cache, and sampler contracts, but no real checkpoint data is loaded.
-Bulk bf16 unpack now passes consumer acceptance on =cd3cd03f=; the
-named-tensor loader now passes tiny-file and cached-forward tests. No tiny-model result is evidence of real-model
-accuracy. Stable likelihood and entropy scoring now support
-candidate ranking over fixtures and the tiny model. Bounded self-refinement
-and best-of-N now have callback goldens and a scripted demo. Real-model
-scaling measurements remain unavailable pending end-to-end viability.
+The author experiment grader includes bounded linear-symbolic equivalence,
+including =2x + 3x= and =5x=; general symbolic simplification remains outside
+its coverage. Tiny synthetic weights check forward, cache and sampling
+contracts. The independent real-checkpoint MLPL reference and native CUDA
+provider have numerical acceptance measurements. The native provider and
+MLPL experiment runner produce the report's 3/10 direct, 4/10 CoT and 6/10
+voting results. Stable likelihood/entropy scoring, bounded self-refinement
+and best-of-N also have fixture tests; real-model measurements of those
+additional methods remain planned work. The report distinguishes each
+measured result from a fixture or mathematical contract.
 
 * Bounded real-checkpoint viability
 

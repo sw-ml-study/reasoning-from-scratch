@@ -1,5 +1,5 @@
-#+title: Recreating Build a Reasoning Model with MLPL, Rust and CUDA
-#+subtitle: The book's base model, independently implemented experiment tools, and measured reasoning quality
+#+title: Building a Reasoning Model with MLPL, Rust and CUDA
+#+subtitle: Recreating the book's methods: implementation, reproducible experiments, and measured reasoning gains
 #+author: Michael A Wright
 #+date: 2026-09-30
 #+language: en
@@ -8,164 +8,262 @@
 #+property: header-args:sh :dir .. :results output verbatim :exports code :eval never-export :tangle no
 #+property: header-args:emacs-lisp :exports code :eval never-export :tangle no
 
-* What this project recreates
+* Building the book's reasoning system
 
-This project follows Sebastian Raschka's
-[[https://www.manning.com/books/build-a-reasoning-model-from-scratch][Build a Reasoning Model (From Scratch), Manning]]: start with a pretrained
-base language model, measure its answers, add inference-time reasoning
-methods, then develop learning from verifiable rewards and distillation.
-We implement the experiment tools in MLPL and use a Rust/CUDA dynamic
-library for practical model execution. Python is not part of this workflow.
+Sebastian Raschka's [[https://www.manning.com/books/build-a-reasoning-model-from-scratch][Build a Reasoning Model (From Scratch)]] develops reasoning
+methods around a pretrained language model. This project implements that
+approach in *MLPL*, using *Rust and CUDA* for native model execution. The
+experiment tools—prompting, generation control, answer verification,
+self-consistency and analysis—are MLPL programs. No Python runs in this
+implementation.
 
-The current demonstration uses *Qwen3-0.6B-Base*, the book's starting model,
-on a 16 GiB RTX 5060 Ti. MLPL prepares the author's first ten MATH-500
-records, renders the prompts, selects tokens, extracts answers, votes,
-grades and computes the report. The Rust provider keeps weights and the
-attention cache on the GPU. No service or HTTP backend is involved.
+Our working demonstration uses *Qwen3-0.6B-Base*, the book's starting model,
+on a 16 GiB RTX 5060 Ti. On the author's first ten MATH-500 problems, direct
+prompting solves *3/10*, greedy chain-of-thought solves *4/10*, and voting
+across three sampled reasoning responses solves *6/10*. All fifty model
+calls finish, with zero backend errors, in *38 minutes 22 seconds*.
 
-*Measured result: 3/10 correct with direct prompting, 4/10 with greedy
-chain-of-thought, and 6/10 with three-sample self-consistency.* All fifty
-calls finished, with no backend errors. This demonstrates a benefit from
-reasoning plus voting on this fixed ten-problem sample. It does not yet
-establish the full book's 500-case results or a trained reasoning policy.
+The demonstration establishes an inference-time reasoning benefit on this
+fixed sample. Two questions become correct through valid intermediate
+calculations in the greedy reasoning condition. Voting improves the net
+result further, although some individual questions regress. The full
+500-problem benchmark remains planned work.
 
+“From scratch” describes the implementation of the reasoning system and
+its methods. As in the book, we start with pretrained base weights; we do
+not pretrain a language model. In this experiment the 596,049,920 parameters
+remain fixed. MLPL training objectives and toy updates are implemented;
+training this native language model is a separate, unfinished stage.
 
-“From scratch” here means implementing the reasoning methods and their
-supporting tools. The 596,049,920 model parameters were pretrained by the
-checkpoint producer. *This project has not yet trained this language model.*
-The inference comparison measures the effect of changing how we use the
-same fixed weights.
+This document is executable research. Five named =ob-mlpl= blocks run the
+production sampling and verification libraries, recompute the measured
+results, and illustrate reward normalization and a checked gradient update.
+Their outputs are recorded below and checked before publication.
 
-* From the book's Python tools to our MLPL tools
+* The book's approach and our implementation
 
-| Book responsibility | Our implementation | Evidence and scope |
-|---------------------+--------------------+--------------------|
-| Load and tokenize a Qwen3 base checkpoint | MLPL contracts, native safetensors/CUDA provider and tokenizer extension | Model/config/tokenizer hashes; tokenizer fixtures and real goldens |
-| Forward pass and KV cache | Independent MLPL reference; Rust Candle CUDA offload | Tiny exact checks plus real-checkpoint F32/BF16 logit comparison |
-| Dataset preparation and prompt construction | =demos/prepare_book_author.mlpl=, =lib/eval/json_array.mlpl= | Original order; first ten records; prompt bytes hashed before inference |
-| Greedy and nucleus generation | =lib/cuda/cuda.mlpl= and =lib/scaling/scaling.mlpl= | Explicit seeds, temperature, top-p, stopping and token cap |
-| Answer extraction and majority selection | =lib/eval/author.mlpl= | Box/number/text fallback; raw-string voting; first-appearance ties |
-| Mathematical equivalence | MLPL numeric, tuple, literal and exact linear-symbolic verifier | Unit-tested subset; general SymPy equivalence remains a gap |
-| Experiment accounting and analysis | =demos/book_author.mlpl= and =lib/eval/book_report.mlpl= | Every attempt retained; paired correctness, latency, tokens and truncation |
-| GRPO and distillation | Existing MLPL objectives and toy tests | Real CUDA language-model backward/optimizer/checkpoint path remains to be delivered |
+The book progresses from generation and evaluation to inference-time
+scaling, reinforcement learning with verifiable rewards, and distillation.
+Our implementation follows those stages with the following division of work.
 
-The short prompt strings are attributed experimental data. All code in this
-repository is independently written from method descriptions and contracts;
-we do not translate or copy the companion implementation. See
-[[file:licensing.md][provenance policy]]. Shell scripts launch processes, check hashes and sample
-memory. They do not decide which answer wins or whether it is correct.
+| Book stage | Method | Our implementation and evidence |
+|------------+--------+---------------------------------|
+| Chapter 2 and architecture appendix | Tokenize, run Qwen3, cache attention keys/values, generate tokens | Independent MLPL transformer/reference; native Rust tokenizer and Candle CUDA forward; numerical acceptance checks |
+| Chapter 3 | Extract and grade answers; evaluate MATH-500 | MLPL text scanning, normalization, bounded equivalence and experiment accounting; measured ten-case baseline |
+| Chapter 4 | Chain-of-thought, temperature/top-p sampling, self-consistency | MLPL prompt and sampler contracts, raw-answer voting; measured direct/CoT/voting comparison |
+| Chapter 5 | Score and refine candidate responses | MLPL scoring/refinement modules with fixture tests; real-checkpoint evaluation planned |
+| Chapters 6–7 | Reward correct answers, compute group advantages, optimize a policy | MLPL reward/objective contracts and toy tests; native language-model backward/update path planned |
+| Chapter 8 | Learn from checked teacher responses with answer-only loss | MLPL distillation contracts; native student training and held-out evaluation planned |
 
-** Why this model is large enough for the experiment
+The book uses Python and tensor/symbolic libraries. We independently
+implement the experiment semantics in MLPL. A native dynamic library uses
+Rust Candle 0.11.0 and cudarc 0.19.10 to load the checkpoint and execute
+transformer operations on CUDA. A tokenizer extension supplies practical
+encoding and decoding. The independent MLPL reference and authored fixtures
+check the native execution path.
 
-The author's [[https://github.com/rasbt/reasoning-from-scratch/tree/main/ch04/02_math500-inference-scaling-scripts][chapter 4 companion results]] report the following on all 500
-MATH-500 questions, with a CUDA DGX Spark system:
+The runtime boundary is deliberately small: MLPL sends token IDs to the
+resident model and receives last-position logits. The provider owns model
+weights and the attention cache; MLPL chooses each next token, stops at EOS
+or a budget, extracts the answer, and computes the score. The full programs
+and annotated library blocks are in the [[file:reasoning.org][implementation document]].
 
-| Published method, same 0.6B base | Correct | Time |
-|--------------------------------+---------+------|
-| Greedy baseline | 15.2% | 10.1 min |
-| Chain-of-thought prompting | 40.6% | 84.5 min |
-| CoT with three sampled candidates | 42.2% | 211.6 min |
-| CoT with ten sampled candidates | 52.0% | 862.6 min |
+| Responsibility | MLPL source |
+|----------------+-------------|
+| Checkpoint validation and transformer reference | =lib/safetensors/=, =lib/qwen3/= |
+| Tokenizer reference and extension parity | =lib/tokenizer/= |
+| Resident model generation loop | =lib/cuda/cuda.mlpl= |
+| Temperature, nucleus filtering and categorical selection | =lib/scaling/scaling.mlpl= |
+| Author-ordered data preparation | =demos/prepare_book_author.mlpl=, =lib/eval/json_array.mlpl= |
+| Book experiment prompts, extraction, voting and grading | =lib/eval/author.mlpl= |
+| Attempt recording and method comparison | =demos/book_author.mlpl=, =lib/eval/book_report.mlpl= |
+| Rewards, policy objectives and distillation | =lib/rl/=, =lib/distill/= |
 
-Those results establish that this model size can benefit from these
-inference-time methods. They do not guarantee improvement on every small
-slice or every prompt. Our first-ten demonstration is too small to match
-the full benchmark claim. A different GPU, arithmetic and generated-token
-count also prevent a direct runtime comparison. Python/PyTorch already
-executes native CUDA kernels; replacing Python alone does not imply a
-hundredfold acceleration.
+Code is independently written from method descriptions and contracts.
+Short experimental prompt strings are attributed input data. Downloaded
+weights and questions remain local and are not redistributed. See the
+[[file:licensing.md][provenance policy]].
 
-* Step 1: validate model execution before measuring reasoning
+* Step 1: establish correct model execution
 
-The local checkpoint has 310 BF16 tensors, about 1.19 GB of weights. We
-validate names, shapes, tied embeddings, the tokenizer and EOS token
-151643. The native model is opened with a fixed context of 4096 tokens;
-its cache is reset for every independent answer.
+The Qwen3 checkpoint contains 310 BF16 tensors, about 1.19 GB of weights.
+Its architecture has 28 transformer layers, hidden width 1024, 16 query
+heads, eight key/value heads and a vocabulary of 151,936 tokens. The MLPL
+reference implements RMS normalization, rotary position encoding,
+grouped-query attention, SwiGLU and the tied output projection.
 
-An independent MLPL F64 forward calculation streams one layer at a time,
-avoiding the reference interpreter's whole-model copying cost. For the
-five-token prompt “The capital of France is”, it supplies a complete
-151,936-entry logit vector. We compare the CUDA provider against that
-reference, rather than treating fluent text as proof of correct execution.
+Generation first encodes the complete prompt. A forward call prefills the
+cache and returns scores for the next token. MLPL selects a token, appends
+it, and sends only that new token to the next forward call. Reusing cached
+keys and values avoids recomputing every earlier position. Each independent
+answer begins with an empty cache. The experiment uses context length 4096,
+up to 2048 generated tokens and EOS token 151643.
 
-| Numerical check | Maximum absolute difference | Result |
-|-----------------+-----------------------------+--------|
-| Authored tiny CUDA F32 vs MLPL reference | 0.00000193084 | Passed |
-| Real checkpoint CUDA F32 vs MLPL F64 | 0.00000711613 | Passed |
-| Real checkpoint CUDA BF16 vs MLPL F64 | 0.367154 | Within predeclared 0.5 tolerance |
-| Real BF16 cached vs full prompt | 0.3125 | Within predeclared 0.5 tolerance |
+We compare native outputs to an independent MLPL F64 forward calculation.
+For the five-token input “The capital of France is”, the comparison covers
+all 151,936 final logits. Layer-by-layer reference execution bounds working
+memory while preserving the forward calculation.
 
-All real-checkpoint paths select token 12095, “Paris”. The F32 result
-strongly checks the tested forward pass. The BF16 discrepancy makes it
-inappropriate to claim bit-identical sampling to PyTorch. One prompt is a
-numerical acceptance test, not proof that all prompts behave identically.
-The [[file:results/cuda-real-precision-v2.txt][numerical log]] records the full acceptance measurements.
+| Numerical check | Maximum absolute difference | Acceptance |
+|-----------------+-----------------------------+------------|
+| Authored tiny CUDA F32 vs MLPL reference | 0.00000193084 | Below 0.00001 |
+| Real checkpoint CUDA F32 vs MLPL F64 | 0.00000711613 | Below 0.005 |
+| Real checkpoint CUDA BF16 vs MLPL F64 | 0.367154 | Below 0.5 |
+| Real BF16 cached vs full-prompt calculation | 0.3125 | Below 0.5 |
 
-The earlier 32 GiB cap constrained *CPU virtual address space* in the pure
-MLPL reference. It was unrelated to the GPU's 16 GiB VRAM. Native CUDA
-execution removes that reference-path memory bottleneck for this inference
-experiment. Training will require its own memory measurement.
+All real-checkpoint paths choose token 12095, “Paris”. The F32 comparison
+provides close numerical agreement on the tested input. BF16 satisfies its
+declared tolerance but is not bit-identical to the reference. These checks
+validate this input and the tested cache behavior; they do not establish
+identical long generations across frameworks. The [[file:results/cuda-real-precision-v2.txt][numerical measurements]]
+and [[file:cuda-prototype.md][provider instructions]] give the reproducible details.
 
-* Step 2: freeze the book-aligned comparison
+* Step 2: turn next-token scores into reasoning responses
 
-The [[file:book-author-protocol.md][protocol]] and [[file:results/book-author-v2-execution.json][execution manifest]] were committed before generation.
-The dataset is the author's JSON artifact, in its original order; there is
-no outcome-dependent selection or removal. We use the companion script's
-ten-case demonstration size and three sampled candidates. This is not a
-fresh held-out claim.
+A direct prompt asks for an answer. The chain-of-thought condition appends
+the author's step-by-step instruction. Both greedy conditions choose the
+highest-scoring next token. The same base weights can therefore produce
+different responses because the additional instruction changes the context
+on which each subsequent token is conditioned.
 
-| Control | Value |
-|---------+-------|
-| Model | Qwen3-0.6B-Base, BF16 weights/activations, fixed throughout |
-| Direct | Author's base completion prompt, greedy |
-| CoT | Same prompt plus the author's step-by-step instruction, greedy |
-| Self-consistency | CoT, temperature 0.9, top-p 0.9, three independent responses |
-| Seeds | Samples 43, 44, 45; greedy seed 42 is recorded but unused |
-| Token allowance | 2048 new tokens for each call; context 4096 |
-| Method schedule | Rotate the three method groups by case index; reset KV per call |
-| Total | 10 direct + 10 CoT + 30 sampled responses = 50 calls |
-| Selection | Exact extracted strings; tied plurality chooses first appearance |
-| Scoring | Grade the selected answer, including output that reaches the cap |
+Self-consistency adds diversity: generate three independent responses to
+the reasoning prompt, extract their final answers, and choose the most
+frequent answer. Temperature controls the sharpness of the next-token
+distribution; top-p filtering retains the most probable tokens until their
+cumulative probability reaches the threshold, including the crossing token.
+Sampling then draws from the renormalized retained distribution.
 
-“Direct” names the base-prompt condition. The model can still emit
-intermediate calculations in that condition. CoT adds an explicit request
-for steps; sampling then explores different continuations from the same
-fixed model. Voting helps when a correct answer recurs more consistently
-than competing answers, and can fail when all candidates are wrong or
-when equivalent answers split across different raw strings.
+** Execute the sampler in MLPL
 
-Extraction first looks for the final complete boxed answer, then the final
-recognized number, then the whole response. A cap can interrupt a useful
-solution, but it does not automatically make an answer wrong. Conversely,
-correct final arithmetic does not establish that every intermediate step
-is valid. We report both answer accuracy and failures of completion.
+This three-token example calls the same sampling primitives used by the
+model runner. Logits =log([1,2,4])= at temperature 1 give probabilities
+=[1,2,4]/7=. At top-p 0.8, tokens 2 and 1 cross the threshold, leaving
+probabilities =[0,1/3,2/3]= in token-ID order. Supplied uniforms 0 and 0.9
+therefore select IDs 1 and 2. These are authored mathematical goldens,
+independent of any model-generated answer.
 
-The author revision is =1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f=.
-We follow its [[https://github.com/rasbt/reasoning-from-scratch/blob/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/reasoning_from_scratch/ch03.py][chapter 3 evaluator]] and
-[[https://github.com/rasbt/reasoning-from-scratch/blob/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/ch04/02_math500-inference-scaling-scripts/self_consistency_math500.py][chapter 4 evaluation script]]. The seed numbers match, but MLPL's pinned
-xorshift stream is not PyTorch's random stream. Numeric/tuple/literal and
-linear-symbolic grading covers the tested contracts; a full replacement
-for general symbolic simplification is still needed.
+#+name: sampling-method
+#+begin_src mlpl
+# Production sampling primitives on an analytically known vocabulary.
+include "../lib/scaling/scaling.mlpl";
+probabilities = u:scaling_temperature(log([1, 2, 4]), 1)?
+nucleus = u:scaling_nucleus(probabilities, 0.8)?
+first = u:scaling_pick(nucleus, 0)?
+last = u:scaling_pick(nucleus, 0.9)?
+print("probabilities:", probabilities)
+print("nucleus:", nucleus)
+print("selected ids:", first, last)
+if reduce(:and, lt(abs(probabilities - [1, 2, 4] / 7), 1e-12)) * reduce(:and, lt(abs(nucleus - [0, 1, 2] / 3), 1e-12)) * eq(first, 1) * eq(last, 2) {
+  ok("sampling matches analytic probabilities and selected ids")
+} else {
+  err("sampling differs from analytic result")
+}
+#+end_src
 
-** Reproduction inventory
+#+RESULTS: sampling-method
+: probabilities: 0.14285714285714285 0.2857142857142857 0.5714285714285714
+: nucleus: 0 0.3333333333333333 0.6666666666666666
+: selected ids: 1 2
+: Ok(sampling matches analytic probabilities and selected ids)
 
-| Artifact or environment | Identity |
-|-------------------------+----------|
-| sw-MLPL source build | =49c15b3e659ecc32603e10312a5197039b636397= |
-| Interpreter binary SHA-256 | =d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0= |
-| Base weights SHA-256 | =cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba= |
-| Author dataset SHA-256 | =a9eccff7e25ecaf3952614e5b92fe081b4f0549c68ae6a387b96e131df9ddf41= |
-| Native provider SHA-256 | =da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd= |
-| Native implementation | Candle 0.11.0; cudarc 0.19.10; provider 0.2.0 |
-| Hardware and CUDA | RTX 5060 Ti, 16 GiB; driver 615.71.09; toolkit 13.4.59; sm_120 |
-| Prompt/template identity | =fixtures/prompts/book-author.json=; twenty rendered prompts hashed before generation |
-| Frozen execution commit | =5647c40= |
+The real experiment uses temperature 0.9, top-p 0.9, and seeds 43, 44 and 45
+for its three responses per question. MLPL supplies an explicit uniform
+stream for each response. The seed numbers match the companion experiment;
+MLPL's xorshift stream differs from PyTorch's random stream, so matching
+seeds do not imply matching sampled tokens. Exact boundary and tie behavior
+is specified in the [[file:sampling.md][sampling contract]].
 
-The [[file:results/book-author-v2-execution.sha256][source pins]] and
-[[file:results/book-author-v2-prompt-hashes.sha256][rendered prompt pins]] make these inputs explicit. The
-[[file:results/book-cuda-v1-execution.json][backend manifest]] records tokenizer, RNG and build details.
+* Step 3: select an answer, then verify it
 
-* Step 3: compare answers and their computational cost
+For each response, MLPL extracts the last complete boxed answer. If there
+is no box, it uses the final recognized number, then the whole text as a
+fallback. This follows the companion evaluation script's contract. Output
+that reaches the token budget still receives a grade.
+
+Voting counts *raw extracted strings*. Ties select the first answer to
+appear. Only after choosing the winner do we normalize and grade it against
+the reference. The known correct answer never influences candidate
+selection. Thus =0.5= and =1/2= are distinct votes even though they denote
+the same number when graded.
+
+** Execute extraction, voting and equivalence
+
+The following synthetic responses contain two votes for =1/2= and one for
+=0.5=. MLPL chooses =1/2= before comparing it with the reference =0.5=.
+A second check demonstrates exact linear-symbolic equivalence. Both use
+production code with authored inputs, without running a language model.
+
+#+name: verification-method
+#+begin_src mlpl
+# Production extraction and voting on independently authored responses.
+include "../lib/text/text.mlpl";
+include "../lib/verify/number.mlpl";
+include "../lib/verify/expr.mlpl";
+include "../lib/verify/extract.mlpl";
+include "../lib/verify/normalize.mlpl";
+include "../lib/verify/grade.mlpl";
+include "../lib/verify/linear.mlpl";
+include "../lib/scaling/consistency.mlpl";
+include "../lib/eval/author.mlpl";
+state = {keys: "", counts: []}
+state = u:eval_author_vote_add(state, u:eval_author_candidate("Division gives \\boxed{1/2}."))?
+state = u:eval_author_vote_add(state, u:eval_author_candidate("The answer is 0.5."))?
+state = u:eval_author_vote_add(state, u:eval_author_candidate("One of two equal parts: \\boxed{1/2}."))?
+result = u:eval_author_vote(state, "0.5")?
+linear = u:eval_author_grade("-(q-p)", "p-q")
+print("selected:", result.candidate, "votes:", result.votes, "samples:", result.samples)
+print("equivalent to reference:", result.correct)
+print("linear equivalence:", linear)
+if str_eq(result.candidate, "1/2") * eq(result.votes, 2) * eq(result.samples, 3) * result.correct * linear {
+  ok("selection and verification match authored expectations")
+} else {
+  err("selection or verification differs from expected result")
+}
+#+end_src
+
+#+RESULTS: verification-method
+: selected: 1/2 votes: 2 samples: 3
+: equivalent to reference: 1
+: linear equivalence: 1
+: Ok(selection and verification match authored expectations)
+
+Our verifier supports numeric expressions, ordered tuples, literal answers
+and bounded exact rational linear-symbolic identities. This is a tested
+subset of the book's general symbolic-library behavior. An unsupported
+identity needs separate grading analysis; it is not evidence that the
+model's mathematics is wrong. See the [[file:verifier-contract.md][verifier contract]].
+
+* Step 4: run a controlled comparison
+
+The [[file:book-author-protocol.md][experiment protocol]] fixes the author's first ten MATH-500 records in their
+original order. The [[file:results/book-author-v2-execution.json][execution manifest]] and prompt hashes identify the inputs
+before generation. All three methods see the same problems and weights.
+
+| Control | Setting |
+|---------+---------|
+| Model | Qwen3-0.6B-Base; BF16; fixed weights |
+| Direct | Author's base completion prompt; greedy |
+| CoT | Base prompt plus step-by-step instruction; greedy |
+| Self-consistency | CoT; temperature 0.9; top-p 0.9; three samples |
+| Seeds | 43, 44, 45 for samples; greedy seed 42 recorded but unused |
+| Budget | 2048 new tokens/call; 4096-token context |
+| Scheduling | Rotate method groups by case index; reset cache each call |
+| Accounting | 10 direct + 10 CoT + 30 sampled calls; retain every outcome |
+| Selection | Raw-answer plurality; first appearance breaks ties |
+| Scoring | Grade each method's selected answer, including capped responses |
+
+“Direct” names a prompt condition; a base model can still emit calculations
+without the explicit reasoning instruction. The comparison measures the
+effect of asking for steps and of sampling/voting, rather than assuming
+that the baseline is incapable of intermediate work.
+
+We follow author revision =1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f=,
+including its [[https://github.com/rasbt/reasoning-from-scratch/blob/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/reasoning_from_scratch/ch03.py][chapter 3 evaluator]] and
+[[https://github.com/rasbt/reasoning-from-scratch/blob/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/ch04/02_math500-inference-scaling-scripts/self_consistency_math500.py][chapter 4 evaluation script]]. Our comparison reproduces the method controls;
+framework RNG, floating-point arithmetic and general symbolic equivalence
+are explicitly scoped differences.
+
+* Results: reasoning helps on the measured sample
 
 | Method | Correct | Accuracy | Descriptive 95% Wilson interval |
 |--------+---------+----------+--------------------------------|
@@ -192,76 +290,79 @@ The [[file:results/book-author-v2-execution.sha256][source pins]] and
 | 9 | 1 | 1 | 1 |
 | 10 | 0 | 0 | 0 |
 
-Greedy CoT gains two problems and loses one relative to direct prompting.
-Voting gains three and loses one relative to greedy CoT. Against direct
-prompting, voting gains four and loses one, for a net gain of three correct
-answers. These comparisons use the same ten problems throughout.
-
-The whole job took *38 minutes 22 seconds* from model loading through final
-recording. Dataset preparation precedes that clock. A single greedy CoT call
-averaged 43.4 seconds; a three-candidate voted answer averaged about 184
-seconds. The longest sampled response took 267.6 seconds. Four responses
-reached the token cap, and none of those four verified as correct. There
-were no backend errors, deadline stops or missing method groups.
-
-Decode timings include prompt prefill, native forward and MLPL token
-selection. They exclude final text decoding, grading and file writes. The
-aggregate rates were 19.87 tokens/s for direct, 18.28 for greedy CoT and
-8.24 for sampling. Different trace lengths contribute to those rates;
-separate profiling is needed to attribute the overhead.
-
-Sampled peak device-wide memory was 2,365 MiB, including desktop use, and
-observed process host high-water memory was 1,763,776 KiB (about 1.68 GiB).
-The roughly two-second device sampling can miss brief peaks. This inference
-run does not approach the GPU's 16 GiB capacity. See the
-[[file:results/book-author-v2-provenance.json][observed provenance and memory definitions]].
-
-The [[file:results/book-author-v2-attempts.jsonl][fifty attempt records]],
-[[file:results/book-author-v2-methods.jsonl][thirty method outcomes]] and
-[[file:results/book-author-v2-summary.json][MLPL-computed summary]] retain all primary scores. The rendered prompt
-hashes and generation-source pins still match after the run. An offline
-replay of all fifty saved requests and responses matches the original grades.
 
 
-These are descriptive results on ten fixed problems. Wilson intervals
-describe the uncertainty of such a small count; this ordered subset is not
-a random sample that justifies a full MATH-500 population claim. Paired
-gains and losses show which problems actually change outcome. Thirty
-sampled responses produce ten voted answers, not thirty independent
-evaluation problems.
+CoT gains two questions and loses one relative to direct prompting. Voting
+gains three and loses one relative to greedy CoT. Against direct prompting,
+voting gains four and loses one: a net gain of three correct answers.
+These paired comparisons use the same ten questions, not separate samples.
 
-** What the failures tell us
+All fifty calls finished with zero backend errors or deadline stops. Four
+calls reached the 2048-token allowance; none of those four answers verified
+as correct. Thirty sampled responses produce *ten voted answers*, so the
+accuracy denominator for each method is ten.
 
-The selected qualitative review checks saved responses without changing the
-primary scores. It separates several mechanisms:
+The entire run took 2302.145 seconds, including model loading and final
+recording. Dataset preparation precedes this clock. Greedy CoT averaged
+43.4 seconds per question; a three-response vote averaged about 184 seconds
+per question. Decode timings include prefill, native forward and MLPL token
+selection, and exclude final text decoding, grading and file writes.
+Aggregate rates are 19.87 tokens/s for direct, 18.28 for greedy CoT and 8.24
+for sampling; differing response lengths mean these are not isolated
+measurements of sampler overhead.
 
-- *Useful intermediate work:* two greedy CoT gains use valid rational-function
-  evaluation and divisor-counting steps. Direct answers to those same
-  problems are wrong. These are concrete reasoning gains, not grader fixes.
-- *Repetition and truncation:* the first two greedy CoT responses reach the
-  2048-token cap while repeating rather than advancing a solution. More
-  output allowance alone is not a demonstrated remedy for those traces.
-- *Answer-format loss:* another response correctly reads plotted values,
-  computes rates and identifies the answer in prose, but omits its final box.
-  The author's fallback extracts a numeric rate rather than the requested
-  label. Its primary score remains wrong; the mathematical work is reviewed
-  separately.
-- *Sampling regression:* all three sampled answers are wrong on one problem
-  that direct answering and greedy CoT both solve. Voting has no correct
-  candidate to select there. More compute is not a per-problem guarantee.
+Observed peak device-wide memory was 2365 MiB, including desktop use;
+process host high-water memory was 1763776 KiB (about 1.68 GiB). Sampling
+device memory roughly every two seconds can miss brief peaks. The
+[[file:results/book-author-v2-provenance.json][provenance record]] defines the measurements.
 
-The [[file:results/book-author-v2-review.jsonl][selected review notes]] record the attempt IDs and categories. This is not
-an exhaustive proof of every generated step, and it does not replace the
-fixed answer metric. Unsupported general symbolic equivalence remains a
-known coverage gap; it should be diagnosed independently rather than used
-as an explanation for every wrong answer.
+This ordered ten-case sample is not a fresh random holdout. Its Wilson
+intervals describe the uncertainty of small counts; they do not justify a
+claim about accuracy on all 500 problems. The observed gain is useful
+experimental evidence, with a larger evaluation needed to establish its
+breadth.
 
+** Compare with the book's published results
 
-** Reproduce the analysis with ob-mlpl
+The author's [[https://github.com/rasbt/reasoning-from-scratch/tree/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/ch04/02_math500-inference-scaling-scripts][chapter 4 companion results]] report these measurements on
+*all 500* MATH-500 questions, using a CUDA DGX Spark system:
 
-The following block recomputes the complete report from public numeric
-attempts and method outcomes, and compares it with the committed summary.
-It does not run the model, download data or change any primary grades.
+| Published method, Qwen3-0.6B-Base | Accuracy | Time |
+|--------------------------------+----------+------|
+| Greedy baseline | 15.2% | 10.1 min |
+| Chain-of-thought | 40.6% | 84.5 min |
+| CoT with three sampled candidates | 42.2% | 211.6 min |
+| CoT with ten sampled candidates | 52.0% | 862.6 min |
+
+This model size can benefit from inference-time reasoning. Our sample also
+shows a net benefit, but the different evaluation size prevents claiming
+matching or superior accuracy. Hardware and generated-token counts also
+differ, so these times are not a language-speed comparison. The Python
+implementation already calls native CUDA kernels; a speedup must be
+measured on matched work.
+
+** What the generated work shows
+
+Answer accuracy and the validity of the written steps are separate
+measurements. The [[file:results/book-author-v2-review.jsonl][qualitative review]] examines selected saved responses:
+
+| Observed behavior | Interpretation |
+|-------------------+----------------|
+| Two greedy CoT gains use valid rational-function substitutions/summation and prime-factorization/divisor-count reasoning | Intermediate work supports the correct answers on questions direct prompting misses |
+| Two greedy CoT responses repeat until the token cap | More output allowance alone is not a demonstrated improvement |
+| One response computes rates and identifies a label in prose but omits the final box | The numeric fallback loses the requested label; answer-format compliance affects the score |
+| All three sampled answers are wrong on a question solved by both greedy methods | Voting cannot select a correct answer when no candidate is correct |
+
+These observations explain concrete results without changing the fixed
+primary grades. They are a selected review, not an exhaustive proof of
+every generated step. Reasoning helps in aggregate on this sample and is
+still fallible at the question and intermediate-step levels.
+
+** Recompute the results with ob-mlpl
+
+Public numeric attempt records and method outcomes are sufficient to
+recompute the aggregates. This block also checks equality with the stored
+summary. It performs no inference and changes no primary grades.
 
 #+name: replay-book-author
 #+begin_src mlpl
@@ -291,88 +392,54 @@ if str_eq(to_json(report)?, to_json(expected)?) {
 : generation seconds: 19.631987341999803 433.55816156400016 1840.1356372579999
 : Ok(1)
 
-* Demonstrating valid reasoning
 
-A short authored development prompt asks about a tank containing 120 liters,
-losing 35, then gaining 18. The base model produces the valid sequence
-120−35=85 and 85+18=103, with final answer 103. The saved run took 8.376
-seconds for 185 generated tokens after a 6.529-second load. Read the
-[[file:results/cuda-tank-v1.txt][complete authored example]].
+The underlying [[file:results/book-author-v2-attempts.jsonl][50 attempt records]],
+[[file:results/book-author-v2-methods.jsonl][30 method outcomes]] and
+[[file:results/book-author-v2-summary.json][summary]] preserve the full denominator. Regrading generated text additionally
+requires the retained local responses and downloaded reference answers.
 
-A separate multiplication prompt returns the correct answer 391 for
-17×23, but includes an invalid place-value statement. The
-[[file:results/cuda-multiplication-v1.txt][complete response]] is retained. These examples make two different checks
-visible: *does the answer verify?* and *do the stated steps support it?*
-They are development examples, not extra benchmark successes.
+* Demonstrate the working model
 
-To demo the current implementation, start with the saved report, run the
-short authored prompt, then show the first-ten comparison and its costs.
-This gives an audience a fast working example and measured evidence,
-without waiting for all fifty calls during a presentation.
+An authored prompt asks about a tank with 120 liters, losing 35 and then
+gaining 18. The native base model gives valid steps: 120−35=85, then
+85+18=103, and the final answer 103. The [[file:results/cuda-tank-v1.txt][saved complete response]] contains
+185 generated tokens and takes 8.376 seconds after a 6.529-second model load.
+This is a useful short live demonstration; it is separate from the benchmark.
+
+A second authored example returns the correct value 391 for 17×23 but makes
+an invalid place-value statement. Its [[file:results/cuda-multiplication-v1.txt][complete response]] shows why checking
+only the final answer cannot certify the explanation.
+
+For a presentation, run the short prompt, inspect its calculations, then
+use the measured comparison above to explain what requesting and sampling
+reasoning changes. The fifty-call benchmark need not run during the talk.
 
 #+begin_src sh
 export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 just cuda-reasoning
-# The complete first-ten experiment is intentionally one-shot per output directory:
-just book-author
 #+end_src
 
-The full runner refuses to overwrite an existing attempt log. A deliberate
-replication needs a new versioned output and execution record. Downloaded
-questions, reference answers and generated text remain in ignored local
-directories; the published run contains IDs, numeric outcomes, hashes and
-settings. This report paraphrases the analysis rather than redistributing
-the downloaded dataset.
+The [[file:cuda-prototype.md][native provider runbook]] supplies the required local model and extension
+paths. The demonstration and benchmark have separately pinned provider
+builds. The full experiment command is =just book-author=; its runner
+refuses to overwrite existing results. A replication requires a new
+versioned output and execution manifest, preserving the measured run.
 
-* What establishes effective reasoning, and what comes next
+* Learning from reasoning: implemented foundations and planned training
 
-Correct intermediate steps establish a worked example. A repeatable
-increase in paired answer accuracy establishes a useful reasoning method.
-Training requires a further result: a saved changed checkpoint that improves
-on held-out problems against the same starting policy and a no-update
-control. These are separate milestones.
+Inference-time scaling spends more computation with fixed weights.
+Reinforcement learning instead changes the probabilities of generating
+particular responses. The verifier supplies a reward, group-relative
+advantages identify better responses, and an optimizer updates a trainable
+policy. Distillation trains a student on checked teacher responses using
+answer-only loss. These are the book's later stages.
 
-The immediate next step is to make the demonstrated approach practical at
-book scale. Profile native forward execution, vocabulary transfer and MLPL
-sampling separately. Then offload the dominant cost through the extension,
-checking fixed-logit/supplied-uniform behavior against the MLPL reference.
-Preserve this completed experiment as the baseline. Improved performance
-must be measured rather than inferred from the implementation language.
+** Compute group-relative advantages
 
-Before running all 500 questions, strengthen symbolic-grading coverage with
-independently authored equivalence fixtures and freeze a resumable protocol
-with all cases in its denominator. Match the author's experiment controls
-and retain failures, token counts and elapsed time. A larger evaluation is
-needed to determine whether the observed gain generalizes.
-
-Follow that with native language-model loss, backward, update and
-checkpoint acceptance. First verify a small update against analytic or
-finite-difference gradients and test save/reload. Only then run the book's
-learning methods on a separate training dataset and evaluate unchanged
-held-out problems. The scalar example below illustrates real updates, but
-it does not establish that native Qwen3 training has been implemented.
-
-
-The relevant library and extension ecosystem remains the implementation
-path: [[file:ecosystem-reuse.md][demo-ml-utils, demo-mlpl-libraries, demo-extensions and the CUDA demos]].
-The local inference provider is tested and pinned, but its source currently
-lives outside this repository. Publishing it through the extension project
-is a remaining dependency handoff. The repository's read-only sibling
-policy requires explicit authorization for that delivery.
-* Training: one real toy update, and the work still required for an LLM
-
-No model weights changed during the direct, CoT or voting experiment. The MLPL verifier can supply a
-reward signal, but reward computation and parameter optimization are
-separate operations.
-
-** From checked answers to relative rewards
-
-Suppose four independently sampled answers receive rewards =[1,1,0,0]=.
-Subtracting the group mean identifies better and worse samples relative to
-that group. Scaling by the unbiased sample standard deviation plus epsilon
-gives a dimensionless advantage. A constant-reward group supplies no
-relative preference. This block illustrates that arithmetic only; it does
-not implement the complete GRPO objective or a policy update.
+For rewards =[1,1,0,0]=, subtract the group mean and divide by the unbiased
+sample standard deviation plus epsilon. A constant-reward group supplies
+zero relative preference. This executable example checks that arithmetic;
+the full policy objective also needs sequence probabilities and masking.
 
 #+name: reward-advantages
 #+begin_src mlpl
@@ -401,26 +468,14 @@ if eq(reduce_add(advantages), 0) * equal(constant_advantages, [0, 0, 0, 0]) {
 : constant-group advantages: 0 0 0 0
 : Ok(1)
 
-Reward alone does not specify which token probabilities should change.
-An LLM training implementation also needs differentiable sequence log
-probabilities, an explicit masking convention, policy ratios, clipping and
-any reference-policy regularization, an optimizer, and checkpointing.
-Those steps must be tested before a reward improvement can be called an
-LLM training result.
 
-** A small, actual MLPL training experiment
+** Execute and check a real parameter update
 
-To make the difference concrete, fit the scalar model =prediction=w*x= to
-=y=2*x= for =x=[1,2,3,4]=. This is deterministic supervised regression,
-not reasoning-model training. Initialize =w=0=, compute the gradient of the
-mean squared error, and make six gradient-descent updates at rate 0.05.
-
-The loss is =7.5*(w-2)^2=, so its derivative is =15*(w-2)=. Each update
-therefore quarters the distance from =w= to 2. This independent analytic
-recurrence gives exact acceptance values: after six steps
-=w=1.99951171875= and loss =0.0000017881393432617188=.
-The native test suite checks these values, rather than merely asserting
-that some number decreased.
+A small MLPL autograd example fits =prediction=w*x= to =y=2*x= for
+=x=[1,2,3,4]=. Starting at =w=0=, six gradient steps use learning rate 0.05.
+The analytic loss is =7.5*(w-2)^2= and its derivative is =15*(w-2)=, so each
+step quarters the distance to 2. The expected final weight and loss are
+known independently of the implementation.
 
 #+name: toy-sgd
 #+begin_src mlpl
@@ -455,56 +510,85 @@ if equal(w, [1.99951171875]) * eq(final_loss, 0.0000017881393432617188) {
 : step: 6 weight: 1.99951171875 loss: 0.0000017881393432617188
 : Ok(scalar training matches the analytic recurrence)
 
-This is a real parameter update with a measured loss change. It establishes
-that this toy autograd/update path works. It does not demonstrate language
-understanding, improved reasoning rewards, training throughput, or the
-feasibility of differentiating the external native model.
 
-** The next training evidence we would require
+This demonstrates MLPL differentiation and optimization on a scalar
+objective. It is not a language-model training result. The inference
+provider currently exposes no trainable Qwen3 loss/backward/update API.
+Native training acceptance must establish correct gradients, an actual
+parameter change, and identical predictions after saving and reloading a
+checkpoint. Reasoning improvement then requires separate training and
+held-out data, a no-update control, fixed evaluation settings and reported
+before/after accuracy.
 
-Start with a tiny trainable policy on a synthetic task with known rewards.
-Keep training and evaluation examples separate; measure a before/after
-change over fixed evaluation seeds; retain the old policy and a no-update
-control. Test constant rewards, masking, clipping boundaries and gradient
-signs. Only then test real-model gradient and memory feasibility.
+* Current scope and next experiments
 
-The external native model can later generate candidate teacher responses,
-but responses must be checked before becoming a training corpus. Record
-which model produced them, preserve licensing/provenance, and prevent
-held-out evaluation questions from entering training. A native inference
-session is not a substitute for a differentiable student training path.
+| Current scope | Next deliverable | Acceptance evidence |
+|---------------+------------------+---------------------|
+| Ten-case inference comparison is measured | Full author-ordered 500-case direct/CoT/voting experiment | Frozen inputs and controls; resumable attempt accounting; all cases retained in the denominator |
+| Native forward and MLPL sampling work | Profile forward, vocabulary transfer and selection; offload dominant costs through Rust | Fixed-logit/supplied-uniform parity and matched generation timing before changing the backend |
+| Numeric, tuple, literal and bounded linear-symbolic grading work | Broader independent equivalence fixtures and coverage | Separate unsupported equivalence from genuine incorrect answers |
+| CUDA provider has a pinned local build and source archive | Publish an installable native extension package | Reproducible build and consumer numerical/sampling acceptance |
+| MLPL learning objectives and toy updates are tested | Native language-model training, then GRPO/distillation evaluation | Gradient/update/save/reload checks followed by held-out reasoning gains |
 
-* Read and replay this document
+The path to stronger evidence is to scale the controlled experiment and
+measure each improvement. Answer correctness, completion rate, validity of
+reviewed steps, tokens, latency and memory all matter. Zero backend errors
+establish execution reliability for this run; they do not mean zero
+mathematical errors.
 
-The report is an Emacs Org-mode document using ob-mlpl. Exporting reads
-recorded results; refreshing executes only eight named offline blocks.
-The public numeric evidence is sufficient to reproduce the aggregates.
-Regrading individual model responses additionally needs the retained local
-raw evidence and downloaded references.
+* Reproduce and publish this document
 
-** Build the HTML or refresh the recorded calculations
+** Identify the experimental inputs
+
+| Artifact or environment | Identity |
+|-------------------------+----------|
+| sw-MLPL source build | =49c15b3e659ecc32603e10312a5197039b636397= |
+| Interpreter binary SHA-256 | =d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0= |
+| Base weights SHA-256 | =cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba= |
+| Author dataset SHA-256 | =a9eccff7e25ecaf3952614e5b92fe081b4f0549c68ae6a387b96e131df9ddf41= |
+| Native provider SHA-256 | =da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd= |
+| Native implementation | Candle 0.11.0; cudarc 0.19.10; provider 0.2.0 |
+| Hardware and CUDA | RTX 5060 Ti, 16 GiB; driver 615.71.09; toolkit 13.4.59; sm_120 |
+| Prompt/template identity | =fixtures/prompts/book-author.json=; twenty rendered prompts hashed before generation |
+| Frozen execution commit | =5647c40= |
+
+
+
+The [[file:results/book-author-v2-execution.sha256][generation source pins]],
+[[file:results/book-author-v2-prompt-hashes.sha256][rendered prompt hashes]] and
+[[file:results/book-cuda-v1-execution.json][backend identity manifest]] provide the full identities. The public
+[[file:results/SHA256SUMS][evidence checksum manifest]] protects the recorded measurements. Weights,
+downloaded questions and raw generated text remain in ignored local
+directories. Publishing the report does not redistribute them.
+
+** Refresh the calculations and build HTML
 
 #+begin_src sh
 export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
-just research-html
 just research-refresh
+just research-html
+just check
 #+end_src
 
-=research-html= exports the stored results only. =research-refresh= executes
-eight explicitly named offline MLPL blocks through =ob-mlpl=, saves their
-results, then exports. Neither recipe executes the live inference blocks.
-The HTML has inline CSS and no required remote fonts, scripts or images;
-it can be published as one file. The full research bundle also includes the
-Org source and committed JSONL/provenance files.
+=research-refresh= executes the five named offline MLPL blocks, saves their
+results and exports HTML. =research-html= exports stored results without
+executing blocks. Neither command launches model inference or downloads.
+The completion gate checks recorded outputs and exact HTML export, along
+with native tests and the implementation document's exact source tangles.
 
-** Interactive Emacs setup
+The HTML uses large readable type and inline CSS, with no required remote
+fonts, scripts or images. It can be viewed directly or published as a
+single article. To preserve relative evidence and source links, publish it
+within the repository's directory layout; the complete reproducible bundle
+also includes the Org source, MLPL libraries and committed numeric evidence.
 
-Set =MLPL= and =MLPL_ELISP= for your host. Then evaluate this setup once.
-The temporary source directory is deliberately =out/=, so the relative
-library includes in the replay block resolve within this checkout. Each
-MLPL block runs in a fresh interpreter; no hidden session state is required.
-Your normal Babel confirmation preference is preserved.
+** Run individual blocks in Emacs
+
+Set =MLPL= and =MLPL_ELISP= for your host, then evaluate this setup once.
+Each MLPL block runs in a fresh interpreter. Temporary sources live under
+=out/= so the relative library includes resolve inside the checkout.
+Your usual Babel confirmation preference is preserved.
 
 #+begin_src emacs-lisp
 (let* ((repo (file-name-as-directory
@@ -523,210 +607,6 @@ Your normal Babel confirmation preference is preserved.
                    (list program "--source-dir" repo "--data-dir" repo) " ")))
 #+end_src
 
-Press =C-c C-c= in an MLPL block to reproduce that calculation. The separate
-[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/reasoning.org][implementation document]] explains and tangles the full libraries; the
-[[https://github.com/sw-ml-study/reasoning-from-scratch/blob/main/docs/using-reasoning-model.org][operator guide]] covers the wider project.
-
-* Appendix: preserved earlier evidence
-
-The previous external 8B thinking-toggle experiments are historical
-baselines. They do not measure the current 0.6B base-model implementation.
-Their committed attempts, paired summaries and post-hoc corrections remain
-replayable below; the current claims use the book-aligned CUDA run above.
-
-The earlier strict twelve-case protocol used different extraction and tie
-rules. It was stopped after twelve recorded outcomes and one further
-interrupted request. It has no complete-set accuracy result. Its [[file:results/book-cuda-v1-partial-attempts.jsonl][partial numeric ledger]] and [[file:results/book-cuda-v1-stop.json][stop reason]] are preserved separately.
-
-#+begin_export html
-<details><summary>Show historical offline calculations (external backend)</summary>
-#+end_export
-
-#+name: replay-grades
-#+begin_src mlpl
-# Replay every saved attempt, using the production verifier and explicit completion rule.
-include "../lib/text/text.mlpl";
-include "../lib/verify/number.mlpl";
-include "../lib/verify/expr.mlpl";
-include "../lib/verify/extract.mlpl";
-include "../lib/verify/normalize.mlpl";
-include "../lib/verify/grade.mlpl";
-include "../lib/eval/data.mlpl";
-
-dataset = u:eval_load_jsonl_text(read_text("docs/results/native-demo-2026-09-29.jsonl")?, "recorded-demo", {})?
-mode = 0
-matches = 1
-while lt(mode, 2) {
-  attempted = 0;
-  correct = 0;
-  truncated = 0;
-  tokens = 0;
-  seconds = 0;
-  index = 0;
-  while lt(index, dataset.count) {
-    row = u:eval_record(dataset, index)?;
-    if eq(row.think, mode) {
-      raw = parse_json(row.response_json)?;
-      complete = eq(raw.done, 1) * str_eq(raw.done_reason, "stop") * gt(str_len(u:text_trim(raw.message.content)), 0);
-      grade = complete * u:verify_grade_response(raw.message.content, row.answer, "boxed_only");
-      matches = matches * eq(grade, row.correct) * eq(complete, row.complete);
-      attempted = attempted + 1;
-      correct = correct + grade;
-      truncated = truncated + str_eq(raw.done_reason, "length");
-      tokens = tokens + raw.eval_count;
-      seconds = seconds + raw.total_duration / 1000000000
-    };
-    index = index + 1
-  };
-  print("think:", mode, "attempted:", attempted, "correct:", correct, "truncated:", truncated, "tokens:", tokens, "native_seconds:", seconds);
-  matches = matches * eq(attempted, 5) * eq(correct, if mode { 2 } else { 5 }) * eq(tokens, if mode { 6787 } else { 1432 });
-  mode = mode + 1
-}
-if matches * eq(dataset.count, 10) {
-  ok("all ten grades and aggregate checks reproduced")
-} else {
-  err("recorded results disagree with independent replay")
-}
-#+end_src
-
-#+RESULTS: replay-grades
-: think: 0 attempted: 5 correct: 5 truncated: 0 tokens: 1432 native_seconds: 42.089794149
-: think: 1 attempted: 5 correct: 2 truncated: 3 tokens: 6787 native_seconds: 184.43253323599998
-: Ok(all ten grades and aggregate checks reproduced)
-
-#+name: replay-budget-grades
-#+begin_src mlpl
-# Replay every saved attempt, using the production verifier and explicit completion rule.
-include "../lib/text/text.mlpl";
-include "../lib/verify/number.mlpl";
-include "../lib/verify/expr.mlpl";
-include "../lib/verify/extract.mlpl";
-include "../lib/verify/normalize.mlpl";
-include "../lib/verify/grade.mlpl";
-include "../lib/eval/data.mlpl";
-
-dataset = u:eval_load_jsonl_text(read_text("docs/results/native-budget-3072-2026-09-29.jsonl")?, "recorded-demo", {})?
-mode = 0
-matches = 1
-while lt(mode, 2) {
-  attempted = 0;
-  correct = 0;
-  truncated = 0;
-  tokens = 0;
-  seconds = 0;
-  index = 0;
-  while lt(index, dataset.count) {
-    row = u:eval_record(dataset, index)?;
-    if eq(row.think, mode) {
-      raw = parse_json(row.response_json)?;
-      complete = eq(raw.done, 1) * str_eq(raw.done_reason, "stop") * gt(str_len(u:text_trim(raw.message.content)), 0);
-      grade = complete * u:verify_grade_response(raw.message.content, row.answer, "boxed_only");
-      matches = matches * eq(grade, row.correct) * eq(complete, row.complete);
-      attempted = attempted + 1;
-      correct = correct + grade;
-      truncated = truncated + str_eq(raw.done_reason, "length");
-      tokens = tokens + raw.eval_count;
-      seconds = seconds + raw.total_duration / 1000000000
-    };
-    index = index + 1
-  };
-  print("think:", mode, "attempted:", attempted, "correct:", correct, "truncated:", truncated, "tokens:", tokens, "native_seconds:", seconds);
-  matches = matches * eq(attempted, 5) * eq(correct, if mode { 5 } else { 5 }) * eq(tokens, if mode { 7602 } else { 1432 });
-  mode = mode + 1
-}
-if matches * eq(dataset.count, 10) {
-  ok("all ten grades and aggregate checks reproduced")
-} else {
-  err("recorded results disagree with independent replay")
-}
-#+end_src
-
-#+RESULTS: replay-budget-grades
-: think: 0 attempted: 5 correct: 5 truncated: 0 tokens: 1432 native_seconds: 39.088295959
-: think: 1 attempted: 5 correct: 5 truncated: 0 tokens: 7602 native_seconds: 204.647115495
-: Ok(all ten grades and aggregate checks reproduced)
-
-#+name: replay-heldout-summary
-#+begin_src mlpl
-# Summarize all public paired measurements without pooling repeated seeds.
-include "../lib/text/text.mlpl";
-include "../lib/eval/paired.mlpl";
-rows = read_text("docs/results/native-heldout-v1-pairs.jsonl")?
-expected = parse_json(read_text("docs/results/native-heldout-v1-summary.json")?)?
-first = u:eval_paired_summary(rows, 42)?
-second = u:eval_paired_summary(rows, 43)?
-print("seed 42:", to_json(first)?)
-print("seed 43:", to_json(second)?)
-lines = str_split(u:text_trim(rows), "\n")
-i = 0
-gains = 0
-losses = 0
-matches = eq(list_len(lines), 12)
-while lt(i, 6) {
-  a = parse_json(list_get(lines, 2 * i)?)?;
-  b = parse_json(list_get(lines, 2 * i + 1)?)?;
-  matches = matches * str_eq(a.id, b.id) * eq(a.seed, 42) * eq(b.seed, 43);
-  off = a.off.correct + b.off.correct;
-  on = a.on.correct + b.on.correct;
-  gains = gains + lt(off, on);
-  losses = losses + gt(off, on);
-  i = i + 1
-}
-print("problem-average gains:", gains, "regressions:", losses, "ties:", 6 - gains - losses)
-if matches * eq(first.pairs, 6) * eq(second.pairs, 6) * str_eq(to_json(first)?, to_json(expected.seed42)?) * str_eq(to_json(second)?, to_json(expected.seed43)?) {
-  ok("all 24 attempted outcomes accounted for; seeds kept separate")
-} else {
-  err("paired pilot summary drift")
-}
-#+end_src
-
-#+RESULTS: replay-heldout-summary
-: seed 42: {"gains":0,"losses":1,"off_complete":6,"off_correct":5,"off_errors":0,"off_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"off_parseable":6,"off_tokens":2554,"off_truncated":0,"off_wall_ms":68834.13074700003,"on_complete":5,"on_correct":4,"on_errors":0,"on_interval":{"lower":0.299993315138392,"upper":0.9032285888942195},"on_parseable":5,"on_tokens":13855,"on_truncated":1,"on_wall_ms":392760.52146099997,"pairs":6,"seed":42}
-: seed 43: {"gains":0,"losses":0,"off_complete":6,"off_correct":5,"off_errors":0,"off_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"off_parseable":6,"off_tokens":2180,"off_truncated":0,"off_wall_ms":58578.99063300021,"on_complete":6,"on_correct":5,"on_errors":0,"on_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"on_parseable":6,"on_tokens":13048,"on_truncated":0,"on_wall_ms":351990.87873,"pairs":6,"seed":43}
-: problem-average gains: 0 regressions: 1 ties: 5
-: Ok(all 24 attempted outcomes accounted for; seeds kept separate)
-
-#+name: replay-choice-v2-summary
-#+begin_src mlpl
-# Replay separately versioned post-hoc numeric summaries; local raw replay is documented below.
-include "../lib/text/text.mlpl";
-include "../lib/eval/paired.mlpl";
-rows = read_text("docs/results/native-heldout-choice-v2-pairs.jsonl")?
-expected = parse_json(read_text("docs/results/native-heldout-choice-v2-summary.json")?)?
-first = u:eval_paired_summary(rows, 42)?
-second = u:eval_paired_summary(rows, 43)?
-print("choice-v2 seed 42:", to_json(first)?)
-print("choice-v2 seed 43:", to_json(second)?)
-if str_eq(to_json(first)?, to_json(expected.seed42)?) * str_eq(to_json(second)?, to_json(expected.seed43)?) * eq(first.off_correct, 6) * eq(first.on_correct, 5) * eq(second.off_correct, 6) * eq(second.on_correct, 6) {
-  ok("post-hoc correction: zero thinking gains, one regression; original results preserved")
-} else {
-  err("choice-v2 summary drift")
-}
-#+end_src
-
-#+RESULTS: replay-choice-v2-summary
-: choice-v2 seed 42: {"gains":0,"losses":1,"off_complete":6,"off_correct":6,"off_errors":0,"off_interval":{"lower":0.6096657120978346,"upper":1},"off_parseable":6,"off_tokens":2554,"off_truncated":0,"off_wall_ms":68834.13074700003,"on_complete":5,"on_correct":5,"on_errors":0,"on_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"on_parseable":5,"on_tokens":13855,"on_truncated":1,"on_wall_ms":392760.52146099997,"pairs":6,"seed":42}
-: choice-v2 seed 43: {"gains":0,"losses":0,"off_complete":6,"off_correct":6,"off_errors":0,"off_interval":{"lower":0.6096657120978346,"upper":1},"off_parseable":6,"off_tokens":2180,"off_truncated":0,"off_wall_ms":58578.99063300021,"on_complete":6,"on_correct":6,"on_errors":0,"on_interval":{"lower":0.6096657120978346,"upper":1},"on_parseable":6,"on_tokens":13048,"on_truncated":0,"on_wall_ms":351990.87873,"pairs":6,"seed":43}
-: Ok(post-hoc correction: zero thinking gains, one regression; original results preserved)
-
-#+name: replay-extended-budget
-#+begin_src mlpl
-# Verify retained development outcomes without performing inference or publishing downloaded text.
-r = parse_json(read_text("docs/results/native-budget-v1-summary.json")?)?
-print("control:", to_json(r.control)?)
-print("larger budget:", to_json(r.retry)?)
-if eq(r.control.correct, 0) * eq(r.control.complete, 0) * str_eq(r.control.done_reason, "length") * eq(r.control.tokens, r.control_max_new) * eq(r.retry.correct, 1) * eq(r.retry.complete, 1) * str_eq(r.retry.done_reason, "stop") * lt(r.retry.tokens, r.retry_max_new) * lt(r.retry.tokens + r.retry.prompt_tokens, r.context) * eq(r.control.error + r.retry.error, 0) {
-  ok("selected-case completion recovery; no replacement of frozen scores")
-} else {
-  err("development budget accounting drift")
-}
-#+end_src
-
-#+RESULTS: replay-extended-budget
-: control: {"complete":0,"correct":0,"done_reason":"length","error":0,"prompt_tokens":71,"tokens":3072,"wall_seconds":81.980856}
-: larger budget: {"complete":1,"correct":1,"done_reason":"stop","error":0,"prompt_tokens":71,"tokens":3158,"wall_seconds":88.012657}
-: Ok(selected-case completion recovery; no replacement of frozen scores)
-
-#+begin_export html
-</details>
-#+end_export
+Press =C-c C-c= in a named MLPL block to execute its calculation. The
+[[file:reasoning.org][annotated implementation]] provides full library source and exact tangles;
+the [[file:using-reasoning-model.org][operator guide]] covers setup and additional commands.
