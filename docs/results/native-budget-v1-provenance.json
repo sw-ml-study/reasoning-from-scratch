@@ -1,0 +1,27 @@
+{
+  "experiment": "native-budget-v1",
+  "inference_order": [
+    "retry8192",
+    "control3072"
+  ],
+  "local_retry": "out/native-reasoning/run-budget-NVm87kQ3",
+  "local_control": "out/native-reasoning/run-budget-lDNm8pwh",
+  "runtime": {
+    "version": "0.24.0"
+  },
+  "model_manifest": "ee7613f19f946db6f549469bd24a6c77e48c591232ea97fdb7ec1f508a7e0dde",
+  "model_weights_sha256": "cb042ccd76795a8830d6be6bd4165245847cc68e41797b13bd61aed4c2cfbce6",
+  "interpreter_commit": "49c15b3e659ecc32603e10312a5197039b636397",
+  "interpreter_sha256": "d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0",
+  "template": "boxed-v1",
+  "sampling": {
+    "seed": 42,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "repeat_penalty": 1
+  },
+  "transport": "curl; no HTTP extension call",
+  "evidence_sha256": "36fc9db40811fed75abe2294f097b4199b61512373ca03866b091929eb1a1a00",
+  "retry_request_sha256": "08874b824fee9458c6dae76d593ce9b2e9aca987dce8abe82a40073814e53d75"
+}

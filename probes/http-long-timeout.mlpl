@@ -1,0 +1,15 @@
+# Expected future result: Ok for a quick local GET with a 600000 ms deadline. Current HTTP extension rejects deadlines above 120000 ms; this opt-in acceptance probe does no inference.
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+if str_eq(type_of(namespace), "result") {
+  err(namespace)?
+}
+reply = u:http_request({method: "GET", url: "http://127.0.0.1:11434/api/version", headers: {count: 0}, body: pack(tokenize_bytes(""), "u8"), timeout_ms: 600000, max_response_bytes: 4096, max_redirects: 0})
+if str_eq(type_of(reply), "result") {
+  err("long request deadline unavailable")
+} else {
+  if eq(reply.status, 200) {
+    ok("600000 ms deadline accepted")
+  } else {
+    err("local endpoint unavailable")
+  }
+}

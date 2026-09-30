@@ -4,6 +4,10 @@ set shell := ["sh", "-cu"]
 default:
     @just --list
 
+# Retry the previously truncated case with a larger bounded development budget (opt-in).
+reasoning-budget:
+    ./scripts/run-native-budget
+
 # Check canonical formatting and module comments for tracked MLPL source.
 mlpl-style:
     ./scripts/check-mlpl-style
@@ -106,6 +110,6 @@ reasoning-pilot:
 research-html:
     ./scripts/export-reasoning-report
 
-# Replay six offline ob-mlpl calculations and refresh the publication.
+# Replay seven offline ob-mlpl calculations and refresh the publication.
 research-refresh:
     ./scripts/export-reasoning-report --refresh

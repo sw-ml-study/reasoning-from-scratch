@@ -43,7 +43,7 @@ Doubling the cap to 3,072 restored thinking to five correct answers, with
 no truncations. It still took 204.74 seconds versus 39.16 seconds for direct
 answers. We fixed completion; we have not shown a quality benefit.
 
-The new frozen six-problem pilot also finds no thinking gains across two
+The frozen six-problem pilot also finds no thinking gains across two
 seeds, with one truncation regression and 5.85 times the request time. A
 shared multiple-choice verifier false negative is reported separately below.
 
@@ -79,6 +79,54 @@ comparison.
 
 ** What a measured reasoning benefit looks like in the Python reference
 
+The book's main starting checkpoint is *Qwen3-0.6B-Base*, as specified in
+[[https://www.manning.com/preview/build-a-reasoning-model-from-scratch/chapter-2][chapter 2]]. Our two execution paths should not be conflated:
+
+| Setup | Model and scale | What the comparison can establish |
+|-------+-----------------+-----------------------------------|
+| Book's main starting point | Qwen3-0.6B-Base, about 600 million parameters | Improvement from reasoning methods applied to the same base |
+| Our MLPL reference | Qwen3-0.6B-Base, same intended starting checkpoint | Algorithmic implementation; real-checkpoint generation still unproved |
+| Our working native demo | Qwen3 8B Q6_K, about 8.19 billion parameters | Added value of a thinking toggle on an already post-trained model |
+
+The live model is roughly thirteen times larger by nominal parameter count.
+Quantization reduces storage and computation costs; it does not make it a
+0.6B model. The more consequential difference is base versus post-trained
+behavior. Direct mode on the 8B model already solves our small sample and
+often writes intermediate steps, leaving little headroom for additional
+thinking. This experiment cannot determine a minimum useful model size.
+
+For a closer book comparison, the next experiment should prioritize the
+*0.6B base checkpoint through efficient native inference*, comparing direct
+prompting, chain-of-thought and voting with held-out accuracy and cost.
+Do not substitute a post-trained 0.6B variant and call it the same baseline.
+Keep the 8B checkpoint as a working demo baseline and potential teacher.
+Native execution would test the method before our own MLPL performance is
+solved; it still would not demonstrate project training or MLPL forward
+execution. This is a proposed comparison, not a completed reproduction.
+
+*** What prevents a faithful reproduction today?
+
+| Required piece | Actual status | Next concrete action |
+|----------------+---------------+----------------------|
+| Book's base checkpoint | Verified 0.6B base weights and tokenizer are local; the live runner serves post-trained 8B | Pin and validate an efficient native route for the exact 0.6B base weights |
+| Practical generation | MLPL forward/cache code exists and passes tiny tests; the real run exceeds the imposed CPU budget without a token | Use native inference offload; verify model identity and tokenization instead of treating the CPU budget failure as a size limit |
+| Base-model prompting | The demo uses an 8B chat/thinking template | Use base-model completion prompts; match EOS, tokenizer, precision, sampling and output limits to the chosen book experiment |
+| Measured inference-time gain | CoT and voting have fixture tests, but no real base-model comparison here | Freeze evaluation cases, run direct/CoT/voting, and publish paired correctness, failures and total cost |
+| Trainable language model | GRPO and distillation remain planned; native HTTP/curl inference has no backward pass | Implement and verify the learning path separately before claiming trained reasoning |
+
+The unexpected deficit in our measured pilot has specific causes:
+choice-format false negatives in the original grader, and an output-budget
+truncation that the longer retry repairs. Beyond those, the direct 8B
+baseline already solves the selected problems. This provides neither a
+useful estimate of a minimum model size nor a reproduction of the book's
+base-to-reasoning improvement. The next task is therefore the base-model
+reproduction above, not another broad 8B thinking-toggle benchmark. The
+16 GiB GPU is not established as a blocker to 0.6B inference; the missing
+piece is a validated execution route in this project. A training-memory
+claim would need a separate measurement.
+
+*** Published inference-time gains
+
 The companion's chapter 4 reports these results on all 500 MATH-500
 questions, using a CUDA DGX Spark system:
 
@@ -94,6 +142,9 @@ reported. Our five easy 8B demo problems, quantization and hardware differ,
 so our 5/5 score cannot be ranked against those benchmark percentages.
 Reproducing an improvement over the same base checkpoint is a more relevant
 next goal than inferring a size limit from our current demo.
+These published gains establish that a model of this size can benefit from
+these particular inference-time methods. They do not establish that every
+few-shot, in-context feedback or reinforcement-learning procedure will work.
 
 * The working experiment: generate, finish, verify, retain
 
@@ -657,6 +708,85 @@ The runner verifies the frozen protocol, selection and source-data hashes.
 Repetition is opt-in and excluded from =just check=. Changes to this protocol
 require a separately named experiment, not silently replacing these results.
 
+* Development recovery with a larger output allowance
+
+The thinking failure on pilot case 2 at seed 42 stopped at 3,072 tokens.
+We retried that already examined case with an 8,192-token output allowance,
+a 12,288-token context, and a bounded 600-second transport deadline.
+The same pinned Qwen3 8B weights, prompt, seed and sampling settings were
+used. The response completed correctly after *3,158 tokens in 88.01 seconds*:
+only 86 generated tokens beyond the old cap. Its 71 prompt tokens plus
+3,158 generated tokens fit comfortably in the configured context.
+
+The installed model declares 40,960 context tokens. Ollama reported full
+GPU residency at 12,288 tokens, with 8,682,881,152 bytes attributed to the
+resident model. Before and after GPU readings were both 8,479 MiB used
+out of 16,311 MiB; these are snapshots, not a measured peak.
+
+This is a successful *completion repair on development data*. We selected
+the case because it had already failed. It must not replace that failure
+in the frozen primary scores or be pooled into a revised benchmark.
+Direct mode already solved it, so this is not evidence that thinking
+improves correctness over direct answers. It also does not demonstrate
+training or validate every intermediate explanation step.
+
+We then ran one control at the same 12,288-token context, restoring only
+the output cap to 3,072. The saved request bodies are identical apart from
+=num_predict=. The control again stopped at the cap, with an incomplete
+answer. Both outcomes are retained:
+
+| Development run | Output allowance | Generated | Complete and correct | Seconds |
+|-----------------+------------------+-----------+----------------------+---------|
+| Larger allowance, run first | 8192 | 3158 | Yes | 88.01 |
+| Same-context control, run second | 3072 | 3072 | No: length stop | 81.98 |
+
+This supports the budget diagnosis at a fixed context. However, the two
+thinking texts were not identical prefixes despite the same seed. This was
+a fresh retry, not a resumed generation, and one selected pair cannot
+establish a general effect size. Time includes the native request after
+warmup; order was not counterbalanced. Before/after residency is retained
+for both attempts. Neither used the full proposed 8,192-token allowance.
+
+The following offline block verifies the published numeric result and
+context accounting. It does not independently regrade the private raw
+responses; those remain local with their hashes for audit.
+
+#+name: replay-extended-budget
+#+begin_src mlpl
+# Verify retained development outcomes without performing inference or publishing downloaded text.
+r = parse_json(read_text("docs/results/native-budget-v1-summary.json")?)?
+print("control:", to_json(r.control)?)
+print("larger budget:", to_json(r.retry)?)
+if eq(r.control.correct, 0) * eq(r.control.complete, 0) * str_eq(r.control.done_reason, "length") * eq(r.control.tokens, r.control_max_new) * eq(r.retry.correct, 1) * eq(r.retry.complete, 1) * str_eq(r.retry.done_reason, "stop") * lt(r.retry.tokens, r.retry_max_new) * lt(r.retry.tokens + r.retry.prompt_tokens, r.context) * eq(r.control.error + r.retry.error, 0) {
+  ok("selected-case completion recovery; no replacement of frozen scores")
+} else {
+  err("development budget accounting drift")
+}
+#+end_src
+
+#+RESULTS: replay-extended-budget
+: control: {"complete":0,"correct":0,"done_reason":"length","error":0,"prompt_tokens":71,"tokens":3072,"wall_seconds":81.980856}
+: larger budget: {"complete":1,"correct":1,"done_reason":"stop","error":0,"prompt_tokens":71,"tokens":3158,"wall_seconds":88.012657}
+: Ok(selected-case completion recovery; no replacement of frozen scores)
+
+The Rust HTTP extension currently rejects deadlines above 120 seconds.
+For this longer-budget experiment, MLPL writes the request and grades the
+saved response; bounded curl handles transport with a 1 MiB response limit
+and no retries or redirects. Extension request E5 records the missing
+longer deadline. No interpreter optimization or sibling edit was needed.
+The old pilot API and settings remain exactly replayable.
+
+To repeat this development diagnosis (one live model call):
+
+#+begin_src sh :eval never
+MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl \
+  just reasoning-budget
+# Same-context control at the old cap:
+BUDGET_MAX_NEW=3072 \
+MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl \
+  just reasoning-budget
+#+end_src
+
 * From “it produces reasoning” to “reasoning helps”
 
 ** An operational success criterion
@@ -725,13 +855,12 @@ This is our proposed experiment order, not a claim of a measured result.
 
 *** Can we lift the token limit, and what is missing?
 
-Yes. The native demo currently caps output at 3,072 tokens, uses a
+Yes. The original native demo caps output at 3,072 tokens, uses a
 4,096-token context and requests a 120-second HTTP timeout. These are
-application settings, not the GPU's capacity. The next development experiment
-will test a larger bounded allowance, initially 8,192 output tokens with
-additional context space for the prompt, after checking model limits, timeout
-support and measured GPU residency. It must retain the original truncated
-attempt and report whether the longer run actually finishes correctly.
+application settings, not the GPU's capacity. The separate development
+runner now supports up to 8,192 output tokens with additional context space
+and a longer bounded deadline. The measured retry above finishes correctly;
+all original failures remain in their original evaluation.
 Unlimited generation would make neither a reliable demo nor a fair comparison.
 
 The working Qwen3 8B path already executes forward passes and generation
@@ -922,7 +1051,7 @@ just research-refresh
 #+end_src
 
 =research-html= exports the stored results only. =research-refresh= executes
-six explicitly named offline MLPL blocks through =ob-mlpl=, saves their
+seven explicitly named offline MLPL blocks through =ob-mlpl=, saves their
 results, then exports. Neither recipe executes the live inference blocks.
 The HTML has inline CSS and no required remote fonts, scripts or images;
 it can be published as one file. The full research bundle also includes the
@@ -1000,8 +1129,8 @@ interpreter and native extension hashes. Weights are not redistributed.
 The adapter has six native offline tests, covering request encoding,
 bounds, transport failures and completion/grade accounting. Two further
 tests check the training arithmetic against analytic answers. The full
-fixture gate has 162 native tests, 27 declared capability outcomes and
-32 exact tangles. These establish software behavior and replay consistency,
+fixture gate has 164 native tests, 27 declared capability outcomes and
+33 exact tangles. These establish software behavior and replay consistency,
 not broad model quality.
 
 Our real-weight MLPL forward path remains unavailable; its memory and

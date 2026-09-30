@@ -1,0 +1,46 @@
+#!/bin/sh
+# Opt-in development retry with MLPL request/grading and bounded curl transport until the HTTP extension supports longer deadlines.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+[ "$#" -eq 0 ] || { echo 'usage: run-native-budget (BUDGET_MAX_NEW, BUDGET_CONTEXT, BUDGET_TIMEOUT_MS)' >&2; exit 2; }
+BUDGET_MAX_NEW=${BUDGET_MAX_NEW:-8192}
+BUDGET_CONTEXT=${BUDGET_CONTEXT:-12288}
+BUDGET_TIMEOUT_MS=${BUDGET_TIMEOUT_MS:-600000}
+for value in "$BUDGET_MAX_NEW" "$BUDGET_CONTEXT" "$BUDGET_TIMEOUT_MS"; do
+    case "$value" in ''|0*|*[!0-9]*|???????*) echo 'budgets must be bounded positive integers' >&2; exit 2 ;; esac
+done
+[ "$BUDGET_MAX_NEW" -le 8192 ] && [ "$BUDGET_CONTEXT" -le 32768 ] && [ "$BUDGET_CONTEXT" -ge "$((BUDGET_MAX_NEW + 1024))" ] && [ "$BUDGET_TIMEOUT_MS" -ge 1000 ] && [ "$BUDGET_TIMEOUT_MS" -le 600000 ] || { echo 'invalid output/context/timeout budget' >&2; exit 2; }
+export BUDGET_MAX_NEW BUDGET_CONTEXT BUDGET_TIMEOUT_MS
+scripts/prepare-heldout-pilot
+mkdir -p out/native-reasoning
+BUDGET_OUT=$(mktemp -d out/native-reasoning/run-budget-XXXXXXXX)
+export BUDGET_OUT
+echo "Development evidence: $BUDGET_OUT"
+base=http://127.0.0.1:11434
+curl --fail --silent --show-error --max-time 10 "$base/api/show" -H 'Content-Type: application/json' -d '{"model":"qwen3:8b-q6"}' > "$BUDGET_OUT/model-show.json"
+curl --fail --silent --show-error --max-time 10 "$base/api/version" > "$BUDGET_OUT/runtime.json"
+curl --fail --silent --show-error --max-time 10 "$base/api/tags" > "$BUDGET_OUT/tags.json"
+jq -e '.models[] | select(.name == "qwen3:8b-q6") | .digest == "ee7613f19f946db6f549469bd24a6c77e48c591232ea97fdb7ec1f508a7e0dde"' "$BUDGET_OUT/tags.json" > /dev/null
+jq -e --argjson context "$BUDGET_CONTEXT" '.model_info["qwen3.context_length"] >= $context and (.details.parent_model | endswith("sha256-cb042ccd76795a8830d6be6bd4165245847cc68e41797b13bd61aed4c2cfbce6"))' "$BUDGET_OUT/model-show.json" > /dev/null
+jq -r .template "$BUDGET_OUT/model-show.json" > "$BUDGET_OUT/chat-template.txt"
+mlpl=$(scripts/select-mlpl)
+"$mlpl" --version > "$BUDGET_OUT/interpreter.txt"
+curl --version > "$BUDGET_OUT/curl-version.txt"
+sha256sum "$mlpl" "$BUDGET_OUT/chat-template.txt" lib/backend/ollama.mlpl lib/verify/normalize.mlpl lib/verify/grade.mlpl demos/native_budget.mlpl scripts/run-native-budget > "$BUDGET_OUT/hashes.txt"
+BUDGET_STAGE=prepare scripts/run-mlpl-demo demos/native_budget.mlpl
+jq -n --argjson context "$BUDGET_CONTEXT" '{model:"qwen3:8b-q6",keep_alive:"30m",options:{num_ctx:$context}}' > "$BUDGET_OUT/warmup-request.json"
+curl --fail --silent --show-error --max-time 120 "$base/api/generate" -H 'Content-Type: application/json' --data-binary "@$BUDGET_OUT/warmup-request.json" > "$BUDGET_OUT/warmup.json"
+curl --fail --silent --show-error --max-time 10 "$base/api/ps" > "$BUDGET_OUT/residency-before.json"
+jq -e --argjson context "$BUDGET_CONTEXT" '.models[] | select(.name == "qwen3:8b-q6") | .context_length == $context and .size_vram == .size' "$BUDGET_OUT/residency-before.json" > /dev/null
+nvidia-smi --query-gpu=timestamp,memory.used,memory.total --format=csv > "$BUDGET_OUT/gpu-before.csv"
+# Curl bounds overall time and downloaded bytes, saves partial responses, and never retries a model call.
+BUDGET_CURL_STATUS=0
+curl --silent --show-error --connect-timeout 10 --max-time "$(( (BUDGET_TIMEOUT_MS + 999) / 1000 ))" --max-filesize 1048576 --max-redirs 0 "$base/api/chat" -H 'Content-Type: application/json' --data-binary "@$BUDGET_OUT/request.json" --output "$BUDGET_OUT/response.json" --write-out '%{json}\n' > "$BUDGET_OUT/transport.json" 2> "$BUDGET_OUT/transport-error.txt" || BUDGET_CURL_STATUS=$?
+export BUDGET_CURL_STATUS
+printf '%s\n' "$BUDGET_CURL_STATUS" > "$BUDGET_OUT/curl-status.txt"
+BUDGET_STAGE=grade scripts/run-mlpl-demo demos/native_budget.mlpl
+curl --fail --silent --show-error --max-time 10 "$base/api/ps" > "$BUDGET_OUT/residency-after.json"
+nvidia-smi --query-gpu=timestamp,memory.used,memory.total --format=csv > "$BUDGET_OUT/gpu-after.csv"
+sha256sum "$BUDGET_OUT"/* > "$BUDGET_OUT/local-evidence.sha256"
+echo "Saved development diagnosis: $BUDGET_OUT"

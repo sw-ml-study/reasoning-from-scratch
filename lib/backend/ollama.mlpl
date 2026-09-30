@@ -81,3 +81,27 @@ def u:backend_grade(decoded, reference) {
   "Grade only a complete final answer using boxed-only extraction; visible thinking is never accepted as the final answer.";
   decoded.complete * u:verify_grade_response(decoded.content, reference, "boxed_only")
 }
+
+def u:backend_budget_config(max_new, context, timeout_ms) {
+  "Validate the development experiment bounds: 8192 output, 32768 context, at least 1024 prompt tokens reserved, and 1 to 600 seconds.";
+  if lt(max_new, 1) + gt(max_new, 8192) + (max_new - floor(max_new)) + lt(context, max_new + 1024) + gt(context, 32768) + (context - floor(context)) + lt(timeout_ms, 1000) + gt(timeout_ms, 600000) + (timeout_ms - floor(timeout_ms)) {
+    err("invalid bounded development output/context/timeout configuration")
+  } else {
+    ok({max_new: max_new, context: context, timeout_ms: timeout_ms})
+  }
+}
+
+def u:backend_budget_body(model_name, prompt_text, thinking, seed, config) {
+  "Serialize a separate development request with validated context and output; the frozen pilot builder remains unchanged.";
+  checked = u:backend_budget_config(config.max_new, config.context, config.timeout_ms)?;
+  options = to_json({seed: seed, temperature: 0.6, top_p: 0.95, top_k: 20, repeat_penalty: 1, num_ctx: checked.context, num_predict: checked.max_new})?;
+  prefix = str_concat("{\"model\":", to_json(model_name)?);
+  message = str_concat(",\"messages\":[{\"role\":\"user\",\"content\":", to_json(prompt_text)?);
+  controls = str_concat("}],\"think\":", if thinking {
+      "true"
+    } else {
+      "false"
+    });
+  ending = str_concat(",\"stream\":false,\"keep_alive\":\"30m\",\"options\":", str_concat(options, "}"));
+  ok(str_concat(str_concat(prefix, message), str_concat(controls, ending)))
+}

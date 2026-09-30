@@ -222,3 +222,27 @@ malformed arguments and real GPU residency. Reuse a tested inference engine;
 do not turn the extension into an untested model rewrite. No backward/tape
 support is implied. This is a documented future option, not a new request
 sent to the sibling owner. Siblings and installed tools remain unchanged.
+
+## E5. Bounded long-running HTTP requests (missing, 2026-09-29)
+
+The current HTTP `request` implementation caps `timeout_ms` at 120,000
+(`http-client/src/client.rs`). At the measured roughly 35–38 tokens/s,
+8,192 generated tokens can take over three minutes. Required semantics:
+permit an explicit overall deadline up to 600,000 ms while retaining the
+response-byte and redirect bounds, cancellation and typed failures.
+Do not change the default or permit unbounded deadlines.
+
+Opt-in acceptance probe: `scripts/run-extension-demo http
+probes/http-long-timeout.mlpl`. It expects a quick local version GET to
+succeed with a 600,000 ms deadline; the pinned extension currently rejects
+that request before inference. Acceptance cases: 120,000 and 600,000 accepted;
+zero, negative, fractional and 600,001 rejected; slow-response timeout and
+size-limit failures still bounded. This affects `native-output-budget` and
+future longer reasoning evaluations, not the immutable pilot.
+
+Short-term workaround: `scripts/run-native-budget` uses bounded curl
+transport (600 seconds maximum, 1 MiB body maximum, no redirects or retries).
+MLPL still owns prompt construction, sampling parameters, completion rules
+and final-answer grading. This is an explicit shell-transport workaround,
+not a claim that the Rust extension now supports longer requests. No sibling
+repository or installed tool was modified, and no external message was sent.

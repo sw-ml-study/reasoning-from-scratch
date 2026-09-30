@@ -5941,6 +5941,30 @@ def u:backend_grade(decoded, reference) {
   "Grade only a complete final answer using boxed-only extraction; visible thinking is never accepted as the final answer.";
   decoded.complete * u:verify_grade_response(decoded.content, reference, "boxed_only")
 }
+
+def u:backend_budget_config(max_new, context, timeout_ms) {
+  "Validate the development experiment bounds: 8192 output, 32768 context, at least 1024 prompt tokens reserved, and 1 to 600 seconds.";
+  if lt(max_new, 1) + gt(max_new, 8192) + (max_new - floor(max_new)) + lt(context, max_new + 1024) + gt(context, 32768) + (context - floor(context)) + lt(timeout_ms, 1000) + gt(timeout_ms, 600000) + (timeout_ms - floor(timeout_ms)) {
+    err("invalid bounded development output/context/timeout configuration")
+  } else {
+    ok({max_new: max_new, context: context, timeout_ms: timeout_ms})
+  }
+}
+
+def u:backend_budget_body(model_name, prompt_text, thinking, seed, config) {
+  "Serialize a separate development request with validated context and output; the frozen pilot builder remains unchanged.";
+  checked = u:backend_budget_config(config.max_new, config.context, config.timeout_ms)?;
+  options = to_json({seed: seed, temperature: 0.6, top_p: 0.95, top_k: 20, repeat_penalty: 1, num_ctx: checked.context, num_predict: checked.max_new})?;
+  prefix = str_concat("{\"model\":", to_json(model_name)?);
+  message = str_concat(",\"messages\":[{\"role\":\"user\",\"content\":", to_json(prompt_text)?);
+  controls = str_concat("}],\"think\":", if thinking {
+      "true"
+    } else {
+      "false"
+    });
+  ending = str_concat(",\"stream\":false,\"keep_alive\":\"30m\",\"options\":", str_concat(options, "}"));
+  ok(str_concat(str_concat(prefix, message), str_concat(controls, ending)))
+}
 #+end_src
 
 ** Live driver: preserve every attempt and keep references private
@@ -6303,5 +6327,51 @@ if matches * eq(count, 24) {
   ok("local raw evidence replayed without inference")
 } else {
   err("pilot replay disagrees with saved requests or grades")
+}
+#+end_src
+
+* Bounded larger-output development diagnosis
+
+The MLPL driver constructs requests and grades saved responses. A shell wrapper
+uses bounded curl transport pending extension request E5; this is a development
+retry of an already examined question, not a fresh held-out measurement.
+
+#+begin_src mlpl :tangle ../demos/native_budget.mlpl
+# Development diagnosis of the previously truncated pilot case; MLPL constructs reference-free requests and grades saved curl responses. Downloaded text remains local.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/backend/ollama.mlpl";
+
+out_dir = env("BUDGET_OUT")?
+config = u:backend_budget_config(parse_json(env("BUDGET_MAX_NEW")?)?, parse_json(env("BUDGET_CONTEXT")?)?, parse_json(env("BUDGET_TIMEOUT_MS")?)?)?
+dataset = u:eval_load_jsonl_text(read_text("data/math500/native-heldout-v1.jsonl")?, "native-heldout-v1", {})?
+item = u:eval_record(dataset, 2)?
+if str_eq(env("BUDGET_STAGE")?, "prepare") {
+  body = u:backend_budget_body("qwen3:8b-q6", u:eval_render_prompt(item.problem), 1, 42, config)?;
+  write_atomic(str_concat(out_dir, "/request.json"), body)?;
+  write_atomic(str_concat(out_dir, "/config.json"), to_json(config)?)?;
+  ok("development request saved; no reference answer sent")
+} else {
+  transport = parse_json(read_text(str_concat(out_dir, "/transport.json"))?)?;
+  result = {correct: 0, complete: 0, error: 1, tokens: 0, prompt_tokens: 0, wall_seconds: transport.time_total, done_reason: "transport_or_protocol_error"};
+  if eq(parse_json(env("BUDGET_CURL_STATUS")?)?, 0) * eq(transport.http_code, 200) {
+    raw = read_text(str_concat(out_dir, "/response.json"))?;
+    decoded = u:backend_decode({status: 200, body: tokenize_bytes(raw)});
+    if is_ok(decoded) {
+      answer = unwrap(decoded);
+      payload = parse_json(raw)?;
+      result = {correct: u:backend_grade(answer, item.answer), complete: answer.complete, error: 0, tokens: answer.eval_count, prompt_tokens: payload.prompt_eval_count, wall_seconds: transport.time_total, done_reason: answer.done_reason};
+      write_atomic(str_concat(out_dir, "/private-grade.json"), to_json({candidate: u:verify_final_candidate(answer.content, "boxed_only"), reference: item.answer})?)?
+    }
+  };
+  write_atomic(str_concat(out_dir, "/metrics.json"), to_json(result)?)?;
+  print("Development diagnosis; id:", item.unique_id, "seed: 42; thinking on; choice-v2:", to_json(result)?);
+  ok("attempt retained, including any failure")
 }
 #+end_src

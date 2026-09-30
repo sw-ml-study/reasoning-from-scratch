@@ -233,3 +233,35 @@ requires the pinned data and retained run directory; it is not in `just check`.
 The replay validates frozen v1 grades and writes separate `choice-v2-pairs.jsonl`
 and `choice-v2-summary.json` files in the retained run directory. It does not
 replace the original metrics or call the model.
+
+## Larger-output development diagnosis
+
+`just reasoning-budget` retries the previously truncated pilot problem
+(index 2, seed 42, thinking enabled). It defaults to `BUDGET_MAX_NEW=8192`,
+`BUDGET_CONTEXT=12288`, and `BUDGET_TIMEOUT_MS=600000`. Output is capped at
+8,192, context at 32,768 with at least 1,024 tokens reserved for the prompt,
+and timeout at 600 seconds. Actual prompt-plus-output usage is checked in
+the published analysis; reserved headroom alone is not a tokenizer proof.
+
+The installed model declares 40,960 context tokens. The runner verifies the
+model manifest and weight identity, warms the requested context, checks full
+GPU residency before inference, and retains request, raw response (including
+partial transfer), transport status, grades, time and before/after GPU usage.
+GPU snapshots are not peak-memory measurements. Failures are saved and counted;
+inspect `metrics.json`, not merely the script exit status, to judge success.
+
+MLPL constructs the request and grades the answer. Transport uses curl until
+[E5](demo-extensions-requests.md) delivers a longer bounded HTTP-extension
+request deadline. Curl has an explicit timeout, a 1 MiB response bound, and no
+retries or redirects. This changes the native transport and context as well
+as the token allowance; any observed recovery cannot be attributed solely to
+the output cap. The frozen pilot runner, API defaults and published primary
+measurements remain unchanged. This selected failed case is development data,
+not evidence of a general reasoning advantage.
+
+Measured retry: 3,158 tokens, correct completed final answer, 88.01 s.
+Matched-context control at 3,072 tokens: incomplete length stop, 81.98 s.
+Both runs reported full residency; GPU usage before/after was 8,479 MiB of
+16,311 MiB. The retry ran first. Their thinking prefixes differ despite the
+fixed seed, so no claim of exact continued generation is made. See the
+`native-budget-v1` public evidence bundle and the HTML report.

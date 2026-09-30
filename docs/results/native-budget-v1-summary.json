@@ -1,0 +1,35 @@
+{
+  "experiment": "native-budget-v1",
+  "classification": "selected-case development diagnosis",
+  "id": "test/prealgebra/1251.json",
+  "seed": 42,
+  "thinking": true,
+  "verifier": "choice-v2",
+  "context": 12288,
+  "timeout_ms": 600000,
+  "control_max_new": 3072,
+  "retry_max_new": 8192,
+  "control": {
+    "complete": 0,
+    "correct": 0,
+    "done_reason": "length",
+    "error": 0,
+    "prompt_tokens": 71,
+    "tokens": 3072,
+    "wall_seconds": 81.980856
+  },
+  "retry": {
+    "complete": 1,
+    "correct": 1,
+    "done_reason": "stop",
+    "error": 0,
+    "prompt_tokens": 71,
+    "tokens": 3158,
+    "wall_seconds": 88.012657
+  },
+  "gpu_before_mib": 8479,
+  "gpu_after_mib": 8479,
+  "gpu_total_mib": 16311,
+  "model_resident_bytes": 8682881152,
+  "thinking_prefix_equal": false
+}

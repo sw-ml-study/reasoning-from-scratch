@@ -298,3 +298,14 @@ walks through tokenization, decoding, Qwen forward/cache operations, answer
 verification and inference-time scaling. Training and distillation sections
 will grow with tested implementations, rather than describe unbuilt features
 as working code.
+
+* Larger-output development diagnosis
+
+=just reasoning-budget= retries the previously truncated pilot case with
+8,192 output tokens allowed, a 12,288-token context and a 600-second deadline.
+MLPL writes and grades requests; bounded curl transport works around the
+HTTP extension's 120-second ceiling (request E5). The measured retry finishes
+correctly at 3,158 tokens in 88.01 s. A same-context control at the old cap
+again truncates at 3,072 tokens in 81.98 s. This improves completion on an
+already examined case; it does not revise the pilot or show a general
+reasoning benefit. See [[file:reasoning-results.html][the report]] for evidence and limitations.

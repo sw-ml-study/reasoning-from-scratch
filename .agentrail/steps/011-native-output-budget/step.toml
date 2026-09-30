@@ -1,6 +1,6 @@
 number = 11
 slug = "native-output-budget"
-status = "pending"
+status = "in-progress"
 description = "User asks to lift token limit and explain what is missing. Implement a config..."
 role = "production"
 context_files = []

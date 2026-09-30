@@ -128,8 +128,8 @@ conditions. Saga 4 is archived at
 | reasoning-budget-report | delivered: configurable output budget, all-attempt follow-up, method-focused report and explicit reasoning-benefit milestones |
 | native-reasoning-heldout | delivered: frozen six-problem, two-seed paired pilot with retained failures, uncertainty and cost; report distinguishes verifier false negatives |
 | verifier-choice-equivalence | delivered: narrow choice-v2 normalization with positive/negative tests; 24 saved attempts replayed, four corrected grades; frozen primary scores retained |
-| reasoning-fresh-holdout | next: freeze a disjoint paired comparison before inference, measure correctness gains and cost after tuning |
-| native-output-budget | immediate next: user-requested larger bounded output/context/timeout experiment; retain truncation evidence and measure completion, accuracy, cost and GPU residency |
+| reasoning-fresh-holdout | next: user-prioritized book reproduction; validate native Qwen3-0.6B-Base execution and base prompts, then freeze direct/CoT/voting evaluation; no further broad 8B toggle benchmark |
+| native-output-budget | delivered: configurable bounded development retry; the truncated case completes correctly in 3,158 tokens / 88.01 s with full GPU residency; longer HTTP deadline requested as E5 |
 | resident-inference-copy-profile | deferred by user: document future core efficiency work; do not let it block native inference |
 
 See [the revalidation report](upstream-revalidation.md). Toy GRPO remains

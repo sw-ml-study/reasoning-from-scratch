@@ -63,8 +63,13 @@ are retained. `just reasoning-pilot` reruns inference;
 The choice-v2 fix now regrades those same outputs as 6/6 versus 5/6 at seed
 42 and 6/6 versus 6/6 at seed 43. Primary scores remain unchanged; the
 [HTML report](docs/reasoning-results.html) separates the post-hoc correction.
-Next: test a larger bounded output allowance, then freeze a fresh holdout
-to test for a reasoning benefit.
+The larger-budget development retry now completes the previously truncated
+case correctly in 3,158 tokens / 88.01 seconds (8,192 allowed). Run it with
+`just reasoning-budget`; MLPL constructs and grades requests, with bounded
+curl transport pending longer HTTP-extension deadlines. This selected retry
+does not alter the pilot. Next: validate efficient inference of the book's
+exact Qwen3-0.6B-Base checkpoint and freeze a direct/CoT/voting comparison.
+The working 8B thinking-toggle experiment does not reproduce that baseline.
 
 Revalidated on Arch Linux on 2026-09-29 with sw-MLPL 0.22.0, build
 `49c15b3e`. The verifier, evaluation harness, reference tokenizer and
@@ -84,7 +89,7 @@ of unrelated globals but still fails the same generation allocation limit
 has not been GRPO-trained here. The 32 GiB limit is a CPU virtual-address
 budget, not GPU VRAM; these reference runs used no GPU.
 
-The fixture suite has 162 native tests. A clean clone now generates its tiny
+The fixture suite has 164 native tests. A clean clone now generates its tiny
 checkpoint fixture automatically. The implementation document reproduces all 26
 library sources plus five drivers and a fixture builder (32 exact tangles).
 Tiny cached generation matches full recomputation exactly

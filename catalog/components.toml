@@ -303,3 +303,12 @@ source = "lib/eval/paired.mlpl"
 test = "tests/test_eval_paired.mlpl"
 documentation = "docs/heldout-pilot-protocol.md"
 status = "accepted"
+
+[[component]]
+id = "NATIVEBUDGET"
+slug = "bounded-native-development-retry"
+chapter = 3
+source = "demos/native_budget.mlpl"
+test = "tests/test_backend.mlpl"
+documentation = "docs/native-reasoning-demo.md"
+status = "accepted"

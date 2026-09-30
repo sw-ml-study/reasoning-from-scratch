@@ -1,0 +1,37 @@
+# Development diagnosis of the previously truncated pilot case; MLPL constructs reference-free requests and grades saved curl responses. Downloaded text remains local.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/backend/ollama.mlpl";
+
+out_dir = env("BUDGET_OUT")?
+config = u:backend_budget_config(parse_json(env("BUDGET_MAX_NEW")?)?, parse_json(env("BUDGET_CONTEXT")?)?, parse_json(env("BUDGET_TIMEOUT_MS")?)?)?
+dataset = u:eval_load_jsonl_text(read_text("data/math500/native-heldout-v1.jsonl")?, "native-heldout-v1", {})?
+item = u:eval_record(dataset, 2)?
+if str_eq(env("BUDGET_STAGE")?, "prepare") {
+  body = u:backend_budget_body("qwen3:8b-q6", u:eval_render_prompt(item.problem), 1, 42, config)?;
+  write_atomic(str_concat(out_dir, "/request.json"), body)?;
+  write_atomic(str_concat(out_dir, "/config.json"), to_json(config)?)?;
+  ok("development request saved; no reference answer sent")
+} else {
+  transport = parse_json(read_text(str_concat(out_dir, "/transport.json"))?)?;
+  result = {correct: 0, complete: 0, error: 1, tokens: 0, prompt_tokens: 0, wall_seconds: transport.time_total, done_reason: "transport_or_protocol_error"};
+  if eq(parse_json(env("BUDGET_CURL_STATUS")?)?, 0) * eq(transport.http_code, 200) {
+    raw = read_text(str_concat(out_dir, "/response.json"))?;
+    decoded = u:backend_decode({status: 200, body: tokenize_bytes(raw)});
+    if is_ok(decoded) {
+      answer = unwrap(decoded);
+      payload = parse_json(raw)?;
+      result = {correct: u:backend_grade(answer, item.answer), complete: answer.complete, error: 0, tokens: answer.eval_count, prompt_tokens: payload.prompt_eval_count, wall_seconds: transport.time_total, done_reason: answer.done_reason};
+      write_atomic(str_concat(out_dir, "/private-grade.json"), to_json({candidate: u:verify_final_candidate(answer.content, "boxed_only"), reference: item.answer})?)?
+    }
+  };
+  write_atomic(str_concat(out_dir, "/metrics.json"), to_json(result)?)?;
+  print("Development diagnosis; id:", item.unique_id, "seed: 42; thinking on; choice-v2:", to_json(result)?);
+  ok("attempt retained, including any failure")
+}

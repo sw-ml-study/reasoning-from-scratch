@@ -482,3 +482,17 @@ negative native tests before the narrow MLPL change. Historical v1 remains
 replayable. Choice-v2 corrects exactly four of 24 saved grades: seed 42 is
 6/6 direct versus 5/6 thinking; seed 43 is 6/6 in both modes. No inference
 was repeated, and costs and the zero-gain conclusion remain unchanged.
+
+**Larger native reasoning budgets: supported via bounded shell transport.**
+MLPL now validates explicit output/context/timeout controls and constructs
+8,192-token requests with prompt headroom. The model declares 40,960 context
+tokens; our experiment caps context at 32,768 and uses 12,288 by default.
+The HTTP extension's 120-second ceiling is missing the longer deadline
+needed for these requests. E5 and `probes/http-long-timeout.mlpl` specify the
+acceptance case. Until delivered, bounded curl transports the MLPL request
+and returns saved response bytes to MLPL grading. No core or sibling change
+was made. The separate frozen API remains at its historical settings.
+The selected failed case now completes correctly at 3,158 tokens in 88.01 s;
+the matched-context 3,072-token control truncates in 81.98 s. Both attempts
+remain development evidence, with full GPU residency reported and no change
+to frozen pilot scores. The generation traces differ despite the fixed seed.

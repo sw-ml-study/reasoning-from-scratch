@@ -70,4 +70,30 @@ def u:test_backend_budget() {
   u:assert_err(u:backend_chat_body("fixture", "x", 1, 42, 1.5), "fractional budget rejected")
 }
 
+@test {name: "extended budget preserves context headroom and bounded timeout", tags: ["backend"]}
+def u:test_backend_extended_budget() {
+  "Larger runs serialize explicit context and output without changing the legacy API.";
+  config = u:backend_budget_config(8192, 12288, 600000)?;
+  body = u:backend_budget_body("fixture", "x", 1, 42, config)?;
+  u:assert_true(u:text_contains(body, "\"num_predict\":8192"), "larger output")?;
+  u:assert_true(u:text_contains(body, "\"num_ctx\":12288"), "prompt headroom")?;
+  u:assert_eq(config.timeout_ms, 600000, "bounded ten minute deadline")?;
+  old = u:backend_chat_body("fixture", "x", 1, 42, 3072)?;
+  u:assert_true(u:text_contains(old, "\"num_ctx\":4096"), "historical context unchanged")
+}
+
+@test {name: "extended budget rejects invalid and unsafe configurations", tags: ["backend"]}
+def u:test_backend_extended_bounds() {
+  "Reject unlimited, fractional and oversized controls and insufficient prompt space.";
+  u:assert_err(u:backend_budget_config(0, 12288, 600000), "no unlimited output")?;
+  u:assert_err(u:backend_budget_config(8193, 12288, 600000), "output ceiling")?;
+  u:assert_err(u:backend_budget_config(8192, 8192, 600000), "headroom required")?;
+  u:assert_err(u:backend_budget_config(8192, 65536, 600000), "context ceiling")?;
+  u:assert_err(u:backend_budget_config(1.5, 4096, 600000), "integer output")?;
+  u:assert_err(u:backend_budget_config(1024, 4096.5, 600000), "integer context")?;
+  u:assert_err(u:backend_budget_config(1024, 4096, 120000.5), "integer timeout")?;
+  u:assert_err(u:backend_budget_config(1024, 4096, 0), "bounded timeout")?;
+  u:assert_err(u:backend_budget_config(1024, 4096, 600001), "timeout ceiling")
+}
+
 u:run_registered_tests()
