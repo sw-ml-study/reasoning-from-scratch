@@ -1,9 +1,10 @@
 number = 10
 slug = "verifier-choice-equivalence"
-status = "in-progress"
+status = "completed"
 description = "Address the held-out pilot discovery without rewriting its frozen primary sco..."
 role = "production"
 context_files = []
 created_at = "2026-09-29T15:35:31"
+completed_at = "2026-09-29T17:19:01"
 task_type = "validation"
-commits = []
+commits = ["7dd03b7d1ade40afe49f4047395ef36e5a0b3591"]
