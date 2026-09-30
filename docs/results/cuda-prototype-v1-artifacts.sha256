@@ -1,0 +1,6 @@
+c54a938fe159f957b94f29718dd308b82a34a92e438e650207abe8f0de04cb8d  /disk1/tmp/reasoning-tools/qwen3-cuda-provider/Cargo.toml
+0d74e8f14ad51d322aaf1a88d486f1c8bfdc75947d63e81523e347dc3ad8cfc5  /disk1/tmp/reasoning-tools/qwen3-cuda-provider/Cargo.lock
+b429c6a48767fc4d07ee00f5c0dc2c2fe58acff9e6967e6a7287979baf3d0476  /disk1/tmp/reasoning-tools/qwen3-cuda-provider/src/lib.rs
+8b830a95aee76df11299406aafd9acba779a152b6888dbbeb7568df7f738c90c  /disk1/tmp/reasoning-tools/qwen3-cuda-provider/target/release/libmlpl_qwen3_cuda_prototype.so
+a3a610bdc10499a2ab35a2adbe6cfb4d662611ba43054085bf65c58a32e8bab8  /disk1/tmp/reasoning-tools/build-cuda-49c15b3e/release/mlpl-repl
+5b0804e1e75104f9b467f7ca4fd8f05dd190c584152814391d5391a8cd1a35ea  /disk1/tmp/reasoning-tools/qwen3-cuda-provider-source.tar.gz

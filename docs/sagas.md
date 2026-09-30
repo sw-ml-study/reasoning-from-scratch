@@ -177,3 +177,12 @@ training machinery is real but limited; CUDA build pairing and the general
 Qwen3 provider still require validation. Next step reuses/revalidates this
 foundation before any book evaluation. Core copying optimization remains
 deferred. See `ecosystem-reuse.md`, `rust-cuda-backend.md` and E6.
+
+Step 013 now delivers an isolated CUDA CLI matrix pass, an external Rust
+Qwen3 provider prototype, MLPL greedy generation with fixture tests, optional
+GPU parity/lifecycle checks, and two preserved real base-model transcripts.
+The water-tank explanation is correct; multiplication has a correct answer
+but flawed reasoning. See `cuda-prototype.md`. The next step delivers
+provider acceptance/provenance and the frozen direct/CoT/voting pilot.
+Portable E6 delivery and real-model numerical equivalence remain outstanding;
+training is separate. Core copying optimization remains deferred.

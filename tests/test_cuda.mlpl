@@ -1,0 +1,41 @@
+# CPU fixtures for native-provider greedy decoding; no extension or GPU required.
+include "lib/cuda/cuda.mlpl";
+
+def u:cuda_test_forward(request) {
+  "A deterministic three-token model emits one then EOS after token one.";
+  ok(if eq(at(request.ids, tally(request.ids) - 1), 1) {
+      [0, 0, 9]
+    } else {
+      [0, 9, 0]
+    })
+}
+
+@test {name: "native greedy excludes EOS and counts model calls", tags: ["cuda", "generate"]}
+def u:test_cuda_eos() {
+  "The callback receives prompt then only the generated token, and EOS never enters output.";
+  result = u:cuda_greedy({forward: :u:cuda_test_forward, handle: 0}, [0], 4, 2)?;
+  u:assert_eq(result.ids, [1], "one generated token")?;
+  u:assert_eq(result.calls, 2, "prefill then decode")?;
+  u:assert_text_eq(result.stopped, "eos", "EOS stop")
+}
+
+@test {name: "native greedy budget avoids an unused forward", tags: ["cuda", "generate"]}
+def u:test_cuda_budget() {
+  "One token needs only prefill, and an immediate EOS has empty output.";
+  result = u:cuda_greedy({forward: :u:cuda_test_forward, handle: 0}, [0], 1, 2)?;
+  u:assert_eq(result.calls, 1, "no extra forward")?;
+  u:assert_text_eq(result.stopped, "budget", "budget stop")?;
+  result = u:cuda_greedy({forward: :u:cuda_test_forward, handle: 0}, [1], 4, 2)?;
+  u:assert_eq(tally(result.ids), 0, "empty EOS output")
+}
+
+@test {name: "native greedy rejects empty prompts and invalid budgets", tags: ["cuda", "errors"]}
+def u:test_cuda_bounds() {
+  "Invalid inputs fail before invoking native execution.";
+  provider = {forward: :u:cuda_test_forward, handle: 0};
+  u:assert_err(u:cuda_greedy(provider, [], 1, 2), "empty")?;
+  u:assert_err(u:cuda_greedy(provider, [0], 0, 2), "zero")?;
+  u:assert_err(u:cuda_greedy(provider, [0], 1.5, 2), "fraction")
+}
+
+u:run_registered_tests()

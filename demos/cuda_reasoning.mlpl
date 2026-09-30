@@ -1,0 +1,32 @@
+# Opt-in raw Qwen3-0.6B-Base generation. MLPL owns prompt, greedy decisions and stopping; the external Rust CUDA prototype owns resident weights and KV cache.
+include "lib/cuda/cuda.mlpl";
+
+def u:cuda_native_forward(request) {
+  "Normalize the SDK native error convention to the generation callback Result contract.";
+  value = _qwen3_cuda:forward(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+started = clock_ms()
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 4096, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+print("model:", h, "load_ms:", clock_ms() - started)
+tok = _hftok:load_path(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+prompt = env("CUDA_PROMPT")?
+ids = _hftok:encode(tok, prompt)
+print("model: Qwen3-0.6B-Base; BF16; CUDA; raw prompt; greedy; seed: 42 (unused); max_new: 512; eos: 151643")
+print("prompt:", prompt)
+started = clock_ms()
+result = u:cuda_greedy({forward: :u:cuda_native_forward, handle: h}, ids, 512, 151643)?
+print("generation_ms:", clock_ms() - started, "tokens:", tally(result.ids), "stopped:", result.stopped)
+print("text:", if tally(result.ids) { _hftok:decode(tok, result.ids) } else {
+    ""
+  })
+_qwen3_cuda:close({handle: h})
+_hftok:close(tok)
+ok(1)

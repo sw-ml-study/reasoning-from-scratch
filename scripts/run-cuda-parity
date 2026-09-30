@@ -1,0 +1,16 @@
+#!/bin/sh
+# Optional GPU integration check against independently authored MLPL logits.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+QWEN_CUDA_LIBRARY=${QWEN_CUDA_LIBRARY:-/disk1/tmp/reasoning-tools/qwen3-cuda-provider/target/release/libmlpl_qwen3_cuda_prototype.so}
+[ -f "$QWEN_CUDA_LIBRARY" ] || { echo 'CUDA provider unavailable' >&2; exit 77; }
+REPO_ROOT=$repo
+LD_LIBRARY_PATH=/opt/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export QWEN_CUDA_LIBRARY REPO_ROOT LD_LIBRARY_PATH
+cd "$repo"
+mkdir -p out/cuda-tiny
+cp fixtures/safetensors/cuda-config.json out/cuda-tiny/config.json
+timeout 60 scripts/run-mlpl-demo demos/cuda_parity.mlpl > out/cuda-parity.log 2>&1
+cat out/cuda-parity.log
+if grep -E 'error:|Err\(|falling back|CPU fallback' out/cuda-parity.log >/dev/null; then exit 1; fi
+grep '^PASS CUDA tiny' out/cuda-parity.log >/dev/null

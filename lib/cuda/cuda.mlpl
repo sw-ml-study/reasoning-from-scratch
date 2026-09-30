@@ -1,0 +1,30 @@
+# MLPL greedy decoding over a resident native forward callback. The provider owns weights and cache; callers reset between prompts. No GPU is needed for fixture tests.
+
+def u:cuda_greedy(provider, ids, max_new, eos) {
+  "Generate from last-position logits; callback returns a Result, accepts a boxed handle, and receives only new tokens after prefill.";
+  if eq(tally(ids), 0) + lt(max_new, 1) + (1 - eq(max_new, floor(max_new))) {
+    err({kind: "generation_bounds", message: "nonempty prompt and positive integer token budget required"})
+  } else {
+    logits = call(provider.forward, {handle: provider.handle, ids: ids})?;
+    generated = [];
+    calls = 1;
+    running = 1;
+    stopped = "budget";
+    while running {
+      id = argmax(logits);
+      if eq(id, eos) {
+        stopped = "eos";
+        running = 0
+      } else {
+        generated = concat(generated, id);
+        if lt(tally(generated), max_new) {
+          logits = call(provider.forward, {handle: provider.handle, ids: [id]})?;
+          calls = calls + 1
+        } else {
+          running = 0
+        }
+      }
+    };
+    ok({ids: generated, calls: calls, stopped: stopped})
+  }
+}

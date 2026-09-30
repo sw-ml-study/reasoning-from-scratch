@@ -283,3 +283,19 @@ Current observation: no such package/artifact exists in the inspected sibling
 extension tree. Consumer evaluation is unavailable until delivery and parity
 checks. This work order is local; sibling policy prohibits implementing the
 Rust package from this checkout. Core efficiency work remains deferred.
+
+### E6 local implementation handoff, 2026-09-29
+
+A working external prototype is available at
+`/disk1/tmp/reasoning-tools/qwen3-cuda-provider`, with source archive
+`/disk1/tmp/reasoning-tools/qwen3-cuda-provider-source.tar.gz` and hashes in
+`docs/results/cuda-prototype-v1-artifacts.sha256`. See
+[the runnable consumer and evidence](cuda-prototype.md). It uses the current
+SDK, Candle 0.11.0 and cudarc 0.19.10 CUDA 13.4, and has demonstrated tiny
+reference/cache parity and BF16 base generation through MLPL. This is concrete
+implementation input for the extension owner, not just another API proposal.
+
+Delivery still needs a portable SDK dependency/build record, public facade,
+path confinement and expanded negative/lifecycle acceptance. Preserve the
+record-boxed handle boundary. Keep inference separate from training: current
+`info` explicitly reports training false. Sibling source was not changed.

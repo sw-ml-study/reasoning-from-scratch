@@ -1,4 +1,4 @@
-number = 14
+number = 15
 slug = "resident-inference-copy-profile"
 status = "in-progress"
 description = "Continue from docs/loader-profile.md: real loading now completes in 101.45 se..."

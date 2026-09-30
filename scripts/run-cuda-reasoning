@@ -1,0 +1,20 @@
+#!/bin/sh
+# Opt-in local prototype runner; pinned native CUDA implementation, no network service.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+QWEN_CUDA_LIBRARY=${QWEN_CUDA_LIBRARY:-/disk1/tmp/reasoning-tools/qwen3-cuda-provider/target/release/libmlpl_qwen3_cuda_prototype.so}
+[ -f "$QWEN_CUDA_LIBRARY" ] || { echo 'CUDA provider unavailable: see docs/cuda-prototype.md' >&2; exit 77; }
+expected=8b830a95aee76df11299406aafd9acba779a152b6888dbbeb7568df7f738c90c
+[ "$(sha256sum "$QWEN_CUDA_LIBRARY" | awk '{print $1}')" = "$expected" ] || { echo 'CUDA provider artifact differs from validated prototype' >&2; exit 1; }
+EXTENSION_LIBRARY=$("$repo/scripts/select-extension" hftok)
+REPO_ROOT=$repo
+CUDA_PROMPT=${CUDA_PROMPT:-'A tank contains 120 liters. It loses 35 liters, then gains 18 liters. How many liters remain? Explain step by step and put the final answer in \boxed{}.'}
+LD_LIBRARY_PATH=/opt/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export QWEN_CUDA_LIBRARY EXTENSION_LIBRARY REPO_ROOT CUDA_PROMPT LD_LIBRARY_PATH
+cd "$repo"
+mkdir -p out
+log=out/cuda-reasoning.log
+timeout 180 "$repo/scripts/run-mlpl-demo" demos/cuda_reasoning.mlpl > "$log" 2>&1 || { cat "$log"; exit 1; }
+cat "$log"
+if grep -E 'error:|Err\(|falling back|CPU fallback' "$log" >/dev/null; then exit 1; fi
+grep '^generation_ms:' "$log" >/dev/null

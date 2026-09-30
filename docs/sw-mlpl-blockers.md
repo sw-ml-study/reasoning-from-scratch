@@ -520,3 +520,17 @@ excluding all six prior pilot ids. Execution is unavailable pending these
 gates; no scores are invented. Rust-owned autograd is allowed, and does not
 require every foreign call to join MLPL's existing tape. Implementation
 ownership remains with the sibling through documented work orders.
+
+## 2026-09-29: CUDA execution and resident Qwen3 prototype
+
+R12 now has a tested local workaround: unchanged 49c15b3e builds with the
+existing cudarc 0.19.7 API-version override `CUDARC_CUDA_VERSION=13020` against
+host toolkit 13.4; matrix execution passes without fallback. This does not
+establish all native training kernels. The separate E6 prototype uses Candle
+0.11.0 / cudarc 0.19.10 with explicit CUDA 13.4 support. It passes tiny-model
+F32 reference/cache parity and generates from the pinned real BF16 base
+checkpoint. See [measurements and limitations](cuda-prototype.md).
+Classify resident CUDA inference as **supported locally**, distribution and
+real-model reference equivalence as **missing**, and native Result/handle
+adaptation as **awkward**. The extension owns device storage, so the CPU
+interpreter's copying budget no longer blocks these inference smokes.

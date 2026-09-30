@@ -1,0 +1,35 @@
+# Opt-in scratch numerical parity check for native CUDA provider.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "fixtures/safetensors/scaled.mlpl";
+config = u:st_fixture_wide_config(32, 2, 16)
+u:st_fixture_write("out/cuda-tiny/model.safetensors", config)?
+model = u:st_load_model("out/cuda-tiny/model.safetensors", config, "BF16", {})?
+print("reference:", to_json(u:qwen_next_logits(config, model, [1, 2, 3]))?)
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+print("namespace:", namespace)
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/out/cuda-tiny"), context: 8, dtype: "f32", config_sha256: "d1704658308ee989fc06f4108ad5808f8e59ca5a9c203d45e6b1e823581edf7e", weights_sha256: "e720ec8946953f93daf6dd9699db66167031bc03d3a96912b91eb44438bd9bfd"})
+print("handle:", h)
+logits = _qwen3_cuda:forward({handle: h, ids: [1, 2, 3]})
+print("gpu:", logits)
+print("max_abs_difference:", reduce(:max, abs(logits - u:qwen_next_logits(config, model, [1, 2, 3]))))
+_qwen3_cuda:reset({handle: h})
+_qwen3_cuda:forward({handle: h, ids: [1, 2]})
+cached = _qwen3_cuda:forward({handle: h, ids: [3]})
+print("cached_max_abs_difference:", reduce(:max, abs(cached - logits)))
+_qwen3_cuda:close({handle: h})
+if gt(reduce(:max, abs(logits - u:qwen_next_logits(config, model, [1, 2, 3]))), 0.00001) {
+  err("reference parity failed")?
+}
+if gt(reduce(:max, abs(cached - logits)), 0.00001) {
+  err("cache parity failed")?
+}
+if 1 - is_err(_qwen3_cuda:forward({handle: h, ids: [1]})) {
+  err("stale handle accepted")?
+}
+print("PASS CUDA tiny reference, cache and stale-handle checks")

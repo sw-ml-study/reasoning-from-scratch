@@ -101,3 +101,12 @@ and Rust implementation in `demo-extensions`; E6 is its actionable work
 order. No request was sent externally and no sibling was modified. This
 is an integration dependency, not evidence of insufficient model capacity
 or an established GPU-memory impossibility.
+
+## Local acceptance update, 2026-09-29
+
+The [working prototype](cuda-prototype.md) now clears device execution,
+tiny reference/cache agreement, and real BF16 base generation. This supersedes
+the earlier blanket build/provider-unavailable status for this host. E6 is
+still not a released portable dependency; no book-pilot accuracy, real-model
+PyTorch equivalence, native training, or 100× speedup is accepted. The local
+API combines prefill/decode as `forward` and permits one KV sequence per model.

@@ -8,6 +8,50 @@
 #+property: header-args:sh :dir .. :results output verbatim :exports code :eval never-export :tangle no
 #+property: header-args:emacs-lisp :exports code :eval never-export :tangle no
 
+* Working MLPL / Rust / CUDA demonstration
+
+The exact pretrained Qwen3-0.6B-Base checkpoint now runs through an in-process
+Rust Candle extension. MLPL constructs the prompt, selects each greedy token,
+and handles stopping. The extension keeps BF16 weights and KV state on CUDA.
+No Python or HTTP service participates in these runs. This demonstrates
+inference from a base checkpoint, not training from random initialization.
+
+| Authored prompt | Observed result | Load | Generation |
+|-----------------+-----------------+------+------------|
+| Water tank: 120 liters, lose 35, gain 18 | Correct explanation: 120−35=85; 85+18=103; boxed 103 | 6.529 s | 185 tokens, 8.376 s |
+| Multiply 17 by 23, explain | Correct boxed 391, but an invalid place-value step in explanation | 6.676 s | 210 tokens, 8.801 s |
+
+The water-tank example demonstrates valid step-by-step reasoning. The
+multiplication example shows why answer correctness alone cannot establish
+reasoning quality. These are two development smokes, not a held-out accuracy
+estimate or evidence that CoT beats direct answers. Both complete outputs are
+preserved: [[file:results/cuda-tank-v1.txt][water tank]] and [[file:results/cuda-multiplication-v1.txt][multiplication]].
+
+An authored tiny-model check independently compares CUDA F32 logits to our
+MLPL reference: maximum absolute difference 0.00000193084. Cached versus
+full-sequence execution differs by 0.00000190735; both pass a 0.00001 threshold.
+This validates the tested tiny path, not BF16 equivalence to the book's
+real-model PyTorch execution. A closed model handle is rejected.
+
+#+begin_src sh
+MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl just cuda-parity
+MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl just cuda-reasoning
+#+end_src
+
+Set =CUDA_PROMPT= to try a different raw prompt. The demo allows 512 new
+tokens and terminates at EOS; generation is greedy, seed 42 unused. At the
+observed 22–24 tokens/second, a 2,048-token answer projects to about 86–93
+seconds, with possible slowdown as context grows. A 144-generation comparison
+can therefore take tens of minutes to hours. The book's long runs are
+consistent with many questions and samples. Python/PyTorch also uses native
+CUDA kernels; changing orchestration languages does not imply a 100× gain.
+
+The provider source/artifact is currently a local external prototype, not a
+portable released dependency. [[file:cuda-prototype.md][Build pins, limitations and next acceptance]]
+identify the remaining handoff. The frozen book comparison is still unrun;
+no claim of improved held-out accuracy, full book parity, or native training
+is made. Results below involving Ollama remain historical external baselines.
+
 * The research question and our present result
 
 Can we improve checked answers by giving a model an explicit reasoning

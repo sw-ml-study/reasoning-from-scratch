@@ -1,6 +1,6 @@
 number = 13
 slug = "cuda-ecosystem-integration"
-status = "pending"
+status = "in-progress"
 description = "User insists on Rust CUDA-related ML crates, not Ollama, and reuse of CUDA de..."
 role = "production"
 context_files = []

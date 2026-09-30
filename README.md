@@ -4,8 +4,10 @@ A reasoning language model built step by step in
 [sw-MLPL](../sw-mlpl), following the method sequence of Sebastian Raschka's
 *Build a Reasoning Model (From Scratch)* (Manning, 2026) without Python and
 without any external machine-learning library in the reference implementation.
-An explicitly labeled native inference workaround is now available for live
-demonstrations while the reference implementation's performance is repaired.
+A working native Rust/CUDA inference prototype now runs the exact base
+checkpoint, with MLPL controlling decoding. [Run the demo](docs/cuda-prototype.md):
+a checked 185-token water-tank explanation takes about 8.4 seconds after loading.
+The independent MLPL reference remains available; core optimization is deferred.
 
 The project starts from the pretrained Qwen3-0.6B base checkpoint and adds,
 in order: text generation with a key/value cache, a math-answer verifier and
@@ -73,8 +75,7 @@ The working 8B thinking-toggle experiment does not reproduce that baseline.
 The target is **MLPL + Rust CUDA**, reusing the existing CUDA demos and
 [demo-ml-utils/library/extension contracts](docs/ecosystem-reuse.md).
 The [12-case book pilot](docs/book-reproduction-protocol.md) is frozen but
-unrun: CUDA build compatibility and general Qwen3 provider acceptance remain
-prerequisites. Ollama is historical evidence, not the target backend.
+unrun. A [working local CUDA prototype](docs/cuda-prototype.md) now passes tiny-model logit/cache parity and generates a correct water-tank explanation in 8.4 seconds. Run `just cuda-reasoning` with the documented interpreter override. Portable provider delivery and real-model numerical acceptance precede the held-out comparison. Ollama is historical evidence, not the target backend.
 
 Revalidated on Arch Linux on 2026-09-29 with sw-MLPL 0.22.0, build
 `49c15b3e`. The verifier, evaluation harness, reference tokenizer and

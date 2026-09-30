@@ -113,3 +113,11 @@ research-html:
 # Replay seven offline ob-mlpl calculations and refresh the publication.
 research-refresh:
     ./scripts/export-reasoning-report --refresh
+
+# Run the pinned in-process Rust CUDA prototype on the real base checkpoint.
+cuda-reasoning:
+    ./scripts/run-cuda-reasoning
+
+# Validate native GPU logits and cache against the tiny MLPL reference (opt-in).
+cuda-parity:
+    ./scripts/run-cuda-parity

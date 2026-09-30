@@ -2,8 +2,8 @@ schema = "sw-ml-study.reasoning-components"
 version = 1
 
 # Accepted components below retain their algorithms and are revalidated on
-# the Arch CPU build cd3cd03f. CUDA execution is not accepted; see
-# docs/linux-toolchain.md and core request R12.
+# the Arch CPU build cd3cd03f. Local CUDA prototype acceptance is recorded
+# separately in docs/cuda-prototype.md; full book reproduction is still unrun.
 
 [[component]]
 id = "DOC"
@@ -321,3 +321,12 @@ source = "docs/book-reproduction-protocol.md"
 test = "scripts/run-cuda-probe"
 documentation = "docs/rust-cuda-backend.md"
 status = "unavailable"
+
+[[component]]
+id = "CUDAGEN"
+slug = "native-cuda-greedy-decoding"
+chapter = 3
+source = "lib/cuda/cuda.mlpl"
+test = "tests/test_cuda.mlpl"
+documentation = "docs/cuda-prototype.md"
+status = "accepted"

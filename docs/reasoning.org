@@ -6375,3 +6375,116 @@ if str_eq(env("BUDGET_STAGE")?, "prepare") {
   ok("attempt retained, including any failure")
 }
 #+end_src
+
+* Resident CUDA generation
+
+The MLPL loop owns greedy selection, EOS and budget accounting. The native
+callback retains the checkpoint and KV cache and returns one vocabulary
+vector. Fixture tests exercise stopping without requiring CUDA; the opt-in
+parity driver compares GPU logits with the independent reference.
+
+#+begin_src mlpl :tangle ../lib/cuda/cuda.mlpl
+# MLPL greedy decoding over a resident native forward callback. The provider owns weights and cache; callers reset between prompts. No GPU is needed for fixture tests.
+
+def u:cuda_greedy(provider, ids, max_new, eos) {
+  "Generate from last-position logits; callback returns a Result, accepts a boxed handle, and receives only new tokens after prefill.";
+  if eq(tally(ids), 0) + lt(max_new, 1) + (1 - eq(max_new, floor(max_new))) {
+    err({kind: "generation_bounds", message: "nonempty prompt and positive integer token budget required"})
+  } else {
+    logits = call(provider.forward, {handle: provider.handle, ids: ids})?;
+    generated = [];
+    calls = 1;
+    running = 1;
+    stopped = "budget";
+    while running {
+      id = argmax(logits);
+      if eq(id, eos) {
+        stopped = "eos";
+        running = 0
+      } else {
+        generated = concat(generated, id);
+        if lt(tally(generated), max_new) {
+          logits = call(provider.forward, {handle: provider.handle, ids: [id]})?;
+          calls = calls + 1
+        } else {
+          running = 0
+        }
+      }
+    };
+    ok({ids: generated, calls: calls, stopped: stopped})
+  }
+}
+#+end_src
+
+#+begin_src mlpl :tangle ../demos/cuda_reasoning.mlpl
+# Opt-in raw Qwen3-0.6B-Base generation. MLPL owns prompt, greedy decisions and stopping; the external Rust CUDA prototype owns resident weights and KV cache.
+include "lib/cuda/cuda.mlpl";
+
+def u:cuda_native_forward(request) {
+  "Normalize the SDK native error convention to the generation callback Result contract.";
+  value = _qwen3_cuda:forward(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+started = clock_ms()
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 4096, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+print("model:", h, "load_ms:", clock_ms() - started)
+tok = _hftok:load_path(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+prompt = env("CUDA_PROMPT")?
+ids = _hftok:encode(tok, prompt)
+print("model: Qwen3-0.6B-Base; BF16; CUDA; raw prompt; greedy; seed: 42 (unused); max_new: 512; eos: 151643")
+print("prompt:", prompt)
+started = clock_ms()
+result = u:cuda_greedy({forward: :u:cuda_native_forward, handle: h}, ids, 512, 151643)?
+print("generation_ms:", clock_ms() - started, "tokens:", tally(result.ids), "stopped:", result.stopped)
+print("text:", if tally(result.ids) { _hftok:decode(tok, result.ids) } else {
+    ""
+  })
+_qwen3_cuda:close({handle: h})
+_hftok:close(tok)
+ok(1)
+#+end_src
+
+#+begin_src mlpl :tangle ../demos/cuda_parity.mlpl
+# Opt-in scratch numerical parity check for native CUDA provider.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "fixtures/safetensors/scaled.mlpl";
+config = u:st_fixture_wide_config(32, 2, 16)
+u:st_fixture_write("out/cuda-tiny/model.safetensors", config)?
+model = u:st_load_model("out/cuda-tiny/model.safetensors", config, "BF16", {})?
+print("reference:", to_json(u:qwen_next_logits(config, model, [1, 2, 3]))?)
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+print("namespace:", namespace)
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/out/cuda-tiny"), context: 8, dtype: "f32", config_sha256: "d1704658308ee989fc06f4108ad5808f8e59ca5a9c203d45e6b1e823581edf7e", weights_sha256: "e720ec8946953f93daf6dd9699db66167031bc03d3a96912b91eb44438bd9bfd"})
+print("handle:", h)
+logits = _qwen3_cuda:forward({handle: h, ids: [1, 2, 3]})
+print("gpu:", logits)
+print("max_abs_difference:", reduce(:max, abs(logits - u:qwen_next_logits(config, model, [1, 2, 3]))))
+_qwen3_cuda:reset({handle: h})
+_qwen3_cuda:forward({handle: h, ids: [1, 2]})
+cached = _qwen3_cuda:forward({handle: h, ids: [3]})
+print("cached_max_abs_difference:", reduce(:max, abs(cached - logits)))
+_qwen3_cuda:close({handle: h})
+if gt(reduce(:max, abs(logits - u:qwen_next_logits(config, model, [1, 2, 3]))), 0.00001) {
+  err("reference parity failed")?
+}
+if gt(reduce(:max, abs(cached - logits)), 0.00001) {
+  err("cache parity failed")?
+}
+if 1 - is_err(_qwen3_cuda:forward({handle: h, ids: [1]})) {
+  err("stale handle accepted")?
+}
+print("PASS CUDA tiny reference, cache and stale-handle checks")
+#+end_src
