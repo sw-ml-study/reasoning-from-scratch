@@ -1,5 +1,5 @@
 ;;; export-reasoning-report.el --- Offline results replay and standalone HTML export -*- lexical-binding: t; -*-
-;; Load only the selected upstream Babel support. Refresh executes seven named
+;; Load only the selected upstream Babel support. Refresh executes eight named
 ;; offline MLPL blocks; export never runs shell commands or live inference.
 (require 'org)
 (require 'ob)
@@ -35,7 +35,7 @@
     (when refresh
       (let ((org-confirm-babel-evaluate nil)
             (before (buffer-string)))
-        (dolist (name '("replay-extended-budget" "replay-choice-v2-summary" "replay-heldout-summary" "replay-budget-grades" "replay-grades" "reward-advantages" "toy-sgd"))
+        (dolist (name '("replay-book-author" "replay-extended-budget" "replay-choice-v2-summary" "replay-heldout-summary" "replay-budget-grades" "replay-grades" "reward-advantages" "toy-sgd"))
           (org-babel-goto-named-src-block name)
           (let ((result (org-babel-execute-src-block)))
             (unless (and (stringp result)

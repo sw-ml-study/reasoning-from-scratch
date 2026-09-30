@@ -1,0 +1,12 @@
+{"attempt":0,"correct":1,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":0,"seed":42,"stopped":"eos","tokens":174,"wall_ms":7649.843735}
+{"attempt":1,"correct":0,"eligible":0,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":1,"seed":42,"stopped":"eos","tokens":337,"wall_ms":15217.507457000002}
+{"attempt":2,"correct":0,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":42,"stopped":"eos","tokens":329,"wall_ms":35785.159081000005}
+{"attempt":3,"correct":0,"eligible":0,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":43,"stopped":"eos","tokens":162,"wall_ms":18034.319027000005}
+{"attempt":4,"correct":1,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":44,"stopped":"eos","tokens":319,"wall_ms":35718.53864999999}
+{"attempt":5,"correct":0,"eligible":0,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":45,"stopped":"eos","tokens":233,"wall_ms":25304.031621999995}
+{"attempt":6,"correct":0,"eligible":0,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":46,"stopped":"eos","tokens":245,"wall_ms":27737.310624000005}
+{"attempt":7,"correct":1,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":47,"stopped":"eos","tokens":179,"wall_ms":19249.723700000002}
+{"attempt":8,"correct":1,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":48,"stopped":"eos","tokens":472,"wall_ms":55116.03689900003}
+{"attempt":9,"correct":1,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":49,"stopped":"eos","tokens":440,"wall_ms":51578.615154}
+{"attempt":10,"correct":0,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":50,"stopped":"eos","tokens":297,"wall_ms":33816.005403999996}
+{"attempt":11,"correct":0,"eligible":1,"error":0,"id":"test/counting_and_probability/508.json","index":0,"method":2,"seed":51,"stopped":"eos","tokens":233,"wall_ms":24455.13415700005}

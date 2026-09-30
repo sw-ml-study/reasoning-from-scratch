@@ -1,132 +1,126 @@
-# Working MLPL / Rust / CUDA base-model prototype
+# MLPL / Rust / CUDA base-model execution
 
-On 2026-09-29, the pinned Qwen3-0.6B-Base checkpoint generated locally through
-MLPL and a Rust Candle CUDA dynamic library. No HTTP service or Python is
-involved. This is inference from pretrained base weights, not a model trained
-by this project. No held-out book accuracy or speedup over PyTorch is claimed.
+The pinned Qwen3-0.6B-Base checkpoint runs locally through MLPL and a Rust
+Candle CUDA dynamic library. MLPL controls prompts, token selection,
+stopping, extraction, voting, grading and reporting. Weights and KV cache
+remain in the native provider. There is no Python, Ollama or HTTP service in
+this path, and no Qwen3 weight update has been performed here.
+
+The [book-aligned experiment](book-author-protocol.md) and
+[literate results report](reasoning-results.html) describe the current
+comparison. Earlier authored examples below are fast development demos,
+not a substitute for that comparison.
 
 ## Run on this host
 
 ```sh
-MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl just cuda-parity
-MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl just cuda-reasoning
+export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
+just cuda-parity       # tiny independent forward/cache check
+just cuda-real-parity  # opt-in real F64/F32/BF16 numerical comparison
+just cuda-reasoning    # short authored water-tank demonstration
+just book-author      # one-shot first-ten direct/CoT/three-vote experiment
+just book-author-report # offline metrics from committed public records
 ```
 
-The second command uses an authored water-tank problem. Set `CUDA_PROMPT` to
-try another raw prompt. It allows 512 new tokens, context 4096, BF16 weights,
-greedy decoding, EOS 151643, seed 42 (unused by greedy), and a 180-second wall
-limit. It writes `out/cuda-reasoning.log`. The runner checks the provider hash
-and fails on interpreter/native errors. The extension requires GPU access.
-There is no 32 GiB host budget in this path: weights and KV cache stay native.
+GPU recipes require GPU access. `cuda-reasoning` accepts `CUDA_PROMPT` for
+another raw prompt. It allows 512 new tokens, context 4096, BF16 weights,
+greedy decoding, EOS 151643, seed 42 (unused), and a 180-second wall limit.
+The frozen book run allows 2048 new tokens per call, fifty calls and a
+three-hour job budget. It refuses to overwrite an existing attempt log.
 
-## Observed evidence
+There is no 32 GiB host-address-space cap in the native path. That older
+limit bounded pure-MLPL CPU execution; it did not describe GPU VRAM.
+Do not infer training-memory feasibility from an inference measurement.
 
-| Test | Result |
+## Independently checked numerical evidence
+
+| Test | Observed result |
 |---|---|
-| Authored tiny model, GPU F32 versus MLPL F64 reference | maximum absolute logit difference 0.00000193084; tolerance 0.00001 |
-| Cached versus full-sequence GPU logits | maximum absolute difference 0.00000190735 |
-| Closed model handle | rejected |
-| 17 × 23, step-by-step | correct boxed 391; explanation has an invalid place-value step |
-| 120 − 35 + 18, word problem | correct boxed 103 and correct intermediate 85 |
+| Tiny GPU F32 vs MLPL F64 reference | maximum absolute logit difference 0.00000193084; threshold 0.00001 |
+| Tiny cached vs full GPU forward | maximum difference 0.00000190735 |
+| Closed native model handle | rejected |
+| Real checkpoint CUDA F32 vs independent MLPL F64 | maximum 0.00000711613; RMS 0.00000145842 |
+| Real checkpoint CUDA BF16 vs MLPL F64 | maximum 0.367154; RMS 0.0902633 |
+| Real BF16 cached vs full prompt | maximum 0.3125 |
+| Real greedy argmax, every tested precision path | token 12095, “Paris” |
 
-The two complete transcripts are [multiplication](results/cuda-multiplication-v1.txt)
-and [water tank](results/cuda-tank-v1.txt). The latter took 6.529 seconds to
-load and 8.376 seconds to generate 185 tokens to EOS. Multiplication took
-6.676 seconds to load and 8.801 seconds for 210 tokens. These are two authored
-smokes, not a representative accuracy sample. During the multiplication run,
-`nvidia-smi` showed 1,933 MiB device memory including desktop use; this is a
-sample, not a peak-memory measurement. Reference parity uses a small positive
-BF16 fixture converted to F32, not a real-model BF16/PyTorch equivalence test.
+The real test compares all 151,936 last-position logits on the five-token
+prompt “The capital of France is”. Independent MLPL F64 execution streams
+one layer at a time and takes 134.922 seconds. This avoids whole-model
+copying for validation. It is one real-prompt acceptance test, not proof of
+identical long generations or sampling streams. BF16 thresholds are 0.5;
+F32 threshold is 0.005. See [the recorded log](results/cuda-real-precision-v2.txt).
+Tokenizer checks pass six fixture cases, eight real cases and NFC.
 
-The rate observed is about 22–24 tokens/second. At that rate, 2,048 new tokens
-would take about 86–93 seconds, before allowing for context-dependent slowdown.
-The frozen 144-generation pilot could take tens of minutes to hours. Its
-existing two-hour cap remains binding: an unfinished run must be reported as
-incomplete. Hundreds of minutes in the book are entirely plausible for many
-questions and repeated samples; native PyTorch already uses CUDA kernels.
+## Fast authored demonstrations
 
-## Boundary and reproducibility
+The [water-tank transcript](results/cuda-tank-v1.txt) contains valid steps
+120−35=85 and 85+18=103, followed by the correct boxed answer. Loading took
+6.529 seconds and 185 generated tokens took 8.376 seconds. The separate
+[multiplication transcript](results/cuda-multiplication-v1.txt) answers 17×23
+correctly but contains an invalid explanatory step. Both are retained:
+answer correctness and validity of the explanation are separate checks.
 
-`lib/cuda/cuda.mlpl` controls greedy decoding and stopping. The prototype
-exports `open`, `forward`, `reset`, `close`, and `info`, each accepting one
-record. `forward({handle, ids})` returns last-position logits and extends KV
-state; reset before an unrelated prompt. Errors return native Result values.
-Typed generational handles prevent use after close. Model files are local,
-SHA-256 checked, and bounded to two GB. Each model owns one sequence state;
-independent concurrent sessions are not delivered. Training is explicitly
-unsupported by this prototype.
+Short greedy generation measured 22–24 tokens/second. Sampled generation
+has extra vocabulary processing in MLPL; a 64-token sampling smoke took
+7.188 seconds. Long responses in the book experiment can take minutes.
+Use the measured method-specific table in the report, not a short-prompt
+extrapolation. PyTorch already calls native CUDA kernels; no 100× speedup
+is claimed.
 
-Prototype source is external at
-`/disk1/tmp/reasoning-tools/qwen3-cuda-provider`; its source archive is
-`/disk1/tmp/reasoning-tools/qwen3-cuda-provider-source.tar.gz`.
-[Artifact hashes](results/cuda-prototype-v1-artifacts.sha256) cover source,
-Cargo.lock, archive and binary. This local artifact is **not yet a released,
-portable E6 dependency**: clean-clone users need its delivery in the extension
-repository. Siblings were not modified and no Rust was added to this tree.
-The source archive is a local handoff, not a downloadable publication asset.
+## Provider boundary and pinned builds
 
-Dependencies: Candle core/nn/transformers 0.11.0 with CUDA enabled on all three,
-cudarc 0.19.10 (CUDA 13.4 support), and the read-only demo-extensions SDK at
-4be5074b7c3673a278e186c803a67072c50547ff. Host toolkit 13.4.59, sm_120,
-RTX 5060 Ti 16 GB. Build the external source with:
+The provider exports `open`, `forward`, `reset`, `close`, and `info`, each
+accepting one record. `forward({handle, ids})` extends resident KV state and
+returns last-position logits. Reset before an unrelated prompt. Native
+success arrays and Result errors are adapted to MLPL's callback contract;
+handles cross it inside records. Each model owns one sequence state.
+`info` explicitly reports training unsupported.
+
+| Version | Used for | Native artifact |
+|---|---|---|
+| v1 | Recorded authored demonstrations and tiny parity | `/disk1/tmp/reasoning-tools/qwen3-cuda-provider/target/release/libmlpl_qwen3_cuda_prototype.so` |
+| v2 / 0.2.0 | Real numerical acceptance and book-author-v2 | `/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2/native/libmlpl_qwen3_cuda_prototype.so` |
+
+The v2 artifact SHA-256 is
+`da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd`.
+Its source directory is `/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2`,
+and the portable source archive is
+`/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2-source.tar.gz`.
+V2 pins the SDK at git revision `4be5074b7c3673a278e186c803a67072c50547ff`
+and confines canonical model-file paths to the supplied root. V1 remains
+intact for its historical hash pins. No Rust was added to this consumer tree.
+
+Dependencies are Candle core/nn/transformers 0.11.0 (CUDA enabled on all
+three) and cudarc 0.19.10 with CUDA 13.4 support. Host: toolkit 13.4.59,
+driver 615.71.09, sm_120, RTX 5060 Ti 16 GiB. Build from the external source:
 
 ```sh
 CUDA_ROOT=/opt/cuda CUDA_PATH=/opt/cuda CUDA_COMPUTE_CAP=120 \
 PATH=/opt/cuda/bin:$PATH cargo build --release --locked --offline
 ```
 
-The SDK path in Cargo.toml is host-specific. For a released artifact, E6 must
-supply a portable dependency, public facade, root confinement, negative
-lifecycle tests, and independent real-model/precision checks. The provider
-currently validates absolute paths and hashes but does not implement a
-separate approved-root confinement policy. No untrusted extension loading is
-part of the demo.
+Offline building requires the pinned dependencies already in the Cargo
+cache. The source/build and binary hashes are recorded in the
+[backend execution manifest](results/book-cuda-v1-execution.json); the
+[current experiment manifest](results/book-author-v2-execution.json) pins
+that backend and its own MLPL sources/prompts. Both were committed before
+their respective generation runs. Raw questions and responses remain ignored.
 
-The unchanged sw-MLPL 49c15b3e CUDA CLI also built in an isolated target with
-`CUDARC_CUDA_VERSION=13020` and passed the matrix smoke without fallback.
-That override selects its existing cudarc 0.19.7 bindings; it is a tested
-local matrix workaround, not comprehensive training acceptance. The Qwen3
-extension instead uses cudarc 0.19.10's actual 13.4 configuration and can run
-from the existing CPU CLI because it owns device execution.
+The separate unchanged sw-MLPL 49c15b3e CUDA CLI also passes a matrix smoke
+using `CUDARC_CUDA_VERSION=13020` with its older cudarc bindings. That is a
+local build workaround, not comprehensive GPU training acceptance. The
+extension owns its CUDA context and can be called from the pinned CPU CLI.
 
-## Next acceptance
+## Remaining delivery and learning work
 
-Pin a portable provider and real-model numerical/tokenizer evidence, then
-commit the execution provenance and run the frozen direct/CoT/ten-sample
-comparison. No selected book-pilot questions were generated in this step.
-Measure paired gains and failure categories; do not tune on that held-out
-selection. Training needs separate native loss/backward/update/save/reload
-acceptance. Correct answers, valid explanations, and improved aggregate
-accuracy are three different claims.
+The provider is usable locally but is not yet a released extension dependency.
+Its source/build handoff is concrete; publishing into the sibling repository
+awaits authorization under the read-only sibling policy. A public facade and
+expanded negative/lifecycle test matrix remain delivery work. See [E6](demo-extensions-requests.md).
 
-## Real-model acceptance and execution freeze, 2026-09-30
-
-Step 014 validates the full 151,936-logit vector for the non-evaluation prompt
-“The capital of France is” against independent MLPL F64 execution. The
-reference streams one layer at a time and completes in 134.922 seconds.
-CUDA F32 maximum absolute difference is 0.00000711613 (RMS 0.00000145842);
-BF16 maximum is 0.367154 (RMS 0.0902633). Cached BF16 differs from full BF16
-by at most 0.3125. Every variant chooses token 12095, “Paris.” This is one
-short real-model numerical check, not a guarantee of identical long traces.
-Run `just cuda-real-parity` with the documented interpreter override.
-
-Tokenizer acceptance also passes six fixture cases, eight real cases and NFC.
-An authored 12-call runner smoke completed in 73.466 seconds. Its deliberate
-64-token cap truncates the outputs; those are integration checks, not model
-accuracy measurements. A separate 64-token nucleus-sampling smoke took 7.188
-seconds, about 9 tokens/second. Greedy throughput must not be substituted for
-sampling throughput when estimating the pilot's cost.
-
-Provider 0.2.0 lives at `/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2`.
-Its SDK dependency is pinned by Git revision and no longer machine-specific;
-model-file canonical paths must remain within the supplied root. Source is
-also archived at `/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2-source.tar.gz`.
-Publication into the read-only extension sibling awaits explicit authorization.
-This does not block local inference using the pinned artifact.
-
-The execution record is `docs/results/book-cuda-v1-execution.json`; its source,
-artifact and prompt hashes are committed before selected inference. Run
-`just book-cuda`; the runner refuses to overwrite an existing attempt log.
-The frozen two-hour cap remains unchanged, and may yield an incomplete pilot.
-All raw downloaded questions, requests, token IDs and responses stay under
-ignored `data/` and `out/`. Numeric results will be published after the run.
+Before full-scale evaluation, profile forward execution, vocabulary transfer
+and sampling separately, then offload the dominant cost with parity checks.
+Keep MLPL as the reference for the method. Native language-model training
+requires independent loss/backward/update/save/reload acceptance; inference
+success cannot stand in for it.

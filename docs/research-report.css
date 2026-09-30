@@ -24,5 +24,8 @@ blockquote { margin:1.5rem 0; padding:8px 24px; border-left:4px solid var(--acce
 .note { border:1px solid #d5b56d; background:#fff9ea; padding:18px 22px; font-family:system-ui,sans-serif; font-size:1rem; }
 .figure { margin:1.5rem 0; } .figure svg { width:100%; height:auto; }
 .org-src-container { margin:1rem 0; }
+details { margin:1.5rem 0; padding:18px 22px; border:1px solid var(--line); background:#f8fafb; }
+summary { cursor:pointer; font:600 1rem/1.5 system-ui,sans-serif; color:var(--accent); }
+details[open] summary { margin-bottom:1.5rem; }
 @media(max-width:800px) { #content { margin:0; padding:24px 18px; } h1.title { font-size:2rem; } table { display:block; overflow-x:auto; } }
 @media print { :root { font-size:12pt; } body { background:white; font-size:11pt; } #content { box-shadow:none; border:0; margin:0; padding:0; } #table-of-contents { break-after:page; } h2,h3 { break-after:avoid; } pre,tr { break-inside:avoid; } a { color:inherit; } }

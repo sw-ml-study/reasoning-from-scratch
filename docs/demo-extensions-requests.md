@@ -299,3 +299,37 @@ Delivery still needs a portable SDK dependency/build record, public facade,
 path confinement and expanded negative/lifecycle acceptance. Preserve the
 record-boxed handle boundary. Keep inference separate from training: current
 `info` explicitly reports training false. Sibling source was not changed.
+
+### E6 accepted local v2 evidence and publication boundary, 2026-09-30
+
+The tested v2 source is at
+`/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2`, with a source archive at
+`/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2-source.tar.gz`.
+Its SDK dependency now pins git revision
+`4be5074b7c3673a278e186c803a67072c50547ff` instead of an absolute sibling
+path. Canonical model-root confinement is implemented. The separate native
+artifact has SHA-256
+`da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd`;
+v1 remains intact for its recorded development smokes.
+
+Independent real-checkpoint validation compares all 151,936 last-position
+logits on a five-token prompt: CUDA F32 vs MLPL F64 maximum difference
+7.1162e-6; BF16 vs F64 0.367154; BF16 cached/full 0.3125. All paths select
+the same greedy token. See `results/cuda-real-precision-v2.txt`. This is
+inference acceptance on the tested prompt, not general gradient acceptance.
+
+The consumer now runs the book-aligned first-ten experiment through this
+provider. Publication into the sibling is still pending authorization under
+its read-only policy; the source/build inputs are concrete and reviewable.
+No installation into stable user tools is needed. Remaining delivery work
+includes the public facade and expanded negative/lifecycle test matrix.
+
+Before scaling the experiment, profile resident forward separately from
+vocabulary transfer and MLPL nucleus selection. A sampled 2,048-token answer
+has already taken 267.55 seconds, versus roughly two minutes for greedy
+answers of that length. These are different responses, so the difference is
+not an isolated sampler benchmark. If selection/transfer dominates, use a
+generic native selection operation checked against the MLPL reference at
+fixed logits and supplied uniforms. Preserve temperature, top-p, crossing
+token, stable tie and explicit-RNG semantics; do not change the completed
+experiment's settings or scores. Keep core-interpreter optimization deferred.

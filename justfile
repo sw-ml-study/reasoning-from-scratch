@@ -110,7 +110,7 @@ reasoning-pilot:
 research-html:
     ./scripts/export-reasoning-report
 
-# Replay seven offline ob-mlpl calculations and refresh the publication.
+# Replay eight offline ob-mlpl calculations and refresh the publication.
 research-refresh:
     ./scripts/export-reasoning-report --refresh
 
@@ -141,3 +141,8 @@ book-author:
 # Five-call authored integration smoke for the book-compatible MLPL tooling.
 book-author-smoke:
     ./scripts/run-book-author --smoke
+
+# Recompute the published first-ten metrics in MLPL without model inference.
+book-author-report:
+    mkdir -p out
+    ./scripts/run-mlpl-demo demos/book_author_report.mlpl

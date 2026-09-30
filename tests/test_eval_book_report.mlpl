@@ -33,4 +33,48 @@ def u:test_eval_book_duplicate() {
   u:assert_err(u:eval_book_method_report("", rows, 0, 0), "duplicate")
 }
 
+@test {name: "author report uses ten-case accuracy rather than the strict pilot denominator", tags: ["eval", "book"]}
+def u:test_eval_author_report_denominator() {
+  "A complete ten-case result must not silently divide by the old twelve-case denominator.";
+  rows = "";
+  i = 0;
+  while lt(i, 10) {
+    rows = str_concat(rows, str_concat(to_json({method: 0, index: i, correct: lt(i, 8), abstention: 0})?, "\n"));
+    i = i + 1
+  };
+  result = u:eval_method_report("", rows, 0, 1, 10)?;
+  u:assert_eq(result.accuracy, 0.8, "eight of ten")?;
+  u:assert_true(lt(result.interval.lower, 0.8) * gt(result.interval.upper, 0.8), "Wilson interval")
+}
+
+@test {name: "book report retains latency and capped-answer correctness", tags: ["eval", "book"]}
+def u:test_eval_book_latency() {
+  "A correct capped answer still scores, and total throughput must include every attempted token and call.";
+  attempts = "{\"method\":0,\"correct\":1,\"error\":0,\"tokens\":20,\"wall_ms\":100,\"stopped\":\"budget\"}\n{\"method\":0,\"correct\":0,\"error\":0,\"tokens\":10,\"wall_ms\":300,\"stopped\":\"eos\"}\n";
+  result = u:eval_method_report(attempts, "", 0, 0, 10)?;
+  u:assert_eq(result.correct_truncated, 1, "capped answer can be correct")?;
+  u:assert_eq(result.mean_call_ms, 200, "mean call time")?;
+  u:assert_eq(result.min_call_ms, 100, "fastest call")?;
+  u:assert_eq(result.max_call_ms, 300, "slowest call")?;
+  u:assert_eq(result.tokens_per_second, 75, "aggregate decode throughput")
+}
+
+@test {name: "author report rejects fifty calls assigned to the wrong methods", tags: ["eval", "book"]}
+def u:test_eval_author_report_method_counts() {
+  "The total fifty alone cannot establish ten direct, ten CoT and thirty sampled calls.";
+  attempts = "";
+  methods = "";
+  i = 0;
+  while lt(i, 50) {
+    attempts = str_concat(attempts, "{\"method\":0,\"correct\":0,\"error\":0,\"tokens\":1,\"wall_ms\":1,\"stopped\":\"eos\"}\n");
+    i = i + 1
+  };
+  i = 0;
+  while lt(i, 30) {
+    methods = str_concat(methods, str_concat(to_json({method: mod(i, 3), index: floor(i / 3), correct: 0, abstention: 0})?, "\n"));
+    i = i + 1
+  };
+  u:assert_err(u:eval_author_summary(attempts, methods, {complete: 1, attempted: 50, planned: 50, finished_groups: 30, wall_ms: 50}), "method counts")
+}
+
 u:run_registered_tests()

@@ -6941,17 +6941,20 @@ def u:eval_json_array_lines(text) {
 #+begin_src mlpl :tangle ../lib/eval/book_report.mlpl
 # Offline analysis of numeric book-pilot records. Requires text/text.mlpl and eval/paired.mlpl. Does not read private questions or model responses and never changes primary grades.
 
-def u:eval_book_method_report(attempts_text, methods_text, method, complete) {
-  "Count observed attempts and complete method groups; full-set accuracy and Wilson intervals require all twelve outcomes.";
+def u:eval_method_report(attempts_text, methods_text, method, complete, expected_cases) {
+  "Count observed attempts and complete method groups; full-set accuracy and Wilson intervals require the declared number of outcomes.";
   lines = str_split(attempts_text, "\n");
   i = 0;
   attempted = 0;
   errors = 0;
   truncated = 0;
+  correct_truncated = 0;
   deadlines = 0;
   incorrect_complete = 0;
   tokens = 0;
   wall = 0;
+  min_call = 0;
+  max_call = 0;
   while lt(i, list_len(lines)) {
     line = u:text_trim(list_get(lines, i)?);
     if str_len(line) {
@@ -6960,10 +6963,21 @@ def u:eval_book_method_report(attempts_text, methods_text, method, complete) {
         attempted = attempted + 1;
         errors = errors + row.error;
         truncated = truncated + str_eq(row.stopped, "budget") + str_eq(row.stopped, "deadline");
+        correct_truncated = correct_truncated + row.correct * (str_eq(row.stopped, "budget") + str_eq(row.stopped, "deadline"));
         deadlines = deadlines + str_eq(row.stopped, "deadline");
         incorrect_complete = incorrect_complete + str_eq(row.stopped, "eos") * (1 - row.correct);
         tokens = tokens + row.tokens;
-        wall = wall + row.wall_ms
+        wall = wall + row.wall_ms;
+        min_call = if eq(attempted, 1) + lt(row.wall_ms, min_call) {
+          row.wall_ms
+        } else {
+          min_call
+        };
+        max_call = if gt(row.wall_ms, max_call) {
+          row.wall_ms
+        } else {
+          max_call
+        }
       }
     };
     i = i + 1
@@ -6990,17 +7004,25 @@ def u:eval_book_method_report(attempts_text, methods_text, method, complete) {
   };
   correct = reduce_add(outcomes);
   cases = tally(indices);
-  if complete * (cases - 12) {
-    err("complete pilot needs twelve outcomes per method")?
+  if complete * (cases - expected_cases) {
+    err("complete pilot needs the declared outcomes per method")?
   };
-  interval = if complete { u:eval_wilson(correct, 12)? } else {
+  interval = if complete { u:eval_wilson(correct, expected_cases)? } else {
     {lower: 0, upper: 0}
   };
   ok({attempted: attempted, cases: cases, correct: correct, accuracy_available: complete, accuracy: if complete {
-        correct / 12
+        correct / expected_cases
       } else {
         0
-      }, interval: interval, errors: errors, truncated: truncated, deadlines: deadlines, incorrect_complete_attempts: incorrect_complete, abstentions: abstentions, tokens: tokens, wall_ms: wall, indices: indices, outcomes: outcomes})
+      }, interval: interval, errors: errors, truncated: truncated, correct_truncated: correct_truncated, deadlines: deadlines, incorrect_complete_attempts: incorrect_complete, abstentions: abstentions, tokens: tokens, wall_ms: wall, mean_call_ms: if attempted {
+        wall / attempted
+      } else {
+        0
+      }, min_call_ms: min_call, max_call_ms: max_call, tokens_per_second: if wall {
+        1000 * tokens / wall
+      } else {
+        0
+      }, indices: indices, outcomes: outcomes})
 }
 
 def u:eval_book_pairs(left, right) {
@@ -7031,6 +7053,28 @@ def u:eval_book_summary(attempts, methods, completion) {
   };
   if completion.complete * (completion.attempted - 144) {
     err("complete pilot needs 144 attempts")?
+  };
+  ok({complete: completion.complete, attempted: completion.attempted, planned: completion.planned, direct: direct, cot: cot, voting: voting, cot_vs_direct: u:eval_book_pairs(direct, cot), voting_vs_cot: u:eval_book_pairs(cot, voting), wall_ms: completion.wall_ms})
+}
+
+def u:eval_book_method_report(attempts, methods, method, complete) {
+  "Retain the legacy twelve-case report contract for the separately labeled strict pilot.";
+  u:eval_method_report(attempts, methods, method, complete, 12)
+}
+
+def u:eval_author_summary(attempts, methods, completion) {
+  "Reproduce the author-ordered ten-case demonstration, preserving full denominators and paired costs.";
+  direct = u:eval_method_report(attempts, methods, 0, completion.complete, 10)?;
+  cot = u:eval_method_report(attempts, methods, 1, completion.complete, 10)?;
+  voting = u:eval_method_report(attempts, methods, 2, completion.complete, 10)?;
+  if completion.attempted - (direct.attempted + cot.attempted + voting.attempted) {
+    err("attempt total mismatch")?
+  };
+  if completion.complete * (completion.attempted - 50) {
+    err("complete demonstration needs fifty attempts")?
+  };
+  if completion.complete * ((1 - eq(direct.attempted, 10)) + (1 - eq(cot.attempted, 10)) + (1 - eq(voting.attempted, 30))) {
+    err("complete demonstration needs ten direct, ten CoT and thirty sampled calls")?
   };
   ok({complete: completion.complete, attempted: completion.attempted, planned: completion.planned, direct: direct, cot: cot, voting: voting, cot_vs_direct: u:eval_book_pairs(direct, cot), voting_vs_cot: u:eval_book_pairs(cot, voting), wall_ms: completion.wall_ms})
 }
@@ -7457,5 +7501,59 @@ while lt(i, 10) {
   i = i + 1
 }
 print("Prepared first ten author-ordered cases and twenty prompt files; no inference.")
+ok(1)
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/book_author_report.mlpl
+# Offline MLPL report over public numeric book demonstration records; no model, downloaded questions or private outputs are needed.
+include "lib/text/text.mlpl";
+include "lib/eval/paired.mlpl";
+include "lib/eval/book_report.mlpl";
+
+def u:eval_report_decimal(value) {
+  "Render one decimal place of precision for human-facing tables; full precision remains in JSON.";
+  to_string(floor(value * 10 + 0.5) / 10)
+}
+
+def u:eval_report_row(cells) {
+  "Render an Org table row from already formatted cells.";
+  str_concat("| ", str_concat(str_join(cells, " | "), " |\n"))
+}
+
+def u:eval_report_accuracy_row(name, row) {
+  "Render a method's measured denominator and descriptive Wilson interval.";
+  count = str_join([to_string(row.correct), to_string(row.cases)], "/");
+  accuracy = str_concat(u:eval_report_decimal(row.accuracy * 100), "%");
+  interval = str_concat(str_join([u:eval_report_decimal(row.interval.lower * 100), u:eval_report_decimal(row.interval.upper * 100)], "–"), "%");
+  u:eval_report_row([name, count, accuracy, interval])
+}
+
+def u:eval_report_cost_row(name, row) {
+  "Render generation cost per call and across all calls, retaining truncation counts.";
+  bounds = str_join([u:eval_report_decimal(row.min_call_ms / 1000), u:eval_report_decimal(row.max_call_ms / 1000)], "–");
+  u:eval_report_row([name, to_string(row.attempted), to_string(row.tokens), u:eval_report_decimal(row.wall_ms / 1000), u:eval_report_decimal(row.mean_call_ms / 1000), bounds, to_string(row.truncated)])
+}
+
+summary = u:eval_author_summary(read_text("docs/results/book-author-v2-attempts.jsonl")?, read_text("docs/results/book-author-v2-methods.jsonl")?, parse_json(read_text("docs/results/book-author-v2-completion.json")?)?)?
+write_atomic("docs/results/book-author-v2-summary.json", to_json(summary)?)?
+print(to_json(summary)?)
+if summary.complete {
+  table = "| Method | Correct | Accuracy | Descriptive 95% Wilson interval |\n|--------+---------+----------+--------------------------------|\n";
+  table = str_concat(table, u:eval_report_accuracy_row("Direct", summary.direct));
+  table = str_concat(table, u:eval_report_accuracy_row("Greedy CoT", summary.cot));
+  table = str_concat(table, u:eval_report_accuracy_row("Three-sample CoT vote", summary.voting));
+  table = str_concat(table, "\n| Method | Calls | New tokens | Total decode seconds | Mean seconds/call | Call range, seconds | Capped calls |\n|--------+-------+------------+----------------------+-------------------+---------------------+--------------|\n");
+  table = str_concat(table, u:eval_report_cost_row("Direct", summary.direct));
+  table = str_concat(table, u:eval_report_cost_row("Greedy CoT", summary.cot));
+  table = str_concat(table, u:eval_report_cost_row("Three-sample CoT vote", summary.voting));
+  table = str_concat(table, "\n| Author position | Direct correct | CoT correct | Voted correct |\n|-----------------+----------------+-------------+---------------|\n");
+  i = 0;
+  while lt(i, 10) {
+    table = str_concat(table, u:eval_report_row([to_string(i + 1), to_string(at(summary.direct.outcomes, i)), to_string(at(summary.cot.outcomes, i)), to_string(at(summary.voting.outcomes, i))]));
+    i = i + 1
+  };
+  write_atomic("out/book-author-v2-tables.org", table)?
+}
 ok(1)
 #+end_src

@@ -315,12 +315,12 @@ status = "accepted"
 
 [[component]]
 id = "BOOKCUDA"
-slug = "book-base-cuda-reproduction"
+slug = "book-base-cuda-first-ten-demonstration"
 chapter = 4
-source = "docs/book-reproduction-protocol.md"
-test = "scripts/run-cuda-probe"
-documentation = "docs/rust-cuda-backend.md"
-status = "unavailable"
+source = "demos/book_author.mlpl"
+test = "tests/test_eval_author.mlpl"
+documentation = "docs/reasoning-results.html"
+status = "accepted"
 
 [[component]]
 id = "CUDAGEN"

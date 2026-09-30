@@ -160,8 +160,9 @@ native-backend pilot; retain independent queued toy GRPO work.
 
 ## Queued: Saga 6, `distillation`
 
-Teacher-trace dataset (local Ollama generation preferred), answer-only SFT
-loss and loop, bounded real-model run.
+Teacher-trace dataset through a native Rust/CUDA provider, with the teacher
+checkpoint and sampling pinned separately; answer-only SFT loss and loop,
+bounded real-model run. This follows the user's no-Ollama target.
 
 ## Queued: Saga 7, `closeout`
 
@@ -202,3 +203,19 @@ active v2 demonstration uses author-ordered first ten cases, exact short
 prompt data, fallback extraction, raw-string voting and first-appearance ties,
 all implemented independently in MLPL. A five-call authored smoke passes in
 30 seconds. Numeric/symbolic grading and RNG differences remain explicit.
+
+Step 014 now completes all fifty author-v2 calls: 3/10 direct, 4/10 greedy
+CoT, 6/10 three-sample voting, with no backend errors. The job takes 38 min
+22 sec, and four responses reach the token cap. CoT has two paired gains
+and one loss; voting adds three gains and one loss relative to CoT. Selected
+trace review verifies two reasoning gains and distinguishes repetition,
+answer-format loss and sampling regression. All primary scores are retained.
+The public numeric records, MLPL analysis, source/prompt hashes and readable
+Org/HTML report are the handoff; private raw evidence remains ignored.
+
+The gate now covers 185 native tests, 47 exact tangles and eight offline
+replays. Step 015, `book-scale-readiness`, profiles the measured native and
+sampling costs, closes targeted grading gaps and freezes a resumable full
+500-case protocol before paying that inference cost. Core resident-copy work
+is deferred as step 016. Provider publication still awaits sibling-write
+authorization; native language-model training needs separate acceptance.

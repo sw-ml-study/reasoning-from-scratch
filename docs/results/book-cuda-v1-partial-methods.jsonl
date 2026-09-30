@@ -1,0 +1,3 @@
+{"abstention":0,"correct":1,"eligible":1,"id":"test/counting_and_probability/508.json","index":0,"method":0,"tokens":174,"wall_ms":7649.843735}
+{"abstention":1,"correct":0,"eligible":0,"id":"test/counting_and_probability/508.json","index":0,"method":1,"tokens":337,"wall_ms":15217.507457000002}
+{"abstention":0,"correct":1,"eligible":7,"id":"test/counting_and_probability/508.json","index":0,"method":2,"tokens":2909,"wall_ms":326794.87431800005}

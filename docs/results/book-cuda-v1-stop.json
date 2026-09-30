@@ -1,0 +1,13 @@
+{
+  "protocol": "book-base-v1",
+  "execution_commit": "852d302",
+  "complete": false,
+  "planned_calls": 144,
+  "recorded_outcomes": 12,
+  "started_calls": 13,
+  "interrupted_calls": 1,
+  "finished_method_groups": 3,
+  "stop_reason": "User clarified that acceptance is recreation of the author's experiments. Inspection confirmed differences in prompt, extraction and voting rules. Stopped the custom strict pilot and preserved its primary outcomes; author-compatible v2 was separately frozen before generation.",
+  "accuracy_available": false,
+  "unattempted_cases_are_not_failures": true
+}

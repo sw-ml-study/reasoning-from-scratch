@@ -1,6 +1,6 @@
 # Arch Linux toolchain and revalidation
 
-## Current tools (2026-09-29)
+## Current tools (2026-09-30)
 
 Use the new isolated build, which provides bulk `unpack` and the shipped
 undo-log function-frame fix:
@@ -9,6 +9,7 @@ undo-log function-frame fix:
 export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPLUNIT=/disk1/tmp/reasoning-tools/mlplunit/bin/mlplunit
 export MLPLFMT=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/scripts/mlpl-fmt.sh
+export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
 just check
 ```
 
@@ -19,11 +20,14 @@ Built offline with `cargo build --manifest-path
 --release --locked --offline`. All original 148 tests pass; only the
 scalar-call scaling probe changes from expected fail to pass. Native
 reference generation still fails the 32 GiB CPU address-space ceiling.
-The [live demo](native-reasoning-demo.md) now uses a separate native GPU
-backend through the existing Rust HTTP extension.
+The current [native CUDA demo](cuda-prototype.md) keeps Qwen3-0.6B-Base
+weights and KV state in an in-process Rust extension. It runs from this
+CPU CLI because the extension owns GPU execution; no HTTP service is used.
 The installed tools and old checkout remain untouched. The moved
-`../demo-extensions` now supplies tested Linux tokenizer binaries. CUDA is
-still unavailable to this CPU interpreter; see [current evidence](native-reasoning-demo.md).
+`../demo-extensions` supplies tested Linux tokenizer binaries. An unchanged
+49c15b3e CUDA CLI was also built separately with the documented toolkit
+override and passes a matrix smoke. The book runner uses the CPU CLI plus
+the pinned native CUDA provider; see [execution evidence](cuda-prototype.md).
 
 ## Historical migration setup
 

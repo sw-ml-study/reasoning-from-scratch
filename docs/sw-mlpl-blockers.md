@@ -1,5 +1,38 @@
 # sw-MLPL capability ledger
 
+## Current book reproduction result, 2026-09-30
+
+**Resident native inference and the first-ten experiment: supported and
+measured.** MLPL/Rust/CUDA completes all fifty book-author-v2 calls with zero
+backend errors: direct 3/10, greedy CoT 4/10, three-sample voting 6/10. The
+job takes 2302.145 seconds from model loading through final recording.
+Four calls hit the token cap. Observed peak device-wide memory is 2365 MiB
+(desktop included); host VmHWM is 1763776 KiB. This demonstrates an
+inference-time reasoning benefit on the fixed ten-case sample, not full
+500-case parity or language-model training. The 32 GiB reference-path CPU
+limit is not a GPU capacity limit. See [the report](reasoning-results.html)
+and [numeric provenance](results/book-author-v2-provenance.json).
+
+**Sampling throughput: awkward, measured, usable for the demo.** Aggregate
+decode rates are 18.28 tokens/s for greedy CoT and 8.24 for sampling. These
+include different trace lengths; profile native forward, vocabulary transfer
+and MLPL selection separately before attributing the cost. Use native
+extension offload for the dominant inefficiency, retaining fixed-input MLPL
+parity tests. Core optimization remains deferred.
+
+**Remaining application coverage and delivery gaps:** general symbolic
+equivalence is not yet a full SymPy replacement; this does not establish a
+missing language primitive. Native Qwen3 loss/backward/update/save/reload is
+unavailable in the inference-only provider. The tested provider source and
+portable build inputs exist locally, but publication through the read-only
+extension sibling awaits authorization. Numerical comparison to independent
+MLPL F64 now passes on the tested real prompt; PyTorch RNG/precision identity
+and the full 500-case outcome remain unproved.
+
+The completion gate has 185 native tests, 47 exact literate tangles and eight
+offline report replays. The dated sections below preserve earlier evidence;
+Ollama is historical and is not part of the current experiment.
+
 ## Native demo and published research, 2026-09-29
 
 **Native inference workaround: supported. Pure-MLPL real generation:
