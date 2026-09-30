@@ -1,0 +1,36 @@
+# Offline pilot analysis rejects misleading denominators and measures paired outcomes on shared cases.
+include "lib/text/text.mlpl";
+include "lib/eval/paired.mlpl";
+include "lib/eval/book_report.mlpl";
+
+@test {name: "book report separates unattempted cases from failures", tags: ["eval", "book"]}
+def u:test_eval_book_partial() {
+  "An incomplete sample exposes counts and cost but withholds complete-set accuracy.";
+  attempts = "{\"method\":0,\"correct\":1,\"error\":0,\"tokens\":10,\"wall_ms\":100,\"stopped\":\"eos\"}\n";
+  methods = "{\"method\":0,\"index\":0,\"correct\":1,\"abstention\":0}\n";
+  result = u:eval_book_method_report(attempts, methods, 0, 0)?;
+  u:assert_eq(result.attempted, 1, "one observed attempt")?;
+  u:assert_eq(result.correct, 1, "observed correct")?;
+  u:assert_eq(result.accuracy_available, 0, "no full accuracy")?;
+  u:assert_eq(result.errors + result.truncated, 0, "unattempted is not failed")
+}
+
+@test {name: "book report paired gains use shared cases", tags: ["eval", "book"]}
+def u:test_eval_book_pairs() {
+  "Missing counterpart cases cannot silently become wins or losses.";
+  left = {indices: [0, 1, 2], outcomes: [0, 1, 1]};
+  right = {indices: [0, 1, 3], outcomes: [1, 0, 0]};
+  result = u:eval_book_pairs(left, right);
+  u:assert_eq(result.pairs, 2, "intersection")?;
+  u:assert_eq(result.gains, 1, "gain")?;
+  u:assert_eq(result.losses, 1, "loss")
+}
+
+@test {name: "book report refuses duplicate case results", tags: ["eval", "book"]}
+def u:test_eval_book_duplicate() {
+  "Duplicate outcomes would inflate the denominator.";
+  rows = "{\"method\":0,\"index\":0,\"correct\":1,\"abstention\":0}\n{\"method\":0,\"index\":0,\"correct\":0,\"abstention\":0}\n";
+  u:assert_err(u:eval_book_method_report("", rows, 0, 0), "duplicate")
+}
+
+u:run_registered_tests()

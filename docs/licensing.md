@@ -21,9 +21,11 @@ Rules that every step must respect:
 2. **No prose is copied** from the book PDF (kept locally under the ignored
    `work/` directory). Documentation paraphrases methods, cites chapter
    numbers, and records published hyperparameters and result tables as
-   facts. Prompt templates are written in this project's own words; only the
-   structural elements the method depends on (a boxed final answer, think
-   tags, a critique followed by a revision) are preserved.
+   facts. Earlier exploratory prompt templates use this projects own words. For
+   the user-requested faithful reproduction (2026-09-30), exact short
+   experimental prompt strings from the public companion are preserved as
+   attributed input data under fixtures/prompts/. Implementations remain
+   independently written; no book-PDF prose or companion code is copied.
 3. **Behavioral test values are allowed.** Expected input/output pairs such
    as "an answer of `0.5` matches a reference of `1/2`" describe the method's
    contract, not its implementation, and are used as language-neutral

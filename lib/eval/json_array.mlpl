@@ -1,0 +1,110 @@
+# Convert an outer JSON array of objects into JSONL using byte spans. Core parse_json validates each object; this adapter handles only the outer record array unavailable in the current core value representation.
+
+def u:eval_json_array_lines(text) {
+  "Track structural bytes outside quoted strings and preserve UTF8 spans. Reject missing delimiters, non-object elements and malformed separators.";
+  bytes = tokenize_bytes(text);
+  n = tally(bytes);
+  if lt(n, 2) {
+    err("short JSON array")?
+  };
+  positions = compress(eq(bytes, 123) + eq(bytes, 125) + eq(bytes, 34) + eq(bytes, 92) + eq(bytes, 91) + eq(bytes, 93) + eq(bytes, 44), range(n));
+  codes = flatten(gather_rows(reshape(bytes, [n, 1]), positions));
+  depth = 0;
+  quoted = 0;
+  escaped_position = 0 - 1;
+  start = 0;
+  cursor = 0;
+  opened = 0;
+  closed = 0;
+  need_object = 1;
+  result = "";
+  i = 0;
+  while lt(i, tally(positions)) {
+    p = at(positions, i);
+    c = at(codes, i);
+    if quoted {
+      if p - escaped_position {
+        if eq(c, 92) {
+          escaped_position = p + 1
+        };
+        if eq(c, 34) {
+          quoted = 0
+        }
+      }
+    } else {
+      if eq(c, 34) {
+        quoted = 1
+      };
+      if eq(c, 123) {
+        if eq(depth, 0) {
+          if (1 - opened) + closed + (1 - need_object) {
+            err("unexpected object")?
+          };
+          start = p;
+          gap = u:text_trim(decode_bytes(flatten(gather_rows(reshape(bytes, [n, 1]), range(p - cursor) + cursor))));
+          if 1 - str_eq(gap, if cursor {
+              ","
+            } else {
+              "["
+            }) {
+            err("invalid outer separator")?
+          }
+        };
+        depth = depth + 1
+      };
+      if eq(c, 125) {
+        depth = depth - 1;
+        if lt(depth, 0) {
+          err("unmatched closing object")?
+        };
+        if eq(depth, 0) {
+          record_text = decode_bytes(flatten(gather_rows(reshape(bytes, [n, 1]), range(p - start + 1) + start)));
+          parsed = parse_json(record_text)?;
+          result = str_concat(result, str_concat(to_json(parsed)?, "\n"));
+          cursor = p + 1;
+          need_object = 0
+        }
+      };
+      if eq(depth, 0) {
+        if eq(c, 91) {
+          if opened {
+            err("nested outer array")?
+          };
+          opened = 1
+        };
+        if eq(c, 93) {
+          if (1 - opened) + closed {
+            err("unexpected array close")?
+          };
+          closed = 1
+        };
+        if eq(c, 44) {
+          if need_object + closed {
+            err("unexpected separator")?
+          };
+          need_object = 1
+        }
+      }
+    };
+    i = i + 1
+  };
+  if depth + quoted + (1 - opened) + (1 - closed) {
+    err("incomplete JSON array")
+  } else {
+    if cursor {
+      tail = u:text_trim(decode_bytes(flatten(gather_rows(reshape(bytes, [n, 1]), range(n - cursor) + cursor))));
+      if str_eq(tail, "]") {
+        ok(result)
+      } else {
+        err("invalid array tail")
+      }
+    } else {
+      parsed = parse_json(text)?;
+      if eq(tally(parsed), 0) {
+        ok(result)
+      } else {
+        err("object records required")
+      }
+    }
+  }
+}

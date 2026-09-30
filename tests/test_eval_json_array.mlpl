@@ -1,0 +1,22 @@
+# JSON record-array adapter contracts for author datasets when core parse_json cannot represent heterogeneous root arrays.
+include "lib/text/text.mlpl";
+include "lib/eval/json_array.mlpl";
+
+@test {name: "JSON array adapter respects escaped quotes and Unicode", tags: ["eval", "json"]}
+def u:test_eval_json_array() {
+  "Structural punctuation inside strings must not split records, and UTF8 byte spans remain exact.";
+  text = "[{\"x\":\"é { \\\" }\"},{\"x\":2}]";
+  result = u:eval_json_array_lines(text)?;
+  lines = str_split(result, "\n");
+  u:assert_text_eq(parse_json(list_get(lines, 0)?)?.x, "é { \" }", "string")?;
+  u:assert_eq(parse_json(list_get(lines, 1)?)?.x, 2, "second record")
+}
+
+@test {name: "JSON array adapter rejects incomplete objects", tags: ["eval", "json"]}
+def u:test_eval_json_array_bad() {
+  "An unterminated object must not silently become a shorter dataset.";
+  u:assert_err(u:eval_json_array_lines("[{\"x\":1}"), "missing array close")?;
+  u:assert_err(u:eval_json_array_lines("[{\"x\":1]"), "missing object close")
+}
+
+u:run_registered_tests()

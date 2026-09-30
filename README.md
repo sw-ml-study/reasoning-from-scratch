@@ -190,3 +190,10 @@ execution manifest (see [the local backend record](docs/cuda-prototype.md)).
 `just book-cuda-smoke` exercises the full runner on an authored case;
 `just book-cuda` runs the frozen 144-generation comparison once. The latter
 has a two-hour cap and must be labeled incomplete if not all calls finish.
+
+The active target is now [the book-compatible demonstration](docs/book-author-protocol.md):
+MLPL prepares the author-ordered dataset, reproduces experimental prompt bytes,
+controls sampling, extracts answers, votes and reports results. The prior
+strict pilot was stopped and is incomplete. `just book-author` runs ten cases
+with direct prompting, CoT and three-sample voting after execution pins are
+committed. General nonlinear symbolic grading remains a declared parity gap.

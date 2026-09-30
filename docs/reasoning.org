@@ -6762,3 +6762,700 @@ if (1 - eq(argmax(f32), argmax(reference))) + (1 - eq(argmax(bf16), argmax(refer
 }
 print("PASS real-model precision and greedy-token checks")
 #+end_src
+
+
+#+begin_src mlpl :tangle ../lib/eval/author.mlpl
+# Independently implemented author experiment contracts. Requires text, verify/extract, verify/grade and scaling/consistency. Prompt wording is loaded as attributed experimental input data. Symbolic grading beyond the MLPL verifier remains a declared gap.
+
+def u:eval_author_prompt(template, problem, cot) {
+  "Insert the question into the canonical experimental stimulus, then append the optional CoT instruction after the answer cue.";
+  str_concat(template.prefix, str_concat(problem, str_concat(template.suffix, if cot {
+          template.cot_suffix
+        } else {
+          ""
+        })))
+}
+
+def u:eval_author_candidate(response) {
+  "Prefer a complete box; otherwise use the existing last-number-then-full-text extraction contract. EOS is not required.";
+  u:verify_final_candidate(response, "number_then_full")
+}
+
+def u:eval_author_vote_add(state, candidate) {
+  "Count exact extracted strings, encoding keys as JSON so empty or multiline text cannot corrupt the tally.";
+  ok(u:scaling_vote_add(state, to_json(candidate)?))
+}
+
+def u:eval_author_vote(state, reference) {
+  "Select the first observed plurality winner, including ties, before applying the current MLPL equivalence grader.";
+  report = u:scaling_vote_report(state, 0);
+  candidate = if tally(state.counts) {
+    parse_json(report.answer)?
+  } else {
+    ""
+  };
+  ok({candidate: candidate, correct: u:eval_author_grade(candidate, reference), tied: report.tied, votes: report.votes, samples: reduce_add(state.counts)})
+}
+
+def u:eval_author_grade(candidate, reference) {
+  "Grade normalized tuple components using numeric equality, literal text, or exact bounded linear-symbolic identity; nonlinear symbolic rearrangements remain unsupported.";
+  left = u:verify_split_parts(u:text_replace_all(u:verify_normalize(candidate), "\\pi", "pi"));
+  right = u:verify_split_parts(u:text_replace_all(u:verify_normalize(reference), "\\pi", "pi"));
+  matched = gt(list_len(left), 0) * eq(list_len(left), list_len(right));
+  i = 0;
+  while lt(i, list_len(left)) * matched {
+    a = list_get(left, i)?;
+    b = list_get(right, i)?;
+    if 1 - u:verify_equivalent(a, b) {
+      pa = u:verify_linear_parse(a);
+      pb = u:verify_linear_parse(b);
+      if is_ok(pa) * is_ok(pb) {
+        va = unwrap(pa);
+        vb = unwrap(pb);
+        matched = equal(va.nums, vb.nums) * eq(va.den, vb.den)
+      } else {
+        matched = 0
+      }
+    };
+    i = i + 1
+  };
+  matched
+}
+#+end_src
+
+
+#+begin_src mlpl :tangle ../lib/eval/json_array.mlpl
+# Convert an outer JSON array of objects into JSONL using byte spans. Core parse_json validates each object; this adapter handles only the outer record array unavailable in the current core value representation.
+
+def u:eval_json_array_lines(text) {
+  "Track structural bytes outside quoted strings and preserve UTF8 spans. Reject missing delimiters, non-object elements and malformed separators.";
+  bytes = tokenize_bytes(text);
+  n = tally(bytes);
+  if lt(n, 2) {
+    err("short JSON array")?
+  };
+  positions = compress(eq(bytes, 123) + eq(bytes, 125) + eq(bytes, 34) + eq(bytes, 92) + eq(bytes, 91) + eq(bytes, 93) + eq(bytes, 44), range(n));
+  codes = flatten(gather_rows(reshape(bytes, [n, 1]), positions));
+  depth = 0;
+  quoted = 0;
+  escaped_position = 0 - 1;
+  start = 0;
+  cursor = 0;
+  opened = 0;
+  closed = 0;
+  need_object = 1;
+  result = "";
+  i = 0;
+  while lt(i, tally(positions)) {
+    p = at(positions, i);
+    c = at(codes, i);
+    if quoted {
+      if p - escaped_position {
+        if eq(c, 92) {
+          escaped_position = p + 1
+        };
+        if eq(c, 34) {
+          quoted = 0
+        }
+      }
+    } else {
+      if eq(c, 34) {
+        quoted = 1
+      };
+      if eq(c, 123) {
+        if eq(depth, 0) {
+          if (1 - opened) + closed + (1 - need_object) {
+            err("unexpected object")?
+          };
+          start = p;
+          gap = u:text_trim(decode_bytes(flatten(gather_rows(reshape(bytes, [n, 1]), range(p - cursor) + cursor))));
+          if 1 - str_eq(gap, if cursor {
+              ","
+            } else {
+              "["
+            }) {
+            err("invalid outer separator")?
+          }
+        };
+        depth = depth + 1
+      };
+      if eq(c, 125) {
+        depth = depth - 1;
+        if lt(depth, 0) {
+          err("unmatched closing object")?
+        };
+        if eq(depth, 0) {
+          record_text = decode_bytes(flatten(gather_rows(reshape(bytes, [n, 1]), range(p - start + 1) + start)));
+          parsed = parse_json(record_text)?;
+          result = str_concat(result, str_concat(to_json(parsed)?, "\n"));
+          cursor = p + 1;
+          need_object = 0
+        }
+      };
+      if eq(depth, 0) {
+        if eq(c, 91) {
+          if opened {
+            err("nested outer array")?
+          };
+          opened = 1
+        };
+        if eq(c, 93) {
+          if (1 - opened) + closed {
+            err("unexpected array close")?
+          };
+          closed = 1
+        };
+        if eq(c, 44) {
+          if need_object + closed {
+            err("unexpected separator")?
+          };
+          need_object = 1
+        }
+      }
+    };
+    i = i + 1
+  };
+  if depth + quoted + (1 - opened) + (1 - closed) {
+    err("incomplete JSON array")
+  } else {
+    if cursor {
+      tail = u:text_trim(decode_bytes(flatten(gather_rows(reshape(bytes, [n, 1]), range(n - cursor) + cursor))));
+      if str_eq(tail, "]") {
+        ok(result)
+      } else {
+        err("invalid array tail")
+      }
+    } else {
+      parsed = parse_json(text)?;
+      if eq(tally(parsed), 0) {
+        ok(result)
+      } else {
+        err("object records required")
+      }
+    }
+  }
+}
+#+end_src
+
+
+#+begin_src mlpl :tangle ../lib/eval/book_report.mlpl
+# Offline analysis of numeric book-pilot records. Requires text/text.mlpl and eval/paired.mlpl. Does not read private questions or model responses and never changes primary grades.
+
+def u:eval_book_method_report(attempts_text, methods_text, method, complete) {
+  "Count observed attempts and complete method groups; full-set accuracy and Wilson intervals require all twelve outcomes.";
+  lines = str_split(attempts_text, "\n");
+  i = 0;
+  attempted = 0;
+  errors = 0;
+  truncated = 0;
+  deadlines = 0;
+  incorrect_complete = 0;
+  tokens = 0;
+  wall = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      if eq(row.method, method) {
+        attempted = attempted + 1;
+        errors = errors + row.error;
+        truncated = truncated + str_eq(row.stopped, "budget") + str_eq(row.stopped, "deadline");
+        deadlines = deadlines + str_eq(row.stopped, "deadline");
+        incorrect_complete = incorrect_complete + str_eq(row.stopped, "eos") * (1 - row.correct);
+        tokens = tokens + row.tokens;
+        wall = wall + row.wall_ms
+      }
+    };
+    i = i + 1
+  };
+  lines = str_split(methods_text, "\n");
+  i = 0;
+  indices = [];
+  outcomes = [];
+  abstentions = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      if eq(row.method, method) {
+        if reduce(:or, eq(indices, row.index)) {
+          err("duplicate method case")?
+        };
+        indices = concat(indices, row.index);
+        outcomes = concat(outcomes, row.correct);
+        abstentions = abstentions + row.abstention
+      }
+    };
+    i = i + 1
+  };
+  correct = reduce_add(outcomes);
+  cases = tally(indices);
+  if complete * (cases - 12) {
+    err("complete pilot needs twelve outcomes per method")?
+  };
+  interval = if complete { u:eval_wilson(correct, 12)? } else {
+    {lower: 0, upper: 0}
+  };
+  ok({attempted: attempted, cases: cases, correct: correct, accuracy_available: complete, accuracy: if complete {
+        correct / 12
+      } else {
+        0
+      }, interval: interval, errors: errors, truncated: truncated, deadlines: deadlines, incorrect_complete_attempts: incorrect_complete, abstentions: abstentions, tokens: tokens, wall_ms: wall, indices: indices, outcomes: outcomes})
+}
+
+def u:eval_book_pairs(left, right) {
+  "Compare only case indices observed for both methods; these are descriptive pairs until the full experiment completes.";
+  i = 0;
+  pairs = 0;
+  gains = 0;
+  losses = 0;
+  while lt(i, tally(left.indices)) {
+    matched = compress(eq(right.indices, at(left.indices, i)), right.outcomes);
+    if tally(matched) {
+      pairs = pairs + 1;
+      gains = gains + gt(at(matched, 0), at(left.outcomes, i));
+      losses = losses + lt(at(matched, 0), at(left.outcomes, i))
+    };
+    i = i + 1
+  };
+  {pairs: pairs, gains: gains, losses: losses, ties: pairs - gains - losses}
+}
+
+def u:eval_book_summary(attempts, methods, completion) {
+  "Reproduce primary accounting without private text, withholding full-set accuracy whenever the run is incomplete.";
+  direct = u:eval_book_method_report(attempts, methods, 0, completion.complete)?;
+  cot = u:eval_book_method_report(attempts, methods, 1, completion.complete)?;
+  voting = u:eval_book_method_report(attempts, methods, 2, completion.complete)?;
+  if completion.attempted - (direct.attempted + cot.attempted + voting.attempted) {
+    err("attempt total mismatch")?
+  };
+  if completion.complete * (completion.attempted - 144) {
+    err("complete pilot needs 144 attempts")?
+  };
+  ok({complete: completion.complete, attempted: completion.attempted, planned: completion.planned, direct: direct, cot: cot, voting: voting, cot_vs_direct: u:eval_book_pairs(direct, cot), voting_vs_cot: u:eval_book_pairs(cot, voting), wall_ms: completion.wall_ms})
+}
+#+end_src
+
+
+#+begin_src mlpl :tangle ../lib/verify/linear.mlpl
+# Exact bounded rational linear algebra over 26 single-letter symbols. Requires text/text.mlpl, verify/number.mlpl and verify/expr.mlpl. Reuses this project's independently authored parser grammar; nonlinear forms return unavailable.
+
+def u:verify_linear_invalid() {
+  "An unavailable symbolic form, never a numerical guess.";
+  {valid: 0, nums: zeros([27]), den: 1}
+}
+
+def u:verify_linear_new(nums, den) {
+  "Canonicalize a common rational denominator and bound every exact integer to the f64 safe domain.";
+  limit = 9007199254740991;
+  if eq(den, 0) + gt(abs(den), limit) + gt(reduce(:max, abs(nums)), limit) + (1 - eq(den, floor(den))) + reduce(:or, 1 - eq(nums, floor(nums))) {
+    u:verify_linear_invalid()
+  } else {
+    g = abs(den);
+    i = 0;
+    while lt(i, 27) {
+      g = u:verify_gcd(g, abs(at(nums, i)));
+      i = i + 1
+    };
+    sign = if lt(den, 0) {
+      0 - 1
+    } else {
+      1
+    };
+    {valid: 1, nums: nums * sign / g, den: abs(den) / g}
+  }
+}
+
+def u:verify_linear_constant(value) {
+  "Lift an exact rational to the constant coefficient; irrational numeric approximations are unavailable here.";
+  if value.exact { u:verify_linear_new(eq(range(27), 0) * value.num, value.den) } else { u:verify_linear_invalid() }
+}
+
+def u:verify_linear_neg(value) {
+  "Negate exact coefficients without altering availability.";
+  {valid: value.valid, nums: 0 - value.nums, den: value.den}
+}
+
+def u:verify_linear_add(a, b) {
+  "Add common-denominator forms with conservative pre-multiplication overflow bounds.";
+  if (1 - a.valid * b.valid) + gt(reduce(:max, abs(a.nums)) * b.den + reduce(:max, abs(b.nums)) * a.den, 9007199254740991) + gt(a.den * b.den, 9007199254740991) {
+    u:verify_linear_invalid()
+  } else { u:verify_linear_new(a.nums * b.den + b.nums * a.den, a.den * b.den) }
+}
+
+def u:verify_linear_sub(a, b) {
+  "Subtract linear forms through exact negation and addition.";
+  u:verify_linear_add(a, u:verify_linear_neg(b))
+}
+
+def u:verify_linear_scalar(value) {
+  "Return one only when all variable coefficients vanish.";
+  eq(reduce_add(abs(value.nums) * gt(range(27), 0)), 0)
+}
+
+def u:verify_linear_mul(a, b) {
+  "Multiply only when at least one factor is constant; refuse nonlinear terms.";
+  if 1 - a.valid * b.valid { u:verify_linear_invalid() } else {
+    if u:verify_linear_scalar(a) { u:verify_linear_new(b.nums * at(a.nums, 0), a.den * b.den) } else {
+      if u:verify_linear_scalar(b) { u:verify_linear_new(a.nums * at(b.nums, 0), a.den * b.den) } else { u:verify_linear_invalid() }
+    }
+  }
+}
+
+def u:verify_linear_div(a, b) {
+  "Divide by a nonzero rational constant; variable denominators remain unavailable.";
+  if a.valid * b.valid * u:verify_linear_scalar(b) { u:verify_linear_new(a.nums * b.den, a.den * at(b.nums, 0)) } else { u:verify_linear_invalid() }
+}
+
+def u:verify_linear_pow(a, b) {
+  "Handle bounded nonnegative integer powers, allowing multiplication to reject nonlinear results.";
+  n = at(b.nums, 0);
+  if a.valid * b.valid * u:verify_linear_scalar(b) * eq(b.den, 1) * (1 - lt(n, 0)) * (1 - gt(n, 16)) {
+    value = u:verify_linear_constant(u:verify_rational(1, 1));
+    i = 0;
+    while lt(i, n) {
+      value = u:verify_linear_mul(value, a);
+      i = i + 1
+    };
+    value
+  } else { u:verify_linear_invalid() }
+}
+
+def u:verify_linear_parse_primary(s, i) {
+  "Parse an exact number, parenthesized linear expression or one lowercase variable.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "(") {
+    inner = u:verify_linear_parse_expr(s, pos + 1);
+    after = u:verify_skip(s, inner.pos);
+    if inner.ok * str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, inner.value) } else { u:verify_fail("syntax", "invalid parentheses") }
+  } else {
+    if u:text_is_digit(c) {
+      number = u:verify_scan_number(s, pos);
+      if number.ok { u:verify_step(number.pos, u:verify_linear_constant(number.value)) } else {
+        number
+      }
+    } else {
+      if u:text_is_letter(c) {
+        end = u:verify_scan_name(s, pos);
+        if eq(end - pos, 1) {
+          index = at(tokenize_bytes(c), 0) - 96;
+          if gt(index, 0) * lt(index, 27) { u:verify_step(end, u:verify_linear_new(eq(range(27), index), 1)) } else { u:verify_fail("symbolic", "lowercase symbol required") }
+        } else { u:verify_fail("symbolic", "single-letter symbols only") }
+      } else { u:verify_fail("syntax", "expected linear primary") }
+    }
+  }
+}
+def u:verify_linear_parse_power(s, i) {
+  "Parse a primary optionally raised to a power; the exponent is right-associative and may carry a sign.";
+  base = u:verify_linear_parse_primary(s, i);
+  if base.ok {
+    pos = u:verify_skip(s, base.pos);
+    if str_eq(u:text_char_at(s, pos), "*") * str_eq(u:text_char_at(s, pos + 1), "*") {
+      exponent = u:verify_linear_parse_unary(s, pos + 2);
+      if exponent.ok { u:verify_step(exponent.pos, u:verify_linear_pow(base.value, exponent.value)) } else {
+        exponent
+      }
+    } else {
+      base
+    }
+  } else {
+    base
+  }
+}
+
+def u:verify_linear_parse_unary(s, i) {
+  "Parse an optionally signed power; a leading minus binds looser than exponentiation.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "-") {
+    inner = u:verify_linear_parse_unary(s, pos + 1);
+    if inner.ok { u:verify_step(inner.pos, u:verify_linear_neg(inner.value)) } else {
+      inner
+    }
+  } else {
+    if str_eq(c, "+") { u:verify_linear_parse_unary(s, pos + 1) } else { u:verify_linear_parse_power(s, i) }
+  }
+}
+
+def u:verify_linear_starts_factor(c) {
+  "1 when c can begin a factor, which is what makes implicit multiplication unambiguous.";
+  u:text_is_digit(c) + u:text_is_letter(c) + str_eq(c, "(")
+}
+
+def u:verify_linear_parse_term(s, i) {
+  "Parse a product: explicit star and slash operators plus implicit multiplication such as 2(3+4) or 3sqrt(2).";
+  left = u:verify_linear_parse_unary(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      is_star = str_eq(c, "*") * (1 - str_eq(u:text_char_at(s, at + 1), "*"));
+      is_slash = str_eq(c, "/");
+      implicit = u:verify_linear_starts_factor(c);
+      if is_star + is_slash + implicit {
+        start = if implicit {
+          at
+        } else {
+          at + 1
+        };
+        right = u:verify_linear_parse_power(s, start);
+        if right.ok {
+          value = if is_slash { u:verify_linear_div(value, right.value) } else { u:verify_linear_mul(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_linear_parse_expr(s, i) {
+  "Parse a sum of terms.";
+  left = u:verify_linear_parse_term(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      if str_eq(c, "+") + str_eq(c, "-") {
+        right = u:verify_linear_parse_term(s, at + 1);
+        if right.ok {
+          value = if str_eq(c, "+") { u:verify_linear_add(value, right.value) } else { u:verify_linear_sub(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_linear_parse(text) {
+  "Parse a normalized expression into an exact linear form, or return a classified unavailable result.";
+  if gt(str_len(text), u:verify_expr_limit()) {
+    err({kind: "budget", message: "expression exceeds the character limit"})
+  } else {
+    trimmed = u:text_trim(text);
+    if str_eq(trimmed, "") {
+      err({kind: "syntax", message: "empty expression"})
+    } else {
+      parsed = u:verify_linear_parse_expr(trimmed, 0);
+      if parsed.ok {
+        rest = u:verify_skip(trimmed, parsed.pos);
+        if rest - str_len(trimmed) {
+          err({kind: "syntax", message: "trailing characters"})
+        } else {
+          if parsed.value.valid {
+            ok(parsed.value)
+          } else {
+            err({kind: "symbolic", message: "outside exact linear domain"})
+          }
+        }
+      } else {
+        err({kind: parsed.kind, message: parsed.message})
+      }
+    }
+  }
+}
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/book_author.mlpl
+# Book-compatible demonstration: canonical experimental prompts, author-ordered first ten cases, fallback extraction and first-appearance voting. Independent MLPL tooling with Rust CUDA forward.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/verify/linear.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/cuda/cuda.mlpl";
+include "lib/eval/book.mlpl";
+include "lib/eval/author.mlpl";
+
+def u:cuda_book_forward(request) {
+  "Adapt SDK success arrays or Result errors to the checked callback contract.";
+  value = _qwen3_cuda:forward(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+def u:eval_author_attempt(handles, item, method, seed, settings, stem) {
+  "Save a reference-free request, reset KV and generate; apply fallback extraction to EOS or capped text before grading.";
+  template = parse_json(read_text("fixtures/prompts/book-author.json")?)?;
+  prompt = u:eval_author_prompt(template, item.problem, gt(method, 0));
+  ids = _hftok:encode(handles.tokenizer, prompt);
+  if gt(tally(ids) + settings.max_new, 4096) {
+    err("prompt exceeds frozen context allowance")?
+  };
+  _qwen3_cuda:reset({handle: handles.model});
+  write_atomic(str_concat(stem, "-request.json"), to_json({prompt: prompt, ids: ids, method: method, seed: seed, max_new: settings.max_new})?)?;
+  started = clock_ms();
+  decoded = u:cuda_decode({forward: :u:cuda_book_forward, handle: handles.model}, ids, {max_new: settings.max_new, eos: 151643, seed: seed, temperature: if eq(method, 2) {
+        0.9
+      } else {
+        0
+      }, top_p: 0.9, max_ms: settings.max_ms});
+  elapsed = clock_ms() - started;
+  if is_err(decoded) {
+    result = {correct: 0, eligible: 0, error: 1, tokens: 0, wall_ms: elapsed, stopped: "error", key: ""};
+    write_atomic(str_concat(stem, "-response.json"), to_json({error: err_message(decoded)})?)?
+  } else {
+    answer = unwrap(decoded);
+    response = if tally(answer.ids) { _hftok:decode(handles.tokenizer, answer.ids) } else {
+      ""
+    };
+    candidate = u:eval_author_candidate(response);
+    eligible = 1;
+    result = {correct: if eligible { u:eval_author_grade(candidate, item.answer) } else {
+        0
+      }, eligible: eligible, error: 0, tokens: tally(answer.ids), wall_ms: elapsed, stopped: answer.stopped, key: candidate};
+    write_atomic(str_concat(stem, "-response.json"), to_json({ids: answer.ids, text: response, stopped: answer.stopped})?)?
+  };
+  write_atomic(str_concat(stem, "-grade.json"), to_json(result)?)?;
+  result
+}
+
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+root = env("REPO_ROOT")?
+out = env("BOOK_OUT")?
+smoke = str_eq(env("BOOK_MODE")?, "smoke")
+max_new = if smoke {
+  64
+} else {
+  2048
+}
+job_ms = if smoke {
+  180000
+} else {
+  10800000
+}
+job_started = clock_ms()
+h = _qwen3_cuda:open({root: str_concat(root, "/models/qwen3-0.6b-base"), context: 4096, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+tok = _hftok:load_path(str_concat(root, "/models/qwen3-0.6b-base/tokenizer.json"))
+warm = u:cuda_decode({forward: :u:cuda_book_forward, handle: h}, _hftok:encode(tok, "The capital of France is"), {max_new: 2, eos: 151643, seed: 42, temperature: 0, top_p: 0.9, max_ms: 120000})?
+dataset = u:eval_load_jsonl_text(read_text(env("BOOK_INPUT")?)?, "book-author-v2", {})?
+if dataset.count - if smoke {
+  1
+} else {
+  10
+} {
+  err("wrong frozen case count")?
+}
+rows_path = str_concat(out, "/attempts.jsonl")
+results_path = str_concat(out, "/methods.jsonl")
+write_atomic(rows_path, "")?
+write_atomic(results_path, "")?
+attempted = 0
+finished_groups = 0
+i = 0
+while lt(i, dataset.count) * lt(clock_ms() - job_started, job_ms) {
+  item = u:eval_record(dataset, i)?;
+  group = 0;
+  while lt(group, 3) * lt(clock_ms() - job_started, job_ms) {
+    method = mod(i + group, 3);
+    samples = if eq(method, 2) {
+      3
+    } else {
+      1
+    };
+    state = {keys: "", counts: []};
+    k = 0;
+    tokens = 0;
+    wall = 0;
+    while lt(k, samples) * lt(clock_ms() - job_started, job_ms) {
+      seed = if eq(method, 2) {
+        43 + k
+      } else {
+        42
+      };
+      stem = str_concat(out, str_concat("/attempt-", to_string(attempted)));
+      print("ATTEMPT", attempted, "case", i, "method", method, "seed", seed);
+      result = u:eval_author_attempt({model: h, tokenizer: tok}, item, method, seed, {max_new: max_new, max_ms: job_ms - (clock_ms() - job_started)}, stem);
+      if result.eligible {
+        state = u:eval_author_vote_add(state, result.key)?
+      };
+      tokens = tokens + result.tokens;
+      wall = wall + result.wall_ms;
+      row = {attempt: attempted, index: i, id: item.unique_id, method: method, seed: seed, correct: result.correct, eligible: result.eligible, error: result.error, tokens: result.tokens, wall_ms: result.wall_ms, stopped: result.stopped};
+      u:eval_write_line(rows_path, str_concat(to_json(row)?, "\n"), 0)?;
+      print("OUTCOME", to_json(row)?);
+      attempted = attempted + 1;
+      k = k + 1
+    };
+    if eq(k, samples) {
+      vote = u:eval_author_vote(state, item.answer)?;
+      row = {index: i, id: item.unique_id, method: method, correct: vote.correct, abstention: eq(vote.samples, 0), tied: vote.tied, eligible: vote.samples, tokens: tokens, wall_ms: wall};
+      u:eval_write_line(results_path, str_concat(to_json(row)?, "\n"), 0)?;
+      finished_groups = finished_groups + 1
+    };
+    group = group + 1
+  };
+  i = i + 1
+}
+write_atomic(str_concat(out, "/completion.json"), to_json({attempted: attempted, planned: dataset.count * 5, finished_groups: finished_groups, complete: eq(attempted, dataset.count * 5), wall_ms: clock_ms() - job_started})?)?
+_qwen3_cuda:close({handle: h})
+_hftok:close(tok)
+print("FINISHED", attempted, "planned", dataset.count * 5)
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/prepare_book_author.mlpl
+# MLPL experiment preparation: preserve author dataset ordering, select the first ten cases, and emit exact experimental prompts without generating answers.
+include "lib/text/text.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/eval/author.mlpl";
+include "lib/eval/json_array.mlpl";
+rows = str_split(u:text_trim(u:eval_json_array_lines(read_text("data/math500/book-author.json")?)?), "\n")
+template = parse_json(read_text("fixtures/prompts/book-author.json")?)?
+if list_len(rows) - 500 {
+  err("expected 500 author dataset rows")?
+}
+write_atomic("data/math500/book-author-first10.jsonl", "")?
+write_atomic("out/book-author-v2/selection.jsonl", "")?
+i = 0
+while lt(i, 10) {
+  row = parse_json(list_get(rows, i)?)?;
+  u:eval_write_line("data/math500/book-author-first10.jsonl", str_concat(to_json(row)?, "\n"), 0)?;
+  u:eval_write_line("out/book-author-v2/selection.jsonl", str_concat(to_json({index: i, id: row.unique_id})?, "\n"), 0)?;
+  stem = str_concat("out/book-author-v2/prompt-", to_string(i));
+  write_atomic(str_concat(stem, "-direct.txt"), u:eval_author_prompt(template, row.problem, 0))?;
+  write_atomic(str_concat(stem, "-cot.txt"), u:eval_author_prompt(template, row.problem, 1))?;
+  i = i + 1
+}
+print("Prepared first ten author-ordered cases and twenty prompt files; no inference.")
+ok(1)
+#+end_src

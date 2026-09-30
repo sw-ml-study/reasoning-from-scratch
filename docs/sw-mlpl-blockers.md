@@ -542,3 +542,11 @@ not required for this validation-only path; inference remains Rust/CUDA.
 Seeded MLPL nucleus decoding measures about nine tokens/second including
 GPU forward, versus roughly 22–24 for greedy. Sampling cost is now a measured
 library throughput limitation, not a reason to change the frozen protocol.
+
+The author dataset is an outer JSON array of records, which current core
+`parse_json` cannot represent directly. Classified **awkward**, with an MLPL
+library workaround: `eval/json_array.mlpl` scans structural UTF8 bytes outside
+strings, validates individual records, and emits JSONL. No Python converter
+or core optimization is needed. Exact bounded rational linear-symbolic
+comparison is now implemented in `verify/linear.mlpl`; general nonlinear
+symbolic simplification remains **missing** for full SymPy-equivalent grading.

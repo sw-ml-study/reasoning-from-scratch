@@ -1,0 +1,20 @@
+{
+  "protocol": "book-author-v2",
+  "status_at_commit": "frozen before this demonstration's generation",
+  "author_revision": "1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f",
+  "backend_provenance": "book-cuda-v1-execution.json",
+  "source_pins": "book-author-v2-execution.sha256",
+  "dataset_sha256": "a9eccff7e25ecaf3952614e5b92fe081b4f0549c68ae6a387b96e131df9ddf41",
+  "selection": "author dataset order, first ten records; demonstration, not fresh holdout",
+  "methods": ["canonical base prompt, greedy", "canonical CoT prompt, greedy", "canonical CoT, temperature 0.9, top-p 0.9, three samples"],
+  "sample_seeds": [43, 44, 45],
+  "greedy_seed": "42, unused",
+  "rng": "same pinned MLPL xorshift64 plus 16-value warmup as backend provenance; distribution-matched, not PyTorch stream-identical",
+  "grading": "MLPL numeric/tuple/literal and exact bounded rational linear-symbolic comparison; not all SymPy simplification",
+  "extraction": "last complete box, otherwise last recognized number, otherwise full text; EOS not required",
+  "voting": "exact extracted strings, tied plurality resolved by first appearance; grade only after selection",
+  "budget": {"context": 4096, "max_new": 2048, "eos": 151643, "calls": 50, "call_time_limit": null, "job_ms": 10800000},
+  "schedule": "rotate three method groups by case index modulo three; sampling seeds ascending; no early vote stop",
+  "command": "MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl just book-author",
+  "remaining_gaps": ["general nonlinear symbolic equivalence", "RNG stream identity", "full 500-case scale", "provider publication pending sibling authorization"]
+}

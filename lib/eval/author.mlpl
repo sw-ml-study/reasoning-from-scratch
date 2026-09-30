@@ -1,0 +1,56 @@
+# Independently implemented author experiment contracts. Requires text, verify/extract, verify/grade and scaling/consistency. Prompt wording is loaded as attributed experimental input data. Symbolic grading beyond the MLPL verifier remains a declared gap.
+
+def u:eval_author_prompt(template, problem, cot) {
+  "Insert the question into the canonical experimental stimulus, then append the optional CoT instruction after the answer cue.";
+  str_concat(template.prefix, str_concat(problem, str_concat(template.suffix, if cot {
+          template.cot_suffix
+        } else {
+          ""
+        })))
+}
+
+def u:eval_author_candidate(response) {
+  "Prefer a complete box; otherwise use the existing last-number-then-full-text extraction contract. EOS is not required.";
+  u:verify_final_candidate(response, "number_then_full")
+}
+
+def u:eval_author_vote_add(state, candidate) {
+  "Count exact extracted strings, encoding keys as JSON so empty or multiline text cannot corrupt the tally.";
+  ok(u:scaling_vote_add(state, to_json(candidate)?))
+}
+
+def u:eval_author_vote(state, reference) {
+  "Select the first observed plurality winner, including ties, before applying the current MLPL equivalence grader.";
+  report = u:scaling_vote_report(state, 0);
+  candidate = if tally(state.counts) {
+    parse_json(report.answer)?
+  } else {
+    ""
+  };
+  ok({candidate: candidate, correct: u:eval_author_grade(candidate, reference), tied: report.tied, votes: report.votes, samples: reduce_add(state.counts)})
+}
+
+def u:eval_author_grade(candidate, reference) {
+  "Grade normalized tuple components using numeric equality, literal text, or exact bounded linear-symbolic identity; nonlinear symbolic rearrangements remain unsupported.";
+  left = u:verify_split_parts(u:text_replace_all(u:verify_normalize(candidate), "\\pi", "pi"));
+  right = u:verify_split_parts(u:text_replace_all(u:verify_normalize(reference), "\\pi", "pi"));
+  matched = gt(list_len(left), 0) * eq(list_len(left), list_len(right));
+  i = 0;
+  while lt(i, list_len(left)) * matched {
+    a = list_get(left, i)?;
+    b = list_get(right, i)?;
+    if 1 - u:verify_equivalent(a, b) {
+      pa = u:verify_linear_parse(a);
+      pb = u:verify_linear_parse(b);
+      if is_ok(pa) * is_ok(pb) {
+        va = unwrap(pa);
+        vb = unwrap(pb);
+        matched = equal(va.nums, vb.nums) * eq(va.den, vb.den)
+      } else {
+        matched = 0
+      }
+    };
+    i = i + 1
+  };
+  matched
+}

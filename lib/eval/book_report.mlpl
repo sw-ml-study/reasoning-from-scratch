@@ -1,0 +1,95 @@
+# Offline analysis of numeric book-pilot records. Requires text/text.mlpl and eval/paired.mlpl. Does not read private questions or model responses and never changes primary grades.
+
+def u:eval_book_method_report(attempts_text, methods_text, method, complete) {
+  "Count observed attempts and complete method groups; full-set accuracy and Wilson intervals require all twelve outcomes.";
+  lines = str_split(attempts_text, "\n");
+  i = 0;
+  attempted = 0;
+  errors = 0;
+  truncated = 0;
+  deadlines = 0;
+  incorrect_complete = 0;
+  tokens = 0;
+  wall = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      if eq(row.method, method) {
+        attempted = attempted + 1;
+        errors = errors + row.error;
+        truncated = truncated + str_eq(row.stopped, "budget") + str_eq(row.stopped, "deadline");
+        deadlines = deadlines + str_eq(row.stopped, "deadline");
+        incorrect_complete = incorrect_complete + str_eq(row.stopped, "eos") * (1 - row.correct);
+        tokens = tokens + row.tokens;
+        wall = wall + row.wall_ms
+      }
+    };
+    i = i + 1
+  };
+  lines = str_split(methods_text, "\n");
+  i = 0;
+  indices = [];
+  outcomes = [];
+  abstentions = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      if eq(row.method, method) {
+        if reduce(:or, eq(indices, row.index)) {
+          err("duplicate method case")?
+        };
+        indices = concat(indices, row.index);
+        outcomes = concat(outcomes, row.correct);
+        abstentions = abstentions + row.abstention
+      }
+    };
+    i = i + 1
+  };
+  correct = reduce_add(outcomes);
+  cases = tally(indices);
+  if complete * (cases - 12) {
+    err("complete pilot needs twelve outcomes per method")?
+  };
+  interval = if complete { u:eval_wilson(correct, 12)? } else {
+    {lower: 0, upper: 0}
+  };
+  ok({attempted: attempted, cases: cases, correct: correct, accuracy_available: complete, accuracy: if complete {
+        correct / 12
+      } else {
+        0
+      }, interval: interval, errors: errors, truncated: truncated, deadlines: deadlines, incorrect_complete_attempts: incorrect_complete, abstentions: abstentions, tokens: tokens, wall_ms: wall, indices: indices, outcomes: outcomes})
+}
+
+def u:eval_book_pairs(left, right) {
+  "Compare only case indices observed for both methods; these are descriptive pairs until the full experiment completes.";
+  i = 0;
+  pairs = 0;
+  gains = 0;
+  losses = 0;
+  while lt(i, tally(left.indices)) {
+    matched = compress(eq(right.indices, at(left.indices, i)), right.outcomes);
+    if tally(matched) {
+      pairs = pairs + 1;
+      gains = gains + gt(at(matched, 0), at(left.outcomes, i));
+      losses = losses + lt(at(matched, 0), at(left.outcomes, i))
+    };
+    i = i + 1
+  };
+  {pairs: pairs, gains: gains, losses: losses, ties: pairs - gains - losses}
+}
+
+def u:eval_book_summary(attempts, methods, completion) {
+  "Reproduce primary accounting without private text, withholding full-set accuracy whenever the run is incomplete.";
+  direct = u:eval_book_method_report(attempts, methods, 0, completion.complete)?;
+  cot = u:eval_book_method_report(attempts, methods, 1, completion.complete)?;
+  voting = u:eval_book_method_report(attempts, methods, 2, completion.complete)?;
+  if completion.attempted - (direct.attempted + cot.attempted + voting.attempted) {
+    err("attempt total mismatch")?
+  };
+  if completion.complete * (completion.attempted - 144) {
+    err("complete pilot needs 144 attempts")?
+  };
+  ok({complete: completion.complete, attempted: completion.attempted, planned: completion.planned, direct: direct, cot: cot, voting: voting, cot_vs_direct: u:eval_book_pairs(direct, cot), voting_vs_cot: u:eval_book_pairs(cot, voting), wall_ms: completion.wall_ms})
+}

@@ -133,3 +133,11 @@ book-cuda:
 # Authored integration smoke, never counted in the frozen pilot.
 book-cuda-smoke:
     ./scripts/run-book-cuda --smoke
+
+# Book-compatible first-ten demonstration (50 calls), with frozen execution pins.
+book-author:
+    ./scripts/run-book-author
+
+# Five-call authored integration smoke for the book-compatible MLPL tooling.
+book-author-smoke:
+    ./scripts/run-book-author --smoke

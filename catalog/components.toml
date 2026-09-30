@@ -339,3 +339,39 @@ source = "lib/eval/book.mlpl"
 test = "tests/test_eval_book.mlpl"
 documentation = "docs/book-reproduction-protocol.md"
 status = "accepted"
+
+[[component]]
+id = "BOOKAUTHOR"
+slug = "book-experiment-tooling"
+chapter = 4
+source = "lib/eval/author.mlpl"
+test = "tests/test_eval_author.mlpl"
+documentation = "docs/book-author-protocol.md"
+status = "accepted"
+
+[[component]]
+id = "JSONRECORDS"
+slug = "json-record-array-adapter"
+chapter = 3
+source = "lib/eval/json_array.mlpl"
+test = "tests/test_eval_json_array.mlpl"
+documentation = "docs/book-author-protocol.md"
+status = "accepted"
+
+[[component]]
+id = "LINEARVERIFY"
+slug = "exact-linear-symbolic-grading"
+chapter = 3
+source = "lib/verify/linear.mlpl"
+test = "tests/test_verify_linear.mlpl"
+documentation = "docs/book-author-protocol.md"
+status = "accepted"
+
+[[component]]
+id = "BOOKREPORT"
+slug = "offline-book-analysis"
+chapter = 4
+source = "lib/eval/book_report.mlpl"
+test = "tests/test_eval_book_report.mlpl"
+documentation = "docs/book-author-protocol.md"
+status = "accepted"

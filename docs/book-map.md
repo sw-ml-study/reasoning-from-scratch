@@ -162,3 +162,14 @@ about 44% with Qwen3-235B traces (same-family teacher works better).
 - E: batched generation with left padding and a key-padding mask; deferred
   here until single-sequence throughput is measured.
 - F and G (other evaluation styles, chat interface): out of scope.
+
+## Experiment-tool parity (2026-09-30)
+
+The active [book demonstration](book-author-protocol.md) recreates experiment
+behavior in MLPL, including dataset preparation and analysis. Prompt bytes
+are experimental input data; implementation code remains independently
+written. The earlier strict-box/EOS-only/tie-abstaining pilot is a separate,
+incomplete baseline and must not be labeled the author's evaluation.
+Remaining semantic gaps include general symbolic equivalence and framework
+RNG identity. These must be measured or implemented rather than obscured by
+changing the target to a custom reasoning demo.

@@ -1,0 +1,29 @@
+# Exact bounded linear-symbolic equivalence contracts; algebra is independently implemented in MLPL, without reference code or numeric probing.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/linear.mlpl";
+
+@test {name: "linear symbolic algebra recognizes rearrangement and distribution", tags: ["verify", "symbolic"]}
+def u:test_verify_linear_equal() {
+  "Canonical rational coefficients prove identities over all variable values, not sampled test points.";
+  left = u:verify_linear_parse("p-q")?;
+  right = u:verify_linear_parse("-(q-p)")?;
+  u:assert_eq(left.nums, right.nums, "rearrangement")?;
+  right = u:verify_linear_parse("2*(p-q)/2")?;
+  u:assert_eq(left.nums, right.nums, "distribution")?;
+  left = u:verify_linear_parse("0.5*x")?;
+  right = u:verify_linear_parse("x/2")?;
+  u:assert_eq(left.nums, right.nums, "fraction coefficients")?;
+  u:assert_eq(left.den, right.den, "canonical denominator")
+}
+
+@test {name: "linear symbolic algebra refuses nonlinear proof and division by zero", tags: ["verify", "symbolic"]}
+def u:test_verify_linear_bounds() {
+  "Unsupported operations return unavailable rather than a guessed equivalence.";
+  u:assert_err(u:verify_linear_parse("x*x"), "nonlinear")?;
+  u:assert_err(u:verify_linear_parse("x/0"), "division zero")?;
+  u:assert_err(u:verify_linear_parse("sin(x)"), "unknown function")
+}
+
+u:run_registered_tests()

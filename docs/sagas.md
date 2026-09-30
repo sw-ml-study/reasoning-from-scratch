@@ -194,3 +194,11 @@ prompt hashes are frozen before any selected generation. Next: execute the
 144-call pilot under its existing two-hour cap, then publish complete or
 explicitly incomplete accounting. Sibling provider publication is awaiting
 user authorization; the pinned local backend is usable independently.
+
+User clarification during step 014 makes book recreation the acceptance
+criterion. The strict custom pilot was stopped after 12 recorded outcomes
+(one further request interrupted); do not present it as author parity. The
+active v2 demonstration uses author-ordered first ten cases, exact short
+prompt data, fallback extraction, raw-string voting and first-appearance ties,
+all implemented independently in MLPL. A five-call authored smoke passes in
+30 seconds. Numeric/symbolic grading and RNG differences remain explicit.

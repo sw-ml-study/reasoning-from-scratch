@@ -1,0 +1,59 @@
+# Independent behavioral contracts for the author's experiment tooling; prompt strings are experimental input data, not copied implementation code.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/verify/linear.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/eval/author.mlpl";
+
+@test {name: "author prompt preserves experimental stimulus and suffix position", tags: ["eval", "author"]}
+def u:test_eval_author_prompt() {
+  "The question is inserted between fixed data fields; CoT follows the answer cue without an extra newline.";
+  template = {prefix: "P:", suffix: ":A", cot_suffix: ":C"};
+  u:assert_text_eq(u:eval_author_prompt(template, "Q", 0), "P:Q:A", "base")?;
+  u:assert_text_eq(u:eval_author_prompt(template, "Q", 1), "P:Q:A:C", "CoT")
+}
+
+@test {name: "author extraction allows unboxed answers and capped responses", tags: ["eval", "author"]}
+def u:test_eval_author_extract() {
+  "Extraction uses generated text independently of EOS; a missing box falls back to the last number.";
+  u:assert_text_eq(u:eval_author_candidate("The answer is 42."), "42", "unboxed")?;
+  u:assert_text_eq(u:eval_author_candidate("step 7; \\boxed{1/2}"), "1/2", "box preferred")
+}
+
+@test {name: "author vote uses raw keys and first appearance for ties", tags: ["eval", "author"]}
+def u:test_eval_author_vote() {
+  "Equivalent numeric spellings remain separate votes until final grading; the reference never selects a winner.";
+  state = {keys: "", counts: []};
+  state = u:eval_author_vote_add(state, "0.5")?;
+  state = u:eval_author_vote_add(state, "1/2")?;
+  result = u:eval_author_vote(state, "1/2")?;
+  u:assert_text_eq(result.candidate, "0.5", "first tie winner")?;
+  u:assert_eq(result.tied, 1, "tie recorded")?;
+  u:assert_eq(result.correct, 1, "grade after selection")?;
+  state = u:eval_author_vote_add(state, "1/2")?;
+  u:assert_text_eq(u:eval_author_vote(state, "0")?.candidate, "1/2", "plurality")
+}
+
+@test {name: "author vote safely counts empty and multiline candidates", tags: ["eval", "author"]}
+def u:test_eval_author_empty() {
+  "JSON-encoded keys preserve arbitrary fallback text without delimiter collisions.";
+  state = u:eval_author_vote_add({keys: "", counts: []}, "")?;
+  state = u:eval_author_vote_add(state, "line one\nline two")?;
+  result = u:eval_author_vote(state, "2")?;
+  u:assert_text_eq(result.candidate, "", "empty first candidate")?;
+  u:assert_eq(result.correct, 0, "empty cannot be correct")
+}
+
+@test {name: "author grading covers symbolic rearrangement and polar coordinates", tags: ["eval", "author"]}
+def u:test_eval_author_symbolic() {
+  "Linear identities and pi notation cannot become false model failures merely due to representation.";
+  u:assert_eq(u:eval_author_grade("-(q-p)", "p-q"), 1, "linear")?;
+  u:assert_eq(u:eval_author_grade("(3,pi/2)", "(3,\\frac{\\pi}{2})"), 1, "polar")?;
+  u:assert_eq(u:eval_author_grade("p+q", "p-q"), 0, "different linear form")
+}
+
+u:run_registered_tests()

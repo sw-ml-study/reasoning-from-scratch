@@ -27,3 +27,7 @@ dcb74ca7a3cce9953cb719dca20da21179415362df8c1c912a5783a1b3691fcf  docs/results/c
 d41269015b93dc02cf8dab2ea1d8f5879a0b90f821947d8fd1f633d1d3daa6e9  docs/results/book-cuda-v1-execution.sha256
 1b32318270b8399fea3c5d91483305e0f37581607bf22789c79b91e9998fbb24  docs/results/book-cuda-v1-prompt-hashes.jsonl
 8784e71806ca3bd1e2494b241423e78dcf193bb26afdd01c4cab470cbc34fe31  docs/results/cuda-real-precision-v2.txt
+b92996a148c8b62cec1f2a0ec9038a7c3a531c5beb374b077bf00292f15c48f5  docs/results/book-author-v2-execution.json
+4e482bca2f4b787c08ea19b4f1eae8ebe5b1ba37c31cd27c398cf4a0b19d62b1  docs/results/book-author-v2-selection.jsonl
+fcd9323bc699acf5acdd13dac4e2a91f46753ed67b8485a07e08d83c98e43f31  docs/results/book-author-v2-prompt-hashes.sha256
+4f76a9c20fe7116b86060cecd3289d7a38833a10c238c00db0446461e62bee5b  docs/results/book-author-v2-execution.sha256

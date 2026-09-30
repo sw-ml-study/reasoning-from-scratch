@@ -1,0 +1,24 @@
+# MLPL experiment preparation: preserve author dataset ordering, select the first ten cases, and emit exact experimental prompts without generating answers.
+include "lib/text/text.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/eval/author.mlpl";
+include "lib/eval/json_array.mlpl";
+rows = str_split(u:text_trim(u:eval_json_array_lines(read_text("data/math500/book-author.json")?)?), "\n")
+template = parse_json(read_text("fixtures/prompts/book-author.json")?)?
+if list_len(rows) - 500 {
+  err("expected 500 author dataset rows")?
+}
+write_atomic("data/math500/book-author-first10.jsonl", "")?
+write_atomic("out/book-author-v2/selection.jsonl", "")?
+i = 0
+while lt(i, 10) {
+  row = parse_json(list_get(rows, i)?)?;
+  u:eval_write_line("data/math500/book-author-first10.jsonl", str_concat(to_json(row)?, "\n"), 0)?;
+  u:eval_write_line("out/book-author-v2/selection.jsonl", str_concat(to_json({index: i, id: row.unique_id})?, "\n"), 0)?;
+  stem = str_concat("out/book-author-v2/prompt-", to_string(i));
+  write_atomic(str_concat(stem, "-direct.txt"), u:eval_author_prompt(template, row.problem, 0))?;
+  write_atomic(str_concat(stem, "-cot.txt"), u:eval_author_prompt(template, row.problem, 1))?;
+  i = i + 1
+}
+print("Prepared first ten author-ordered cases and twenty prompt files; no inference.")
+ok(1)

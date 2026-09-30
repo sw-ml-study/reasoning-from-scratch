@@ -1,0 +1,244 @@
+# Exact bounded rational linear algebra over 26 single-letter symbols. Requires text/text.mlpl, verify/number.mlpl and verify/expr.mlpl. Reuses this project's independently authored parser grammar; nonlinear forms return unavailable.
+
+def u:verify_linear_invalid() {
+  "An unavailable symbolic form, never a numerical guess.";
+  {valid: 0, nums: zeros([27]), den: 1}
+}
+
+def u:verify_linear_new(nums, den) {
+  "Canonicalize a common rational denominator and bound every exact integer to the f64 safe domain.";
+  limit = 9007199254740991;
+  if eq(den, 0) + gt(abs(den), limit) + gt(reduce(:max, abs(nums)), limit) + (1 - eq(den, floor(den))) + reduce(:or, 1 - eq(nums, floor(nums))) {
+    u:verify_linear_invalid()
+  } else {
+    g = abs(den);
+    i = 0;
+    while lt(i, 27) {
+      g = u:verify_gcd(g, abs(at(nums, i)));
+      i = i + 1
+    };
+    sign = if lt(den, 0) {
+      0 - 1
+    } else {
+      1
+    };
+    {valid: 1, nums: nums * sign / g, den: abs(den) / g}
+  }
+}
+
+def u:verify_linear_constant(value) {
+  "Lift an exact rational to the constant coefficient; irrational numeric approximations are unavailable here.";
+  if value.exact { u:verify_linear_new(eq(range(27), 0) * value.num, value.den) } else { u:verify_linear_invalid() }
+}
+
+def u:verify_linear_neg(value) {
+  "Negate exact coefficients without altering availability.";
+  {valid: value.valid, nums: 0 - value.nums, den: value.den}
+}
+
+def u:verify_linear_add(a, b) {
+  "Add common-denominator forms with conservative pre-multiplication overflow bounds.";
+  if (1 - a.valid * b.valid) + gt(reduce(:max, abs(a.nums)) * b.den + reduce(:max, abs(b.nums)) * a.den, 9007199254740991) + gt(a.den * b.den, 9007199254740991) {
+    u:verify_linear_invalid()
+  } else { u:verify_linear_new(a.nums * b.den + b.nums * a.den, a.den * b.den) }
+}
+
+def u:verify_linear_sub(a, b) {
+  "Subtract linear forms through exact negation and addition.";
+  u:verify_linear_add(a, u:verify_linear_neg(b))
+}
+
+def u:verify_linear_scalar(value) {
+  "Return one only when all variable coefficients vanish.";
+  eq(reduce_add(abs(value.nums) * gt(range(27), 0)), 0)
+}
+
+def u:verify_linear_mul(a, b) {
+  "Multiply only when at least one factor is constant; refuse nonlinear terms.";
+  if 1 - a.valid * b.valid { u:verify_linear_invalid() } else {
+    if u:verify_linear_scalar(a) { u:verify_linear_new(b.nums * at(a.nums, 0), a.den * b.den) } else {
+      if u:verify_linear_scalar(b) { u:verify_linear_new(a.nums * at(b.nums, 0), a.den * b.den) } else { u:verify_linear_invalid() }
+    }
+  }
+}
+
+def u:verify_linear_div(a, b) {
+  "Divide by a nonzero rational constant; variable denominators remain unavailable.";
+  if a.valid * b.valid * u:verify_linear_scalar(b) { u:verify_linear_new(a.nums * b.den, a.den * at(b.nums, 0)) } else { u:verify_linear_invalid() }
+}
+
+def u:verify_linear_pow(a, b) {
+  "Handle bounded nonnegative integer powers, allowing multiplication to reject nonlinear results.";
+  n = at(b.nums, 0);
+  if a.valid * b.valid * u:verify_linear_scalar(b) * eq(b.den, 1) * (1 - lt(n, 0)) * (1 - gt(n, 16)) {
+    value = u:verify_linear_constant(u:verify_rational(1, 1));
+    i = 0;
+    while lt(i, n) {
+      value = u:verify_linear_mul(value, a);
+      i = i + 1
+    };
+    value
+  } else { u:verify_linear_invalid() }
+}
+
+def u:verify_linear_parse_primary(s, i) {
+  "Parse an exact number, parenthesized linear expression or one lowercase variable.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "(") {
+    inner = u:verify_linear_parse_expr(s, pos + 1);
+    after = u:verify_skip(s, inner.pos);
+    if inner.ok * str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, inner.value) } else { u:verify_fail("syntax", "invalid parentheses") }
+  } else {
+    if u:text_is_digit(c) {
+      number = u:verify_scan_number(s, pos);
+      if number.ok { u:verify_step(number.pos, u:verify_linear_constant(number.value)) } else {
+        number
+      }
+    } else {
+      if u:text_is_letter(c) {
+        end = u:verify_scan_name(s, pos);
+        if eq(end - pos, 1) {
+          index = at(tokenize_bytes(c), 0) - 96;
+          if gt(index, 0) * lt(index, 27) { u:verify_step(end, u:verify_linear_new(eq(range(27), index), 1)) } else { u:verify_fail("symbolic", "lowercase symbol required") }
+        } else { u:verify_fail("symbolic", "single-letter symbols only") }
+      } else { u:verify_fail("syntax", "expected linear primary") }
+    }
+  }
+}
+def u:verify_linear_parse_power(s, i) {
+  "Parse a primary optionally raised to a power; the exponent is right-associative and may carry a sign.";
+  base = u:verify_linear_parse_primary(s, i);
+  if base.ok {
+    pos = u:verify_skip(s, base.pos);
+    if str_eq(u:text_char_at(s, pos), "*") * str_eq(u:text_char_at(s, pos + 1), "*") {
+      exponent = u:verify_linear_parse_unary(s, pos + 2);
+      if exponent.ok { u:verify_step(exponent.pos, u:verify_linear_pow(base.value, exponent.value)) } else {
+        exponent
+      }
+    } else {
+      base
+    }
+  } else {
+    base
+  }
+}
+
+def u:verify_linear_parse_unary(s, i) {
+  "Parse an optionally signed power; a leading minus binds looser than exponentiation.";
+  pos = u:verify_skip(s, i);
+  c = u:text_char_at(s, pos);
+  if str_eq(c, "-") {
+    inner = u:verify_linear_parse_unary(s, pos + 1);
+    if inner.ok { u:verify_step(inner.pos, u:verify_linear_neg(inner.value)) } else {
+      inner
+    }
+  } else {
+    if str_eq(c, "+") { u:verify_linear_parse_unary(s, pos + 1) } else { u:verify_linear_parse_power(s, i) }
+  }
+}
+
+def u:verify_linear_starts_factor(c) {
+  "1 when c can begin a factor, which is what makes implicit multiplication unambiguous.";
+  u:text_is_digit(c) + u:text_is_letter(c) + str_eq(c, "(")
+}
+
+def u:verify_linear_parse_term(s, i) {
+  "Parse a product: explicit star and slash operators plus implicit multiplication such as 2(3+4) or 3sqrt(2).";
+  left = u:verify_linear_parse_unary(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      is_star = str_eq(c, "*") * (1 - str_eq(u:text_char_at(s, at + 1), "*"));
+      is_slash = str_eq(c, "/");
+      implicit = u:verify_linear_starts_factor(c);
+      if is_star + is_slash + implicit {
+        start = if implicit {
+          at
+        } else {
+          at + 1
+        };
+        right = u:verify_linear_parse_power(s, start);
+        if right.ok {
+          value = if is_slash { u:verify_linear_div(value, right.value) } else { u:verify_linear_mul(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_linear_parse_expr(s, i) {
+  "Parse a sum of terms.";
+  left = u:verify_linear_parse_term(s, i);
+  if left.ok {
+    value = left.value;
+    pos = left.pos;
+    failure = left;
+    running = 1;
+    while running {
+      at = u:verify_skip(s, pos);
+      c = u:text_char_at(s, at);
+      if str_eq(c, "+") + str_eq(c, "-") {
+        right = u:verify_linear_parse_term(s, at + 1);
+        if right.ok {
+          value = if str_eq(c, "+") { u:verify_linear_add(value, right.value) } else { u:verify_linear_sub(value, right.value) };
+          pos = right.pos
+        } else {
+          failure = right;
+          running = 0
+        }
+      } else {
+        running = 0
+      }
+    };
+    if failure.ok { u:verify_step(pos, value) } else {
+      failure
+    }
+  } else {
+    left
+  }
+}
+
+def u:verify_linear_parse(text) {
+  "Parse a normalized expression into an exact linear form, or return a classified unavailable result.";
+  if gt(str_len(text), u:verify_expr_limit()) {
+    err({kind: "budget", message: "expression exceeds the character limit"})
+  } else {
+    trimmed = u:text_trim(text);
+    if str_eq(trimmed, "") {
+      err({kind: "syntax", message: "empty expression"})
+    } else {
+      parsed = u:verify_linear_parse_expr(trimmed, 0);
+      if parsed.ok {
+        rest = u:verify_skip(trimmed, parsed.pos);
+        if rest - str_len(trimmed) {
+          err({kind: "syntax", message: "trailing characters"})
+        } else {
+          if parsed.value.valid {
+            ok(parsed.value)
+          } else {
+            err({kind: "symbolic", message: "outside exact linear domain"})
+          }
+        }
+      } else {
+        err({kind: parsed.kind, message: parsed.message})
+      }
+    }
+  }
+}

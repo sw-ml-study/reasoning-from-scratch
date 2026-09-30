@@ -1,0 +1,144 @@
+# Book-compatible demonstration: canonical experimental prompts, author-ordered first ten cases, fallback extraction and first-appearance voting. Independent MLPL tooling with Rust CUDA forward.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/verify/linear.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/cuda/cuda.mlpl";
+include "lib/eval/book.mlpl";
+include "lib/eval/author.mlpl";
+
+def u:cuda_book_forward(request) {
+  "Adapt SDK success arrays or Result errors to the checked callback contract.";
+  value = _qwen3_cuda:forward(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+def u:eval_author_attempt(handles, item, method, seed, settings, stem) {
+  "Save a reference-free request, reset KV and generate; apply fallback extraction to EOS or capped text before grading.";
+  template = parse_json(read_text("fixtures/prompts/book-author.json")?)?;
+  prompt = u:eval_author_prompt(template, item.problem, gt(method, 0));
+  ids = _hftok:encode(handles.tokenizer, prompt);
+  if gt(tally(ids) + settings.max_new, 4096) {
+    err("prompt exceeds frozen context allowance")?
+  };
+  _qwen3_cuda:reset({handle: handles.model});
+  write_atomic(str_concat(stem, "-request.json"), to_json({prompt: prompt, ids: ids, method: method, seed: seed, max_new: settings.max_new})?)?;
+  started = clock_ms();
+  decoded = u:cuda_decode({forward: :u:cuda_book_forward, handle: handles.model}, ids, {max_new: settings.max_new, eos: 151643, seed: seed, temperature: if eq(method, 2) {
+        0.9
+      } else {
+        0
+      }, top_p: 0.9, max_ms: settings.max_ms});
+  elapsed = clock_ms() - started;
+  if is_err(decoded) {
+    result = {correct: 0, eligible: 0, error: 1, tokens: 0, wall_ms: elapsed, stopped: "error", key: ""};
+    write_atomic(str_concat(stem, "-response.json"), to_json({error: err_message(decoded)})?)?
+  } else {
+    answer = unwrap(decoded);
+    response = if tally(answer.ids) { _hftok:decode(handles.tokenizer, answer.ids) } else {
+      ""
+    };
+    candidate = u:eval_author_candidate(response);
+    eligible = 1;
+    result = {correct: if eligible { u:eval_author_grade(candidate, item.answer) } else {
+        0
+      }, eligible: eligible, error: 0, tokens: tally(answer.ids), wall_ms: elapsed, stopped: answer.stopped, key: candidate};
+    write_atomic(str_concat(stem, "-response.json"), to_json({ids: answer.ids, text: response, stopped: answer.stopped})?)?
+  };
+  write_atomic(str_concat(stem, "-grade.json"), to_json(result)?)?;
+  result
+}
+
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+root = env("REPO_ROOT")?
+out = env("BOOK_OUT")?
+smoke = str_eq(env("BOOK_MODE")?, "smoke")
+max_new = if smoke {
+  64
+} else {
+  2048
+}
+job_ms = if smoke {
+  180000
+} else {
+  10800000
+}
+job_started = clock_ms()
+h = _qwen3_cuda:open({root: str_concat(root, "/models/qwen3-0.6b-base"), context: 4096, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+tok = _hftok:load_path(str_concat(root, "/models/qwen3-0.6b-base/tokenizer.json"))
+warm = u:cuda_decode({forward: :u:cuda_book_forward, handle: h}, _hftok:encode(tok, "The capital of France is"), {max_new: 2, eos: 151643, seed: 42, temperature: 0, top_p: 0.9, max_ms: 120000})?
+dataset = u:eval_load_jsonl_text(read_text(env("BOOK_INPUT")?)?, "book-author-v2", {})?
+if dataset.count - if smoke {
+  1
+} else {
+  10
+} {
+  err("wrong frozen case count")?
+}
+rows_path = str_concat(out, "/attempts.jsonl")
+results_path = str_concat(out, "/methods.jsonl")
+write_atomic(rows_path, "")?
+write_atomic(results_path, "")?
+attempted = 0
+finished_groups = 0
+i = 0
+while lt(i, dataset.count) * lt(clock_ms() - job_started, job_ms) {
+  item = u:eval_record(dataset, i)?;
+  group = 0;
+  while lt(group, 3) * lt(clock_ms() - job_started, job_ms) {
+    method = mod(i + group, 3);
+    samples = if eq(method, 2) {
+      3
+    } else {
+      1
+    };
+    state = {keys: "", counts: []};
+    k = 0;
+    tokens = 0;
+    wall = 0;
+    while lt(k, samples) * lt(clock_ms() - job_started, job_ms) {
+      seed = if eq(method, 2) {
+        43 + k
+      } else {
+        42
+      };
+      stem = str_concat(out, str_concat("/attempt-", to_string(attempted)));
+      print("ATTEMPT", attempted, "case", i, "method", method, "seed", seed);
+      result = u:eval_author_attempt({model: h, tokenizer: tok}, item, method, seed, {max_new: max_new, max_ms: job_ms - (clock_ms() - job_started)}, stem);
+      if result.eligible {
+        state = u:eval_author_vote_add(state, result.key)?
+      };
+      tokens = tokens + result.tokens;
+      wall = wall + result.wall_ms;
+      row = {attempt: attempted, index: i, id: item.unique_id, method: method, seed: seed, correct: result.correct, eligible: result.eligible, error: result.error, tokens: result.tokens, wall_ms: result.wall_ms, stopped: result.stopped};
+      u:eval_write_line(rows_path, str_concat(to_json(row)?, "\n"), 0)?;
+      print("OUTCOME", to_json(row)?);
+      attempted = attempted + 1;
+      k = k + 1
+    };
+    if eq(k, samples) {
+      vote = u:eval_author_vote(state, item.answer)?;
+      row = {index: i, id: item.unique_id, method: method, correct: vote.correct, abstention: eq(vote.samples, 0), tied: vote.tied, eligible: vote.samples, tokens: tokens, wall_ms: wall};
+      u:eval_write_line(results_path, str_concat(to_json(row)?, "\n"), 0)?;
+      finished_groups = finished_groups + 1
+    };
+    group = group + 1
+  };
+  i = i + 1
+}
+write_atomic(str_concat(out, "/completion.json"), to_json({attempted: attempted, planned: dataset.count * 5, finished_groups: finished_groups, complete: eq(attempted, dataset.count * 5), wall_ms: clock_ms() - job_started})?)?
+_qwen3_cuda:close({handle: h})
+_hftok:close(tok)
+print("FINISHED", attempted, "planned", dataset.count * 5)
