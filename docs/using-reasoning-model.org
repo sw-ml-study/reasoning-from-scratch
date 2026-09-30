@@ -247,7 +247,11 @@ The frozen six-problem MATH-500 pilot has now run both modes at seeds 42
 and 43: zero thinking gains, one truncation regression, and 5.85 times the
 request time. Primary scores are 5/6 versus 4/6 at seed 42 and 5/6 versus
 5/6 at seed 43. Each mode and seed has one false negative from a choice-format
-normalization gap; manual review is separate. See [[file:heldout-pilot-protocol.md][the frozen protocol]]
+normalization gap; manual review is separate. The choice-v2 post-hoc replay
+now corrects those four grades automatically: 6/6 versus 5/6 at seed 42,
+and 6/6 versus 6/6 at seed 43. The original primary scores are preserved.
+There are still zero thinking gains and one truncation regression.
+See [[file:heldout-pilot-protocol.md][the frozen protocol]]
 and the results report. =just reasoning-pilot= runs 24 new calls;
 =scripts/replay-heldout-pilot out/native-reasoning/run-s69Yj0sQ= regrades
 the retained local evidence without inference.

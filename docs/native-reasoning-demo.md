@@ -215,8 +215,10 @@ hashes. Keep its run directory to enable independent local regrading later.
 
 The [research report](reasoning-results.html) separates its primary verifier
 scores from manual review. A multiple-choice normalization false negative
-was discovered during the pilot and queued for the next step; no original
-score or answer is replaced. Downloaded questions and raw answers remain
+was discovered during the pilot and fixed in choice-v2; no original
+score or answer is replaced. The post-hoc replay corrects four grades:
+6/6 versus 5/6 at seed 42, and 6/6 versus 6/6 at seed 43.
+Downloaded questions and raw answers remain
 local, while numeric paired measurements and evidence hashes are published.
 
 To independently regrade the retained local run without inference:
@@ -228,3 +230,6 @@ MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl \
 
 Report export replays public aggregate calculations only. Local raw replay
 requires the pinned data and retained run directory; it is not in `just check`.
+The replay validates frozen v1 grades and writes separate `choice-v2-pairs.jsonl`
+and `choice-v2-summary.json` files in the retained run directory. It does not
+replace the original metrics or call the model.

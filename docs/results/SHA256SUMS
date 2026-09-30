@@ -10,3 +10,6 @@ dffb584f8109da831b102330cd988d5fe59b0621d95c34417b3df986bb9543e5  docs/results/n
 63e662967ac3b8632abf53c766aba217df6b741fd912443c5a5600e2051c2e65  docs/results/native-heldout-v1-provenance.json
 2422f242b7f0b9b16f813416851c34c5aec11eabec833be526174db9b0a07691  docs/results/native-heldout-v1-local-evidence.sha256
 bfe45d63a4650bb4c47b6146e82827ab2ed098eba868fe5f3c1e551d719ee266  docs/results/native-heldout-v1-review.jsonl
+21d56045a2f2a028c1a7f0aab475cacc688e2320cbd1fae91075f75d07d2ec4c  docs/results/native-heldout-choice-v2-pairs.jsonl
+154a5185fba21c247b341d88d987a10710b4b4f9667507ed7aa8587e0e2aed9b  docs/results/native-heldout-choice-v2-summary.json
+a8eec37c3f10628aa507c97928719248d80e205a7e9e5b52942cac986ca2fcb6  docs/results/native-heldout-choice-v2-provenance.json

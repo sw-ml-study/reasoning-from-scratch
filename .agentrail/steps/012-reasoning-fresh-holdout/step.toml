@@ -1,0 +1,8 @@
+number = 12
+slug = "reasoning-fresh-holdout"
+status = "pending"
+description = "Design and freeze a fresh paired holdout after the choice-v2 verifier correct..."
+role = "production"
+context_files = []
+created_at = "2026-09-29T17:13:09"
+commits = []

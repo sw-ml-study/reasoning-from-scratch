@@ -16,11 +16,15 @@ rows = read_text(str_concat(out_dir, "/pairs.jsonl"))?
 pair_lines = str_split(u:text_trim(rows), "\n")
 matches = 1
 count = 0
+corrections = 0
+corrected_rows = ""
 i = 0
 while lt(i, dataset.count) {
   item = u:eval_record(dataset, i)?;
   seed = 42;
   while lt(seed, 44) {
+    corrected_off = {};
+    corrected_on = {};
     think = 0;
     while lt(think, 2) {
       stem = str_concat(out_dir, str_concat("/case-", str_concat(to_string(i), str_concat("-seed", str_concat(to_string(seed), str_concat("-think", to_string(think)))))));
@@ -36,6 +40,7 @@ while lt(i, dataset.count) {
       };
       matches = matches * str_eq(pair.id, item.unique_id) * eq(pair.seed, seed) * str_eq(to_json(metrics)?, to_json(public_metrics)?);
       raw = read_text(str_concat(stem, "-response.json"));
+      corrected = metrics;
       if metrics.error {
         read_text(str_concat(stem, "-error.json"))?;
         matches = matches * metrics.error * eq(metrics.correct, 0)
@@ -45,12 +50,22 @@ while lt(i, dataset.count) {
           matches = matches * metrics.error * eq(metrics.correct, 0)
         } else {
           answer = unwrap(decoded);
-          matches = matches * eq(metrics.error, 0) * eq(metrics.correct, u:backend_grade(answer, item.answer)) * eq(metrics.complete, answer.complete) * eq(metrics.tokens, answer.eval_count) * eq(metrics.parseable, gt(str_len(u:verify_final_candidate(answer.content, "boxed_only")), 0))
+          historical = answer.complete * u:verify_grade_version(u:verify_final_candidate(answer.content, "boxed_only"), item.answer, 1);
+          matches = matches * eq(metrics.error, 0) * eq(metrics.correct, historical) * eq(metrics.complete, answer.complete) * eq(metrics.tokens, answer.eval_count) * eq(metrics.parseable, gt(str_len(u:verify_final_candidate(answer.content, "boxed_only")), 0));
+          current = u:backend_grade(answer, item.answer);
+          corrections = corrections + (1 - eq(current, historical));
+          corrected = {correct: current, complete: metrics.complete, error: metrics.error, parseable: metrics.parseable, tokens: metrics.tokens, wall_ms: metrics.wall_ms, done_reason: metrics.done_reason}
         }
+      };
+      if think {
+        corrected_on = corrected
+      } else {
+        corrected_off = corrected
       };
       count = count + 1;
       think = think + 1
     };
+    corrected_rows = str_concat(corrected_rows, str_concat(to_json({id: pair.id, index: pair.index, seed: seed, first_mode: pair.first_mode, off: corrected_off, on: corrected_on})?, "\n"));
     seed = seed + 1
   };
   i = i + 1
@@ -59,6 +74,11 @@ if matches * eq(count, 24) {
   print("Verified reference-free requests and independently replayed grades:", count);
   print("seed 42:", to_json(u:eval_paired_summary(rows, 42)?)?);
   print("seed 43:", to_json(u:eval_paired_summary(rows, 43)?)?);
+  write_text(str_concat(out_dir, "/choice-v2-pairs.jsonl"), corrected_rows)?;
+  summary = {seed42: u:eval_paired_summary(corrected_rows, 42)?, seed43: u:eval_paired_summary(corrected_rows, 43)?};
+  write_text(str_concat(out_dir, "/choice-v2-summary.json"), to_json(summary)?)?;
+  print("choice-v2 changed grades:", corrections);
+  print("choice-v2:", to_json(summary)?);
   ok("local raw evidence replayed without inference")
 } else {
   err("pilot replay disagrees with saved requests or grades")

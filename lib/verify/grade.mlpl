@@ -81,13 +81,13 @@ def u:verify_equivalent(left, right) {
   }
 }
 
-def u:verify_grade(candidate, reference) {
+def u:verify_grade_version(candidate, reference, version) {
   "1 when the candidate answer matches the reference: both normalize, split into the same number of parts, and every aligned pair is equivalent in order. Total: an empty or unparsable side grades 0 rather than raising.";
   if str_eq(candidate, "") + str_eq(reference, "") {
     0
   } else {
-    left = u:verify_split_parts(u:verify_normalize(candidate));
-    right = u:verify_split_parts(u:verify_normalize(reference));
+    left = u:verify_split_parts(if eq(version, 1) { u:verify_normalize_v1(candidate) } else { u:verify_normalize(candidate) });
+    right = u:verify_split_parts(if eq(version, 1) { u:verify_normalize_v1(reference) } else { u:verify_normalize(reference) });
     count = list_len(left);
     if count - list_len(right) {
       0
@@ -110,6 +110,11 @@ def u:verify_grade(candidate, reference) {
       }
     }
   }
+}
+
+def u:verify_grade(candidate, reference) {
+  "Grade with the current choice-v2 normalizer; version 1 remains available only for historical replay.";
+  u:verify_grade_version(candidate, reference, 2)
 }
 
 def u:verify_grade_response(response, reference, mode) {

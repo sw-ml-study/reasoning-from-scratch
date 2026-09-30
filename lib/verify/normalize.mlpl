@@ -284,7 +284,7 @@ def u:verify_remove_thousands_commas(s) {
   out
 }
 
-def u:verify_normalize(text) {
+def u:verify_normalize_v1(text) {
   "Apply the thirteen ordered normalization rules of the verifier contract and return the comparable lower-case form.";
   if str_eq(text, "") {
     ""
@@ -322,5 +322,20 @@ def u:verify_normalize(text) {
     s = u:text_replace_all(s, "{", "");
     s = u:text_replace_all(s, "}", "");
     u:text_lower(u:text_trim(s))
+  }
+}
+
+def u:verify_normalize(text) {
+  "Version choice-v2: unwrap only a whole parenthesized uppercase ASCII choice before applying the frozen v1 rules.";
+  s = u:text_trim(u:verify_unwrap_text(u:text_trim(text)));
+  if str_eq(u:text_char_at(s, 0), "(") * str_eq(u:text_char_at(s, str_len(s) - 1), ")") * gt(str_len(s), 2) {
+    letter = u:text_trim(str_slice(s, 1, str_len(s) - 2));
+    if eq(str_len(letter), 1) * u:text_contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter) {
+      u:verify_normalize_v1(letter)
+    } else {
+      u:verify_normalize_v1(text)
+    }
+  } else {
+    u:verify_normalize_v1(text)
   }
 }

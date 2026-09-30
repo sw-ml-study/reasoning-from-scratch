@@ -34,7 +34,7 @@ status = "accepted"
 
 [[component]]
 id = "VNORM"
-slug = "answer-normalization"
+slug = "answer-normalization-choice-v2"
 chapter = 3
 source = "lib/verify/normalize.mlpl"
 test = "tests/test_verify_normalize.mlpl"

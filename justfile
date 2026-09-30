@@ -106,6 +106,6 @@ reasoning-pilot:
 research-html:
     ./scripts/export-reasoning-report
 
-# Replay five offline ob-mlpl calculations and refresh the publication.
+# Replay six offline ob-mlpl calculations and refresh the publication.
 research-refresh:
     ./scripts/export-reasoning-report --refresh

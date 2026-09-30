@@ -1,0 +1,15 @@
+{
+  "verifier_version": "choice-v2",
+  "primary_experiment": "native-heldout-v1",
+  "analysis": "post-hoc regrading of unchanged local raw responses; no new inference",
+  "attempts": 24,
+  "changed_grades": 4,
+  "raw_manifest_sha256": "2422f242b7f0b9b16f813416851c34c5aec11eabec833be526174db9b0a07691",
+  "normalizer_sha256": "e3bb6f43213505aa0de0521a80a02eaa96129b710b093ef3676873b1b6f9619f",
+  "grader_sha256": "1325019184fa887af96e9efcca6b082687b6e46b79fe56c277ca42fd31ca7ac0",
+  "replay_sha256": "c65de335d370097664036b3ff1fe070b1bce38ace67cb517fb574b46414a0127",
+  "interpreter_commit": "49c15b3e659ecc32603e10312a5197039b636397",
+  "interpreter_sha256": "d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0",
+  "model_and_decoding_provenance": "native-heldout-v1-provenance.json",
+  "local_raw_directory": "out/native-reasoning/run-s69Yj0sQ"
+}

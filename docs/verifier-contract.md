@@ -13,7 +13,7 @@ its divergences from the reference implementation are listed explicitly.
 | character scanning (classes, search, trim, replace, braces, numbers) | `lib/text/text.mlpl` | `u:text_` |
 | last boxed group and candidate selection | `lib/verify/extract.mlpl` | `u:verify_` |
 | the thirteen ordered rules | `lib/verify/normalize.mlpl` | `u:verify_` |
-| expression equivalence and grading | `lib/verify/grade.mlpl` (pending) | `u:verify_` |
+| expression equivalence and grading | `lib/verify/grade.mlpl` | `u:verify_` |
 
 The language has no regular expressions and none is requested; the scanners
 are the replacement. `lib/verify/` files need `lib/text/text.mlpl` included
@@ -40,6 +40,23 @@ integer fraction `a/b`, or digits with an optional decimal part and an
 optional exponent. The *last* match wins.
 
 ## Normalization rules, in order
+
+The current version is **choice-v2**. Before the thirteen historical rules,
+trim the whole input and unwrap at most one whole `\text{...}` wrapper.
+Only if the resulting entire string is one pair of parentheses containing
+one uppercase ASCII letter A–Z (with optional surrounding whitespace), use
+that letter as input to the historical rules. Otherwise use the original
+input unchanged. Thus `A`, `(A)`, and `\text{(A)}` match. This does not strip
+parentheses from lowercase variables, words, tuples, signs, algebra, nested
+parentheses or partial wrappers. A standalone uppercase parenthesized symbol
+is inherently ambiguous without question metadata; this bounded contract
+treats it as a choice. Historical case folding still applies to bare letters.
+
+`u:verify_normalize_v1` retains the original rules below;
+`u:verify_grade_version(candidate, reference, 1)` preserves historical grades.
+Production grading uses choice-v2. The frozen native-heldout-v1 primary
+measurements are immutable; choice-v2 results are a post-hoc reanalysis of
+the same outputs, not a new model experiment.
 
 1. Empty input stays empty. Chat-control tokens of the form `<|...|>` are
    removed. Surrounding whitespace is trimmed.
@@ -87,14 +104,17 @@ optional exponent. The *last* match wins.
 ## Differences from the reference implementation
 
 The reference uses a general symbolic algebra system. This implementation
-does not, and the difference is confined to one behavior:
+does not. Its principal bounded equivalence limitation is:
 
 - **Symbolic rearrangement is not recognized.** The reference equates
   `2x + 3x` with `5x`; this contract requires matching text. Every test in
   `tests/test_verify_grade.mlpl` pins that choice.
 
-Everything else matches, including the case that motivated the original
-concern: because decimals are parsed as exact rationals rather than floats,
+Choice-v2's explicit choice convention is specified above and tested here;
+we do not claim complete parity with the Python verifier for all text forms.
+
+The numeric case that motivated the original
+concern is preserved: because decimals are parsed as exact rationals rather than floats,
 `0.5` equals `1/2` and `0.3333333333` does **not** equal `1/3`, exactly as
 the reference behaves. An earlier draft of this contract predicted a
 floating-point tolerance divergence here; the implementation avoided it.

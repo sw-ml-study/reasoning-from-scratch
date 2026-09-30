@@ -96,4 +96,29 @@ def u:test_verify_grade_self_consistency() {
   ok(1)
 }
 
+@test {name: "explicit uppercase choice forms match", tags: ["verify", "grade"]}
+def u:test_verify_choice_forms() {
+  "A whole uppercase choice letter may have one pair of parentheses and one text wrapper.";
+  u:expect_grade("A", "\\text{(A)}", 1, "wrapped parenthesized choice")?;
+  u:assert_eq(u:verify_grade_version("A", "\\text{(A)}", 1), 0, "historical v1 stays reproducible")?;
+  u:expect_grade("\\text{(Z)}", "Z", 1, "symmetric uppercase choice")?;
+  u:expect_grade(" ( B ) ", "\\text{B}", 1, "surrounding choice whitespace")?;
+  u:assert_eq(u:verify_grade_response("\\boxed{A}", "\\text{(A)}", "boxed_only"), 1, "boxed choice reward")
+}
+
+@test {name: "choice normalization preserves nonchoice structure", tags: ["verify", "grade"]}
+def u:test_verify_choice_boundaries() {
+  "Do not collapse tuples, signs, lowercase variables, words, algebra or malformed parentheses.";
+  u:expect_grade("A", "(B)", 0, "different choice")?;
+  u:expect_grade("a", "(a)", 0, "lowercase variable")?;
+  u:expect_grade("AB", "(AB)", 0, "multiple letters")?;
+  u:expect_grade("A", "(A,B)", 0, "tuple")?;
+  u:expect_grade("A", "(-A)", 0, "sign")?;
+  u:expect_grade("A", "(A+1)", 0, "algebra")?;
+  u:expect_grade("A", "((A))", 0, "nested parentheses")?;
+  u:expect_grade("A", "(A", 0, "unbalanced")?;
+  u:expect_grade("cat", "(cat)", 0, "ordinary word")?;
+  u:expect_grade("A", "\\text{(A)} extra", 0, "partial wrapper")
+}
+
 u:run_registered_tests()

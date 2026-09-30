@@ -470,12 +470,15 @@ negatives (one per mode and seed), retained in the primary metric and
 identified by separate manual review. All 24 requests and grades replay
 locally without inference.
 
-**Application normalization: awkward; no missing core capability.** The
+**Application normalization: supported in choice-v2; no missing core capability.** The
 frozen native pilot found a multiple-choice false negative: a boxed bare
 letter is rejected against the same letter parenthesized inside a LaTeX
 text wrapper. The synthetic case `boxed A` versus `text (A)` reproduces the
 mismatch, whereas `boxed A` versus `A` passes. This is an MLPL verifier
 contract gap, not a language/runtime limitation or a Rust extension request.
 The frozen primary scores remain unchanged; manual review is reported
-separately. Step `verifier-choice-equivalence` will add positive and negative
-native tests before a narrow normalization change and versioned replay.
+separately. Step `verifier-choice-equivalence` added synthetic positive and
+negative native tests before the narrow MLPL change. Historical v1 remains
+replayable. Choice-v2 corrects exactly four of 24 saved grades: seed 42 is
+6/6 direct versus 5/6 thinking; seed 43 is 6/6 in both modes. No inference
+was repeated, and costs and the zero-gain conclusion remain unchanged.

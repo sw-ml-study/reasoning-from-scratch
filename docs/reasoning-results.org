@@ -491,12 +491,12 @@ One selected multiple-choice problem exposed a false negative in our
 normalizer. All four completed responses selected the correct option,
 but a bare letter did not match the parenthesized letter inside a LaTeX
 text wrapper. An independently authored diagnostic reproduces this class:
-=\boxed{A}= matches =A=, but not =\text{(A)}= in the current verifier.
+=\boxed{A}= matches =A=, but not =\text{(A)}= in the frozen v1 verifier.
 
 These four primary failures are not mathematical failures by the model.
 The public manual-review record identifies them individually. The primary
-scores above retain the frozen verifier; a corrected analysis must carry a
-new verifier version. This finding is an application-level MLPL change,
+scores above retain the frozen verifier; the corrected analysis below carries
+the new =choice-v2= verifier version. This finding is an application-level MLPL change,
 not a missing language feature or an interpreter optimization task.
 
 Final answers also do not certify every explanation step. One direct answer
@@ -505,10 +505,54 @@ radius as a sphere in a distractor discussion. That is an explanation error
 separate from final-answer correctness. A future reasoning-quality audit
 should sample intermediate steps as well as final answers.
 
-The immediate next step is a narrowly scoped normalization fix, with
-positive and negative native tests so that ordinary algebra and tuples
-are not accidentally collapsed. Replay these same raw answers as a labelled
-post-hoc verifier correction; do not regenerate favorable replacements.
+** Corrected automatic grading: choice-v2 post-hoc replay
+
+We regraded all 24 retained responses without generating new answers.
+Exactly four grades changed, matching the independently recorded manual
+review. Historical v1 grading still reproduces every original score.
+
+| Seed | Direct correct | Thinking correct | Thinking gains | Thinking regressions |
+|------+----------------+------------------+----------------+----------------------|
+| 42 | 6/6 | 5/6 | 0 | 1 |
+| 43 | 6/6 | 6/6 | 0 | 0 |
+
+The correction accepts a whole parenthesized uppercase ASCII letter, with
+an optional whole LaTeX text wrapper. Synthetic native tests reject changed
+letters, lowercase parenthesized variables, tuples, signs, algebra, words,
+nested parentheses and incomplete wrappers. This bounded convention cannot
+distinguish an uppercase choice from an identically written isolated symbol;
+it is not general symbolic simplification.
+
+This is *post-hoc verifier repair*, not new held-out evidence or model
+improvement. No costs, completions or token counts changed. The remaining
+thinking failure exhausted its 3,072-token allowance. The six independent
+questions are too few to establish general accuracy: even 6/6 has a 95%
+Wilson interval of approximately 61–100%. Repeated seeds are not independent
+new questions. Public numeric results and provenance are stored in the
+=native-heldout-choice-v2= files under =docs/results/=.
+
+#+name: replay-choice-v2-summary
+#+begin_src mlpl
+# Replay separately versioned post-hoc numeric summaries; local raw replay is documented below.
+include "../lib/text/text.mlpl";
+include "../lib/eval/paired.mlpl";
+rows = read_text("docs/results/native-heldout-choice-v2-pairs.jsonl")?
+expected = parse_json(read_text("docs/results/native-heldout-choice-v2-summary.json")?)?
+first = u:eval_paired_summary(rows, 42)?
+second = u:eval_paired_summary(rows, 43)?
+print("choice-v2 seed 42:", to_json(first)?)
+print("choice-v2 seed 43:", to_json(second)?)
+if str_eq(to_json(first)?, to_json(expected.seed42)?) * str_eq(to_json(second)?, to_json(expected.seed43)?) * eq(first.off_correct, 6) * eq(first.on_correct, 5) * eq(second.off_correct, 6) * eq(second.on_correct, 6) {
+  ok("post-hoc correction: zero thinking gains, one regression; original results preserved")
+} else {
+  err("choice-v2 summary drift")
+}
+#+end_src
+
+#+RESULTS: replay-choice-v2-summary
+: choice-v2 seed 42: {"gains":0,"losses":1,"off_complete":6,"off_correct":6,"off_errors":0,"off_interval":{"lower":0.6096657120978346,"upper":1},"off_parseable":6,"off_tokens":2554,"off_truncated":0,"off_wall_ms":68834.13074700003,"on_complete":5,"on_correct":5,"on_errors":0,"on_interval":{"lower":0.43649717781352987,"upper":0.9699466302516935},"on_parseable":5,"on_tokens":13855,"on_truncated":1,"on_wall_ms":392760.52146099997,"pairs":6,"seed":42}
+: choice-v2 seed 43: {"gains":0,"losses":0,"off_complete":6,"off_correct":6,"off_errors":0,"off_interval":{"lower":0.6096657120978346,"upper":1},"off_parseable":6,"off_tokens":2180,"off_truncated":0,"off_wall_ms":58578.99063300021,"on_complete":6,"on_correct":6,"on_errors":0,"on_interval":{"lower":0.6096657120978346,"upper":1},"on_parseable":6,"on_tokens":13048,"on_truncated":0,"on_wall_ms":351990.87873,"pairs":6,"seed":43}
+: Ok(post-hoc correction: zero thinking gains, one regression; original results preserved)
 
 The off-mode responses already contain multi-step solutions. This experiment
 measures the benefit of enabling the additional thinking channel. It does
@@ -521,11 +565,11 @@ The extra thinking channel did not earn its cost in this pilot. The model
 already solved every selected problem in direct mode according to final-answer
 review. Once the four formatting false negatives are identified, reviewed
 completion-and-answer counts are 6/6 versus 5/6 for seed 42, and 6/6 versus
-6/6 for seed 43. This is a separately labelled manual review, not a change
+6/6 for seed 43. Choice-v2 now reproduces that review automatically, without a change
 to the recorded primary verifier results. The paired gain/regression
 conclusion is unchanged.
 
-The useful improvements are now concrete: repair the choice-format verifier,
+The useful improvements are now concrete: retain the corrected choice-format verifier,
 keep truncation separate from mathematical error, and measure the quality
 and cost of a changed reasoning method on new frozen data. Direct mode is
 the efficient demonstrated baseline here. A larger experiment, or a matched
@@ -679,11 +723,44 @@ This is our proposed experiment order, not a claim of a measured result.
 
 ** Concrete improvement order
 
+*** Can we lift the token limit, and what is missing?
+
+Yes. The native demo currently caps output at 3,072 tokens, uses a
+4,096-token context and requests a 120-second HTTP timeout. These are
+application settings, not the GPU's capacity. The next development experiment
+will test a larger bounded allowance, initially 8,192 output tokens with
+additional context space for the prompt, after checking model limits, timeout
+support and measured GPU residency. It must retain the original truncated
+attempt and report whether the longer run actually finishes correctly.
+Unlimited generation would make neither a reliable demo nor a fair comparison.
+
+The working Qwen3 8B path already executes forward passes and generation
+through Ollama on the GPU. Our own MLPL implementation also contains the
+Qwen3 forward algorithm and cached decoding, validated on tiny fixtures.
+What it lacks is demonstrated practical real-checkpoint generation within
+the 32 GiB *CPU virtual-address-space* test budget. The smoke script imposes
+that ceiling with =ulimit -v 33554432=; it is a containment choice, not a
+hardware limit or a model requirement. The host has about 251 GiB RAM
+(about 241 GiB available at this check), so a larger bounded diagnostic is
+feasible. Failure at 32 GiB does not prove failure at every larger budget.
+The selected MLPL interpreter uses CPU f64 arrays: the roughly 1.19 GB BF16
+weight payload expands to roughly 4.77 GB before temporary copies. The
+recorded run reached about 31 GiB resident memory without emitting a token.
+That CPU allocation is separate from the 16 GiB of GPU VRAM; the GPU was
+not used by the reference attempt. Raising output tokens in the native demo cannot repair
+the MLPL path's memory costs, and raising a memory cap does not make execution
+more efficient. The short-term route remains native inference offload;
+any additional resident-model extension belongs in the sibling extension
+project through a documented work request. Differentiable execution and
+project-trained reasoning remain separate, unproved milestones.
+
+*** Experiments after the verifier correction
+
 1. Remove avoidable truncation with a measured output budget and retain the
    wall-clock bound. Measure whether final answers actually complete.
 2. The frozen pilot is complete: zero gains, one truncation regression,
-   and a shared verifier false negative. Fix that normalization gap with
-   tests, retain the primary results, and confirm any method changes on a
+   and four choice-format false negatives now corrected in choice-v2.
+   Retain the primary results, and confirm any method changes on a
    new frozen holdout.
 3. Test voting, checked refinement and few-shot demonstrations as separate
    interventions. Keep selection independent of the reference answer.
@@ -845,7 +922,7 @@ just research-refresh
 #+end_src
 
 =research-html= exports the stored results only. =research-refresh= executes
-five explicitly named offline MLPL blocks through =ob-mlpl=, saves their
+six explicitly named offline MLPL blocks through =ob-mlpl=, saves their
 results, then exports. Neither recipe executes the live inference blocks.
 The HTML has inline CSS and no required remote fonts, scripts or images;
 it can be published as one file. The full research bundle also includes the
@@ -923,7 +1000,7 @@ interpreter and native extension hashes. Weights are not redistributed.
 The adapter has six native offline tests, covering request encoding,
 bounds, transport failures and completion/grade accounting. Two further
 tests check the training arithmetic against analytic answers. The full
-fixture gate has 160 native tests, 27 declared capability outcomes and
+fixture gate has 162 native tests, 27 declared capability outcomes and
 32 exact tangles. These establish software behavior and replay consistency,
 not broad model quality.
 

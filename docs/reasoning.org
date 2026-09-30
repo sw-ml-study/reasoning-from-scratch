@@ -897,7 +897,7 @@ last three lines strip braces, trim, and lower-case, which is why anything
 that survives as a LaTeX command ends up as bare letters.
 
 #+begin_src mlpl :tangle ../lib/verify/normalize.mlpl
-def u:verify_normalize(text) {
+def u:verify_normalize_v1(text) {
   "Apply the thirteen ordered normalization rules of the verifier contract and return the comparable lower-case form.";
   if str_eq(text, "") {
     ""
@@ -935,6 +935,21 @@ def u:verify_normalize(text) {
     s = u:text_replace_all(s, "{", "");
     s = u:text_replace_all(s, "}", "");
     u:text_lower(u:text_trim(s))
+  }
+}
+
+def u:verify_normalize(text) {
+  "Version choice-v2: unwrap only a whole parenthesized uppercase ASCII choice before applying the frozen v1 rules.";
+  s = u:text_trim(u:verify_unwrap_text(u:text_trim(text)));
+  if str_eq(u:text_char_at(s, 0), "(") * str_eq(u:text_char_at(s, str_len(s) - 1), ")") * gt(str_len(s), 2) {
+    letter = u:text_trim(str_slice(s, 1, str_len(s) - 2));
+    if eq(str_len(letter), 1) * u:text_contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ", letter) {
+      u:verify_normalize_v1(letter)
+    } else {
+      u:verify_normalize_v1(text)
+    }
+  } else {
+    u:verify_normalize_v1(text)
   }
 }
 #+end_src
@@ -1609,13 +1624,13 @@ reward function itself, extraction mode included, and it is what chapter six
 will call once per rollout.
 
 #+begin_src mlpl :tangle ../lib/verify/grade.mlpl
-def u:verify_grade(candidate, reference) {
+def u:verify_grade_version(candidate, reference, version) {
   "1 when the candidate answer matches the reference: both normalize, split into the same number of parts, and every aligned pair is equivalent in order. Total: an empty or unparsable side grades 0 rather than raising.";
   if str_eq(candidate, "") + str_eq(reference, "") {
     0
   } else {
-    left = u:verify_split_parts(u:verify_normalize(candidate));
-    right = u:verify_split_parts(u:verify_normalize(reference));
+    left = u:verify_split_parts(if eq(version, 1) { u:verify_normalize_v1(candidate) } else { u:verify_normalize(candidate) });
+    right = u:verify_split_parts(if eq(version, 1) { u:verify_normalize_v1(reference) } else { u:verify_normalize(reference) });
     count = list_len(left);
     if count - list_len(right) {
       0
@@ -1638,6 +1653,11 @@ def u:verify_grade(candidate, reference) {
       }
     }
   }
+}
+
+def u:verify_grade(candidate, reference) {
+  "Grade with the current choice-v2 normalizer; version 1 remains available only for historical replay.";
+  u:verify_grade_version(candidate, reference, 2)
 }
 
 def u:verify_grade_response(response, reference, mode) {
@@ -6217,11 +6237,15 @@ rows = read_text(str_concat(out_dir, "/pairs.jsonl"))?
 pair_lines = str_split(u:text_trim(rows), "\n")
 matches = 1
 count = 0
+corrections = 0
+corrected_rows = ""
 i = 0
 while lt(i, dataset.count) {
   item = u:eval_record(dataset, i)?;
   seed = 42;
   while lt(seed, 44) {
+    corrected_off = {};
+    corrected_on = {};
     think = 0;
     while lt(think, 2) {
       stem = str_concat(out_dir, str_concat("/case-", str_concat(to_string(i), str_concat("-seed", str_concat(to_string(seed), str_concat("-think", to_string(think)))))));
@@ -6237,6 +6261,7 @@ while lt(i, dataset.count) {
       };
       matches = matches * str_eq(pair.id, item.unique_id) * eq(pair.seed, seed) * str_eq(to_json(metrics)?, to_json(public_metrics)?);
       raw = read_text(str_concat(stem, "-response.json"));
+      corrected = metrics;
       if metrics.error {
         read_text(str_concat(stem, "-error.json"))?;
         matches = matches * metrics.error * eq(metrics.correct, 0)
@@ -6246,12 +6271,22 @@ while lt(i, dataset.count) {
           matches = matches * metrics.error * eq(metrics.correct, 0)
         } else {
           answer = unwrap(decoded);
-          matches = matches * eq(metrics.error, 0) * eq(metrics.correct, u:backend_grade(answer, item.answer)) * eq(metrics.complete, answer.complete) * eq(metrics.tokens, answer.eval_count) * eq(metrics.parseable, gt(str_len(u:verify_final_candidate(answer.content, "boxed_only")), 0))
+          historical = answer.complete * u:verify_grade_version(u:verify_final_candidate(answer.content, "boxed_only"), item.answer, 1);
+          matches = matches * eq(metrics.error, 0) * eq(metrics.correct, historical) * eq(metrics.complete, answer.complete) * eq(metrics.tokens, answer.eval_count) * eq(metrics.parseable, gt(str_len(u:verify_final_candidate(answer.content, "boxed_only")), 0));
+          current = u:backend_grade(answer, item.answer);
+          corrections = corrections + (1 - eq(current, historical));
+          corrected = {correct: current, complete: metrics.complete, error: metrics.error, parseable: metrics.parseable, tokens: metrics.tokens, wall_ms: metrics.wall_ms, done_reason: metrics.done_reason}
         }
+      };
+      if think {
+        corrected_on = corrected
+      } else {
+        corrected_off = corrected
       };
       count = count + 1;
       think = think + 1
     };
+    corrected_rows = str_concat(corrected_rows, str_concat(to_json({id: pair.id, index: pair.index, seed: seed, first_mode: pair.first_mode, off: corrected_off, on: corrected_on})?, "\n"));
     seed = seed + 1
   };
   i = i + 1
@@ -6260,6 +6295,11 @@ if matches * eq(count, 24) {
   print("Verified reference-free requests and independently replayed grades:", count);
   print("seed 42:", to_json(u:eval_paired_summary(rows, 42)?)?);
   print("seed 43:", to_json(u:eval_paired_summary(rows, 43)?)?);
+  write_text(str_concat(out_dir, "/choice-v2-pairs.jsonl"), corrected_rows)?;
+  summary = {seed42: u:eval_paired_summary(corrected_rows, 42)?, seed43: u:eval_paired_summary(corrected_rows, 43)?};
+  write_text(str_concat(out_dir, "/choice-v2-summary.json"), to_json(summary)?)?;
+  print("choice-v2 changed grades:", corrections);
+  print("choice-v2:", to_json(summary)?);
   ok("local raw evidence replayed without inference")
 } else {
   err("pilot replay disagrees with saved requests or grades")
