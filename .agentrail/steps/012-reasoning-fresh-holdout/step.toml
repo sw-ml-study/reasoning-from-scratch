@@ -1,8 +1,9 @@
 number = 12
 slug = "reasoning-fresh-holdout"
-status = "in-progress"
+status = "completed"
 description = "Design and freeze a fresh paired holdout after the choice-v2 verifier correct..."
 role = "production"
 context_files = []
 created_at = "2026-09-29T17:13:09"
-commits = []
+completed_at = "2026-09-29T17:57:18"
+commits = ["9259b810eee0d0004ff3c742acebcd37490c824c"]
