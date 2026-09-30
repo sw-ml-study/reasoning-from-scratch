@@ -496,3 +496,27 @@ The selected failed case now completes correctly at 3,158 tokens in 88.01 s;
 the matched-context 3,072-token control truncates in 81.98 s. Both attempts
 remain development evidence, with full GPU residency reported and no change
 to frozen pilot scores. The generation traces differ despite the fixed seed.
+
+## Ecosystem reuse and book reproduction gate, 2026-09-29
+
+Rust CUDA is the required target, not Ollama. Existing sw-MLPL code already
+contains Candle/cudarc CUDA forward, native autodiff and Adam for a limited
+LoRA architecture. See [the pinned ecosystem audit](ecosystem-reuse.md).
+Three demo-ml-utils adaptation/ICL/ICRL runners pass with our current CPU
+interpreter. Libraries supply artifact/provenance helpers; extensions supply
+the ABI/tokenizer. Do not describe all of these capabilities as absent.
+
+**CUDA build/provider integration: missing for this reproduction.** The
+adjacent CLI (0.20.0, 6de73bbe) freshly reports CPU fallback on the matrix
+probe. The selected 0.22.0 fixture binary is CPU-only. Current nvcc is
+13.4.59; R12 records the pinned cudarc 0.19.7 compatibility failure, whereas
+historical CUDA demos used 13.2. First reuse/revalidate that stack, then
+prove Qwen3-0.6B-Base forward/cache and gradient coverage as separate gates.
+E6 extends demo-ml-utils' existing native model-provider contract. No core
+optimization or native implementation was performed in this inspection.
+
+The 12-case book-base-v1 design and hashes are frozen before inference,
+excluding all six prior pilot ids. Execution is unavailable pending these
+gates; no scores are invented. Rust-owned autograd is allowed, and does not
+require every foreign call to join MLPL's existing tape. Implementation
+ownership remains with the sibling through documented work orders.

@@ -1,5 +1,16 @@
 # Where a missing capability belongs
 
+## Current target: Rust CUDA ML extensions, 2026-09-29
+
+The user clarified that native support means Rust CUDA-related ML crates,
+not Ollama. MLPL replaces Python's orchestration; a Rust extension supplies
+resident tensors, forward execution and, once validated, its own autograd
+graph. See [the backend contract](rust-cuda-backend.md) and extension E6.
+This supersedes the earlier inference-only restriction for the new backend.
+An extension-owned backward API does not require integration with MLPL's
+core `grad` tape. Sibling repositories remain read-only; Rust implementation
+is delivered through the extension work order. Ollama results are historical.
+
 ## Inference-only deadline exception, 2026-09-29
 
 The user explicitly authorized native extension workarounds for expensive
@@ -23,12 +34,13 @@ between them. The rule is applied in order; the first question that answers
 
 ## The rule
 
-1. **Does the result have to sit on the autograd tape or the device
+1. **Does the result have to sit on MLPL's own autograd tape or the device
    dispatch path?** Then it is **sw-mlpl core**. Extension calls cross the
    boundary as plain values (numeric arrays, records, strings, packed bytes,
    opaque handles) and are invisible to `grad` and to `device("mlx")`, so a
    backward rule, a tensor primitive, a dtype, a lexer form, or a backend
-   cannot live anywhere else.
+   cannot live anywhere else. This does not prohibit a Rust ML extension
+   from owning a separate native graph with explicit backward/update calls.
 2. **Can it be written as a bounded `.mlpl` function over existing
    primitives, fast enough for its use here?** Then it is an **MLPL
    library** in this repository (`lib/`), promoted to
@@ -46,9 +58,10 @@ expressions, HTTP, databases), it is a library or an extension. Being
 "ML-flavored" is not a reason to bake something into the language: gradient
 clipping is ML, but it is three lines of array math.
 
-Two consequences follow. The model itself (RMSNorm, RoPE, grouped-query
-attention, SwiGLU, the losses) can never be an extension, because it must be
-differentiated. And a capability may have two homes at once: an MLPL
+The MLPL reference model remains an independent algorithmic contract.
+A Rust ML backend may execute and differentiate its own model/tensor graph;
+its gradient correctness must be validated separately. A capability may
+have two homes at once: an MLPL
 reference implementation that proves semantics on fixtures, and an extension
 that provides throughput, checked against each other by a parity test.
 

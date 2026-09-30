@@ -166,3 +166,14 @@ loss and loop, bounded real-model run.
 ## Queued: Saga 7, `closeout`
 
 Results tables, final ledger, library handoffs, README status.
+
+## Book reproduction, current handoff
+
+Step 012 freezes a 12-case disjoint base-model protocol but does not run it:
+the user clarified Rust CUDA rather than Ollama, and requested ecosystem
+reuse. The pinned audit includes CUDA demos, demo-ml-utils, reusable libraries
+and extension ABI; three utility runners pass locally. Existing native
+training machinery is real but limited; CUDA build pairing and the general
+Qwen3 provider still require validation. Next step reuses/revalidates this
+foundation before any book evaluation. Core copying optimization remains
+deferred. See `ecosystem-reuse.md`, `rust-cuda-backend.md` and E6.

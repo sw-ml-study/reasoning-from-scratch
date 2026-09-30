@@ -246,3 +246,40 @@ MLPL still owns prompt construction, sampling parameters, completion rules
 and final-answer grading. This is an explicit shell-transport workaround,
 not a claim that the Rust extension now supports longer requests. No sibling
 repository or installed tool was modified, and no external message was sent.
+
+## E6. Rust CUDA ML backend — required for book reproduction
+
+**Priority:** replaces further Ollama/HTTP work as the target architecture,
+per the user's explicit clarification on 2026-09-29. E4/E5 remain descriptions
+of the historical demo, not prerequisites for this backend.
+
+Implement a resident CUDA model/tensor extension using Rust ML crates,
+reusing sw-MLPL's existing Candle/cudarc foundation and the provider contract
+in demo-ml-utils. First revalidate the existing CUDA demos on a supported
+toolkit/dependency pair (R12); then fill the Qwen3-specific coverage gap.
+Do not duplicate tensor/autograd machinery already implemented there.
+See [the pinned ecosystem review](ecosystem-reuse.md).
+Complete specification and acceptance sequence:
+[rust-cuda-backend.md](rust-cuda-backend.md).
+
+Input: local pinned `Qwen3-0.6B-Base` BF16 safetensors, config and tokenizer
+identities from [data-and-models.md](data-and-models.md) and
+[real-model-smoke.md](real-model-smoke.md). Load without service calls,
+quantization or chat templates. Preserve model/KV buffers behind handles;
+return last-position logits so MLPL controls seeded decoding and voting.
+Require explicit device/dtype metadata, bounded contexts, lifecycle errors,
+cache isolation, finite logits, tiny cached/full parity and real short-token
+acceptance. Ship a release artifact, public facade, lockfile and GPU evidence.
+
+A separate training acceptance milestone must prove loss/backward/update
+and checkpoint behavior on an authored toy before real GRPO. A Rust-owned
+autograd graph is allowed; wiring into MLPL core `grad` is not a prerequisite.
+Do not label an inference-only artifact trainable. Test incorrect checkpoint
+hashes/shapes, invalid token ids, overflow contexts, unavailable CUDA,
+stale/wrong handles, resource release, and gradient/loss goldens. Explicitly
+report unsupported GPU kernels or dtypes rather than falling back silently.
+
+Current observation: no such package/artifact exists in the inspected sibling
+extension tree. Consumer evaluation is unavailable until delivery and parity
+checks. This work order is local; sibling policy prohibits implementing the
+Rust package from this checkout. Core efficiency work remains deferred.

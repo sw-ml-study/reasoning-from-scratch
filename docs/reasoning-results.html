@@ -51,62 +51,64 @@ blockquote { margin:1.5rem 0; padding:8px 24px; border-left:4px solid var(--acce
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
 <li><a href="#orgd9d06d3">1. The research question and our present result</a></li>
-<li><a href="#org2c9afa6">2. How the book, Python, and MLPL fit together</a>
+<li><a href="#org3c37edf">2. How the book, Python, and MLPL fit together</a>
 <ul>
-<li><a href="#org21abd5f">2.1. What a measured reasoning benefit looks like in the Python reference</a></li>
+<li><a href="#org28dfd3d">2.1. Intended backend and the reusable ecosystem</a></li>
+<li><a href="#org6a535ec">2.2. Method correspondence</a></li>
+<li><a href="#org6ae3de8">2.3. What a measured reasoning benefit looks like in the Python reference</a></li>
 </ul>
 </li>
-<li><a href="#org8a21ee4">3. The working experiment: generate, finish, verify, retain</a>
+<li><a href="#orgefbf27e">3. The working experiment: generate, finish, verify, retain</a>
 <ul>
-<li><a href="#org6ae3de8">3.1. Division of responsibility</a></li>
-<li><a href="#org3c37edf">3.2. A worked solution and what it proves</a></li>
-<li><a href="#org58f6755">3.3. Exact controls</a></li>
-<li><a href="#org015c3dc">3.4. GPU and model provenance</a></li>
+<li><a href="#org58f6755">3.1. Division of responsibility</a></li>
+<li><a href="#org015c3dc">3.2. A worked solution and what it proves</a></li>
+<li><a href="#org8a21ee4">3.3. Exact controls</a></li>
+<li><a href="#orgbfb557e">3.4. GPU and model provenance</a></li>
 </ul>
 </li>
-<li><a href="#org95d58d5">4. Measuring the effect of the reasoning budget</a>
+<li><a href="#org0b6a3d6">4. Measuring the effect of the reasoning budget</a>
 <ul>
-<li><a href="#orgbfb557e">4.1. Problems and independent references</a></li>
-<li><a href="#orgefbf27e">4.2. Per-attempt results</a></li>
-<li><a href="#org91baf97">4.3. Why thinking appeared worse</a></li>
-<li><a href="#orgb069e54">4.4. Follow-up: double the output allowance</a></li>
-<li><a href="#org0218a13">4.5. Replay the original grades in MLPL</a></li>
-<li><a href="#org2ebe7a9">4.6. Replay the larger-budget experiment</a></li>
+<li><a href="#org91baf97">4.1. Problems and independent references</a></li>
+<li><a href="#orgb069e54">4.2. Per-attempt results</a></li>
+<li><a href="#orge5a4538">4.3. Why thinking appeared worse</a></li>
+<li><a href="#org0218a13">4.4. Follow-up: double the output allowance</a></li>
+<li><a href="#org2ebe7a9">4.5. Replay the original grades in MLPL</a></li>
+<li><a href="#org1225600">4.6. Replay the larger-budget experiment</a></li>
 </ul>
 </li>
-<li><a href="#orgd5c0387">5. A frozen held-out pilot: does the benefit transfer?</a>
+<li><a href="#orge0576d7">5. A frozen held-out pilot: does the benefit transfer?</a>
 <ul>
-<li><a href="#org1225600">5.1. Results and cost</a></li>
-<li><a href="#org0b6a3d6">5.2. Verifier review is separate from the primary score</a></li>
-<li><a href="#org4180c98">5.3. Corrected automatic grading: choice-v2 post-hoc replay</a></li>
-<li><a href="#orgd7654b5">5.4. What these results establish</a></li>
-<li><a href="#org1566902">5.5. Reproduce the public analysis, or regrade local raw evidence</a></li>
+<li><a href="#org3285ba6">5.1. Results and cost</a></li>
+<li><a href="#org4180c98">5.2. Verifier review is separate from the primary score</a></li>
+<li><a href="#orgb33cf44">5.3. Corrected automatic grading: choice-v2 post-hoc replay</a></li>
+<li><a href="#org1566902">5.4. What these results establish</a></li>
+<li><a href="#org91b8ed7">5.5. Reproduce the public analysis, or regrade local raw evidence</a></li>
 </ul>
 </li>
-<li><a href="#orge0576d7">6. Development recovery with a larger output allowance</a></li>
-<li><a href="#org1f7e03e">7. From “it produces reasoning” to “reasoning helps”</a>
+<li><a href="#org67f5a36">6. Development recovery with a larger output allowance</a></li>
+<li><a href="#org8231f23">7. From “it produces reasoning” to “reasoning helps”</a>
 <ul>
-<li><a href="#org6165353">7.1. An operational success criterion</a></li>
-<li><a href="#org67f5a36">7.2. Is the model too small?</a></li>
-<li><a href="#orgdfca9b1">7.3. ICL, feedback in context, and actual training are different tests</a></li>
-<li><a href="#orgdf31732">7.4. Concrete improvement order</a></li>
+<li><a href="#orgdfca9b1">7.1. An operational success criterion</a></li>
+<li><a href="#org3b83232">7.2. Is the model too small?</a></li>
+<li><a href="#org67a8f30">7.3. ICL, feedback in context, and actual training are different tests</a></li>
+<li><a href="#org22925db">7.4. Concrete improvement order</a></li>
 </ul>
 </li>
-<li><a href="#orgaf9bb0d">8. Training: one real toy update, and the work still required for an LLM</a>
+<li><a href="#org4d94ff7">8. Training: one real toy update, and the work still required for an LLM</a>
 <ul>
-<li><a href="#org8231f23">8.1. From checked answers to relative rewards</a></li>
-<li><a href="#org60a244f">8.2. A small, actual MLPL training experiment</a></li>
-<li><a href="#orgb7f66af">8.3. The next training evidence we would require</a></li>
+<li><a href="#org60a244f">8.1. From checked answers to relative rewards</a></li>
+<li><a href="#orgaf9bb0d">8.2. A small, actual MLPL training experiment</a></li>
+<li><a href="#org1ab41e8">8.3. The next training evidence we would require</a></li>
 </ul>
 </li>
-<li><a href="#org3a437a7">9. Read, replay, rerun: three different activities</a>
+<li><a href="#org8b1aca4">9. Read, replay, rerun: three different activities</a>
 <ul>
-<li><a href="#org1ab41e8">9.1. Build the HTML or refresh the recorded calculations</a></li>
-<li><a href="#org4d94ff7">9.2. Interactive Emacs setup</a></li>
+<li><a href="#org3a437a7">9.1. Build the HTML or refresh the recorded calculations</a></li>
+<li><a href="#orgcb9b225">9.2. Interactive Emacs setup</a></li>
 </ul>
 </li>
-<li><a href="#orgcb9b225">10. Run the live experiment</a></li>
-<li><a href="#org8b1aca4">11. Reproducibility inventory and remaining limits</a></li>
+<li><a href="#org7b333fa">10. Run the live experiment</a></li>
+<li><a href="#org3dac46a">11. Reproducibility inventory and remaining limits</a></li>
 </ul>
 </div>
 </div>
@@ -195,9 +197,94 @@ shared multiple-choice verifier false negative is reported separately below.
 </p>
 </div>
 </div>
-<div id="outline-container-org2c9afa6" class="outline-2">
-<h2 id="org2c9afa6"><span class="section-number-2">2.</span> How the book, Python, and MLPL fit together</h2>
+<div id="outline-container-org3c37edf" class="outline-2">
+<h2 id="org3c37edf"><span class="section-number-2">2.</span> How the book, Python, and MLPL fit together</h2>
 <div class="outline-text-2" id="text-2">
+</div>
+<div id="outline-container-org28dfd3d" class="outline-3">
+<h3 id="org28dfd3d"><span class="section-number-3">2.1.</span> Intended backend and the reusable ecosystem</h3>
+<div class="outline-text-3" id="text-2-1">
+<p>
+The target is <b>Python + PyTorch → sw-MLPL + Rust CUDA ML support</b>.
+Ollama is not the intended implementation. Its measurements below are
+retained as external-baseline evidence. Native tensor storage, execution and
+autograd may remain in Rust while MLPL expresses the experiment and
+reasoning methods; efficient interpreter-only execution is not a prerequisite.
+</p>
+
+<p>
+The ecosystem already supplies substantial parts of this design:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Existing project</th>
+<th scope="col" class="org-left">Inspected, reusable contribution</th>
+<th scope="col" class="org-left">Current limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">sw-MLPL CUDA demos</td>
+<td class="org-left">Candle/cudarc forward, backward and Adam; GPU head-only LoRA demo</td>
+<td class="org-left">Current selected binaries are CPU-only; CUDA 13.4 pairing is the recorded build gap; general Qwen3 coverage is unproved</td>
+</tr>
+
+<tr>
+<td class="org-left">demo-ml-utils</td>
+<td class="org-left">Artifact utilities, low-rank adaptation, fixed-weight ICL controls, distilled ICRL policy, Rust causal-model provider contract</td>
+<td class="org-left">Qwen training recipes currently return unavailable pending that provider</td>
+</tr>
+
+<tr>
+<td class="org-left">demo-mlpl-libraries</td>
+<td class="org-left">Pinned result/text/JSONL/safetensors-header/checkpoint libraries</td>
+<td class="org-left">Reuse requires namespace and contract compatibility, not copying working trees implicitly</td>
+</tr>
+
+<tr>
+<td class="org-left">demo-extensions</td>
+<td class="org-left">Typed native handles, dynamic-library SDK, tokenizer and other generic providers</td>
+<td class="org-left">No general Qwen3 CUDA provider in the inspected packages</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+We ran the utility repository's low-rank adaptation, ICL controls and
+held-out ICRL rollout with our selected interpreter; all passed unchanged.
+The frozen ICRL teaching policy receives reward 3 versus 1 with reward
+context removed, with zero deployment weight updates. That is useful
+acceptance machinery, not a transformer or Qwen3 reasoning result.
+The adjacent older CLI's matrix probe explicitly fell back to CPU; correct
+numbers alone do not validate CUDA. The existing GPU demo's historical
+acceptance used CUDA 13.2, while this host now reports 13.4.
+</p>
+
+<p>
+The <a href="ecosystem-reuse.md">pinned inspection and local checks</a> and
+<a href="rust-cuda-backend.md">backend integration contract</a> define reuse before new implementation.
+Extension request E6 is scoped to the missing provider, not a new autodiff
+framework. <a href="book-reproduction-protocol.md">The book-base-v1 pilot design</a> freezes 12 disjoint
+problems and direct/CoT/ten-sample-voting methods. No selected inference
+has run; native build/provider validation and a pinned execution record
+are prerequisites. There is no new accuracy claim in this protocol.
+</p>
+</div>
+</div>
+<div id="outline-container-org6a535ec" class="outline-3">
+<h3 id="org6a535ec"><span class="section-number-3">2.2.</span> Method correspondence</h3>
+<div class="outline-text-3" id="text-2-2">
 <p>
 The book supplies the progression: generate text, evaluate it, allocate
 inference-time compute, refine solutions, then learn from rewards and
@@ -288,9 +375,10 @@ to an 8B instruction/thinking model is a model change, not a language-speed
 comparison.
 </p>
 </div>
-<div id="outline-container-org21abd5f" class="outline-3">
-<h3 id="org21abd5f"><span class="section-number-3">2.1.</span> What a measured reasoning benefit looks like in the Python reference</h3>
-<div class="outline-text-3" id="text-2-1">
+</div>
+<div id="outline-container-org6ae3de8" class="outline-3">
+<h3 id="org6ae3de8"><span class="section-number-3">2.3.</span> What a measured reasoning benefit looks like in the Python reference</h3>
+<div class="outline-text-3" id="text-2-3">
 <p>
 The book's main starting checkpoint is <b>Qwen3-0.6B-Base</b>, as specified in
 <a href="https://www.manning.com/preview/build-a-reasoning-model-from-scratch/chapter-2">chapter 2</a>. Our two execution paths should not be conflated:
@@ -354,9 +442,9 @@ solved; it still would not demonstrate project training or MLPL forward
 execution. This is a proposed comparison, not a completed reproduction.
 </p>
 </div>
-<div id="outline-container-org28dfd3d" class="outline-4">
-<h4 id="org28dfd3d"><span class="section-number-4">2.1.1.</span> What prevents a faithful reproduction today?</h4>
-<div class="outline-text-4" id="text-2-1-1">
+<div id="outline-container-org21abd5f" class="outline-4">
+<h4 id="org21abd5f"><span class="section-number-4">2.3.1.</span> What prevents a faithful reproduction today?</h4>
+<div class="outline-text-4" id="text-2-3-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -421,9 +509,9 @@ claim would need a separate measurement.
 </p>
 </div>
 </div>
-<div id="outline-container-org6a535ec" class="outline-4">
-<h4 id="org6a535ec"><span class="section-number-4">2.1.2.</span> Published inference-time gains</h4>
-<div class="outline-text-4" id="text-2-1-2">
+<div id="outline-container-org2c9afa6" class="outline-4">
+<h4 id="org2c9afa6"><span class="section-number-4">2.3.2.</span> Published inference-time gains</h4>
+<div class="outline-text-4" id="text-2-3-2">
 <p>
 The companion's chapter 4 reports these results on all 500 MATH-500
 questions, using a CUDA DGX Spark system:
@@ -482,12 +570,12 @@ few-shot, in-context feedback or reinforcement-learning procedure will work.
 </div>
 </div>
 </div>
-<div id="outline-container-org8a21ee4" class="outline-2">
-<h2 id="org8a21ee4"><span class="section-number-2">3.</span> The working experiment: generate, finish, verify, retain</h2>
+<div id="outline-container-orgefbf27e" class="outline-2">
+<h2 id="orgefbf27e"><span class="section-number-2">3.</span> The working experiment: generate, finish, verify, retain</h2>
 <div class="outline-text-2" id="text-3">
 </div>
-<div id="outline-container-org6ae3de8" class="outline-3">
-<h3 id="org6ae3de8"><span class="section-number-3">3.1.</span> Division of responsibility</h3>
+<div id="outline-container-org58f6755" class="outline-3">
+<h3 id="org58f6755"><span class="section-number-3">3.1.</span> Division of responsibility</h3>
 <div class="outline-text-3" id="text-3-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -550,8 +638,8 @@ and is the same for both modes. The transport uses Ollama's
 </p>
 </div>
 </div>
-<div id="outline-container-org3c37edf" class="outline-3">
-<h3 id="org3c37edf"><span class="section-number-3">3.2.</span> A worked solution and what it proves</h3>
+<div id="outline-container-org015c3dc" class="outline-3">
+<h3 id="org015c3dc"><span class="section-number-3">3.2.</span> A worked solution and what it proves</h3>
 <div class="outline-text-3" id="text-3-2">
 <p>
 Take three red and two blue balls, and draw two without replacement.
@@ -570,8 +658,8 @@ transcript of internal computation.
 </p>
 </div>
 </div>
-<div id="outline-container-org58f6755" class="outline-3">
-<h3 id="org58f6755"><span class="section-number-3">3.3.</span> Exact controls</h3>
+<div id="outline-container-org8a21ee4" class="outline-3">
+<h3 id="org8a21ee4"><span class="section-number-3">3.3.</span> Exact controls</h3>
 <div class="outline-text-3" id="text-3-3">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -666,8 +754,8 @@ for every possible evaluation.
 </p>
 </div>
 </div>
-<div id="outline-container-org015c3dc" class="outline-3">
-<h3 id="org015c3dc"><span class="section-number-3">3.4.</span> GPU and model provenance</h3>
+<div id="outline-container-orgbfb557e" class="outline-3">
+<h3 id="orgbfb557e"><span class="section-number-3">3.4.</span> GPU and model provenance</h3>
 <div class="outline-text-3" id="text-3-4">
 <p>
 <code>ollama ps</code> reported 100% GPU execution. The residency API reported
@@ -734,12 +822,12 @@ across every hardware/runtime configuration or repeated request.
 </div>
 </div>
 </div>
-<div id="outline-container-org95d58d5" class="outline-2">
-<h2 id="org95d58d5"><span class="section-number-2">4.</span> Measuring the effect of the reasoning budget</h2>
+<div id="outline-container-org0b6a3d6" class="outline-2">
+<h2 id="org0b6a3d6"><span class="section-number-2">4.</span> Measuring the effect of the reasoning budget</h2>
 <div class="outline-text-2" id="text-4">
 </div>
-<div id="outline-container-orgbfb557e" class="outline-3">
-<h3 id="orgbfb557e"><span class="section-number-3">4.1.</span> Problems and independent references</h3>
+<div id="outline-container-org91baf97" class="outline-3">
+<h3 id="org91baf97"><span class="section-number-3">4.1.</span> Problems and independent references</h3>
 <div class="outline-text-3" id="text-4-1">
 <p>
 These cases were authored before the ten-attempt comparison. They were
@@ -814,8 +902,8 @@ separately and are not pooled into these counts.
 </p>
 </div>
 </div>
-<div id="outline-container-orgefbf27e" class="outline-3">
-<h3 id="orgefbf27e"><span class="section-number-3">4.2.</span> Per-attempt results</h3>
+<div id="outline-container-orgb069e54" class="outline-3">
+<h3 id="orgb069e54"><span class="section-number-3">4.2.</span> Per-attempt results</h3>
 <div class="outline-text-3" id="text-4-2">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -916,8 +1004,8 @@ Summing the native durations gives 42.09 and 184.43 seconds; MLPL measured
 </p>
 </div>
 </div>
-<div id="outline-container-org91baf97" class="outline-3">
-<h3 id="org91baf97"><span class="section-number-3">4.3.</span> Why thinking appeared worse</h3>
+<div id="outline-container-orge5a4538" class="outline-3">
+<h3 id="orge5a4538"><span class="section-number-3">4.3.</span> Why thinking appeared worse</h3>
 <div class="outline-text-3" id="text-4-3">
 <p>
 The cap covers generated thinking and final-answer tokens together. The
@@ -946,8 +1034,8 @@ possible improvement to the thinking switch.
 </p>
 </div>
 </div>
-<div id="outline-container-orgb069e54" class="outline-3">
-<h3 id="orgb069e54"><span class="section-number-3">4.4.</span> Follow-up: double the output allowance</h3>
+<div id="outline-container-org0218a13" class="outline-3">
+<h3 id="org0218a13"><span class="section-number-3">4.4.</span> Follow-up: double the output allowance</h3>
 <div class="outline-text-3" id="text-4-4">
 <p>
 We repeated all five cases in both modes at 3,072 output tokens, holding
@@ -1171,8 +1259,8 @@ The current cap is a tested demo setting, not a universal reasoning budget.
 </p>
 </div>
 </div>
-<div id="outline-container-org0218a13" class="outline-3">
-<h3 id="org0218a13"><span class="section-number-3">4.5.</span> Replay the original grades in MLPL</h3>
+<div id="outline-container-org2ebe7a9" class="outline-3">
+<h3 id="org2ebe7a9"><span class="section-number-3">4.5.</span> Replay the original grades in MLPL</h3>
 <div class="outline-text-3" id="text-4-5">
 <p>
 The following block recomputes final-answer grades from raw saved responses,
@@ -1181,7 +1269,7 @@ and token totals. It does not contact the model or trust the stored score.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="orge5a4538"><code># Replay every saved attempt, using the production verifier and explicit completion rule.
+<pre class="src src-mlpl" id="orgd19b025"><code># Replay every saved attempt, using the production verifier and explicit completion rule.
 include "../lib/text/text.mlpl";
 include "../lib/verify/number.mlpl";
 include "../lib/verify/expr.mlpl";
@@ -1234,11 +1322,11 @@ Ok(all ten grades and aggregate checks reproduced)
 </pre>
 </div>
 </div>
-<div id="outline-container-org2ebe7a9" class="outline-3">
-<h3 id="org2ebe7a9"><span class="section-number-3">4.6.</span> Replay the larger-budget experiment</h3>
+<div id="outline-container-org1225600" class="outline-3">
+<h3 id="org1225600"><span class="section-number-3">4.6.</span> Replay the larger-budget experiment</h3>
 <div class="outline-text-3" id="text-4-6">
 <div class="org-src-container">
-<pre class="src src-mlpl" id="orgd19b025"><code># Replay every saved attempt, using the production verifier and explicit completion rule.
+<pre class="src src-mlpl" id="org95d58d5"><code># Replay every saved attempt, using the production verifier and explicit completion rule.
 include "../lib/text/text.mlpl";
 include "../lib/verify/number.mlpl";
 include "../lib/verify/expr.mlpl";
@@ -1292,8 +1380,8 @@ Ok(all ten grades and aggregate checks reproduced)
 </div>
 </div>
 </div>
-<div id="outline-container-orgd5c0387" class="outline-2">
-<h2 id="orgd5c0387"><span class="section-number-2">5.</span> A frozen held-out pilot: does the benefit transfer?</h2>
+<div id="outline-container-orge0576d7" class="outline-2">
+<h2 id="orge0576d7"><span class="section-number-2">5.</span> A frozen held-out pilot: does the benefit transfer?</h2>
 <div class="outline-text-2" id="text-5">
 <p>
 We next tested six MATH-500 problems that were not used in our five-case
@@ -1319,8 +1407,8 @@ are too few to establish a broad quality advantage, especially with repeated
 seeds on the same questions.
 </p>
 </div>
-<div id="outline-container-org1225600" class="outline-3">
-<h3 id="org1225600"><span class="section-number-3">5.1.</span> Results and cost</h3>
+<div id="outline-container-org3285ba6" class="outline-3">
+<h3 id="org3285ba6"><span class="section-number-3">5.1.</span> Results and cost</h3>
 <div class="outline-text-3" id="text-5-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1608,8 +1696,8 @@ lengths fit the configured 4,096-token context.
 </p>
 </div>
 </div>
-<div id="outline-container-org0b6a3d6" class="outline-3">
-<h3 id="org0b6a3d6"><span class="section-number-3">5.2.</span> Verifier review is separate from the primary score</h3>
+<div id="outline-container-org4180c98" class="outline-3">
+<h3 id="org4180c98"><span class="section-number-3">5.2.</span> Verifier review is separate from the primary score</h3>
 <div class="outline-text-3" id="text-5-2">
 <p>
 One selected multiple-choice problem exposed a false negative in our
@@ -1636,8 +1724,8 @@ should sample intermediate steps as well as final answers.
 </p>
 </div>
 </div>
-<div id="outline-container-org4180c98" class="outline-3">
-<h3 id="org4180c98"><span class="section-number-3">5.3.</span> Corrected automatic grading: choice-v2 post-hoc replay</h3>
+<div id="outline-container-orgb33cf44" class="outline-3">
+<h3 id="orgb33cf44"><span class="section-number-3">5.3.</span> Corrected automatic grading: choice-v2 post-hoc replay</h3>
 <div class="outline-text-3" id="text-5-3">
 <p>
 We regraded all 24 retained responses without generating new answers.
@@ -1707,7 +1795,7 @@ new questions. Public numeric results and provenance are stored in the
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org3285ba6"><code># Replay separately versioned post-hoc numeric summaries; local raw replay is documented below.
+<pre class="src src-mlpl" id="orgd7654b5"><code># Replay separately versioned post-hoc numeric summaries; local raw replay is documented below.
 include "../lib/text/text.mlpl";
 include "../lib/eval/paired.mlpl";
 rows = read_text("docs/results/native-heldout-choice-v2-pairs.jsonl")?
@@ -1738,8 +1826,8 @@ which internal computations caused a correct answer.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd7654b5" class="outline-3">
-<h3 id="orgd7654b5"><span class="section-number-3">5.4.</span> What these results establish</h3>
+<div id="outline-container-org1566902" class="outline-3">
+<h3 id="org1566902"><span class="section-number-3">5.4.</span> What these results establish</h3>
 <div class="outline-text-3" id="text-5-4">
 <p>
 The extra thinking channel did not earn its cost in this pilot. The model
@@ -1771,8 +1859,8 @@ result on our own base checkpoint.
 </p>
 </div>
 </div>
-<div id="outline-container-org1566902" class="outline-3">
-<h3 id="org1566902"><span class="section-number-3">5.5.</span> Reproduce the public analysis, or regrade local raw evidence</h3>
+<div id="outline-container-org91b8ed7" class="outline-3">
+<h3 id="org91b8ed7"><span class="section-number-3">5.5.</span> Reproduce the public analysis, or regrade local raw evidence</h3>
 <div class="outline-text-3" id="text-5-5">
 <p>
 Downloaded questions and references remain in ignored <code>data/</code>. Raw requests,
@@ -1792,7 +1880,7 @@ transport/protocol failures remain failures.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="orgb33cf44"><code># Summarize all public paired measurements without pooling repeated seeds.
+<pre class="src src-mlpl" id="orgd5c0387"><code># Summarize all public paired measurements without pooling repeated seeds.
 include "../lib/text/text.mlpl";
 include "../lib/eval/paired.mlpl";
 rows = read_text("docs/results/native-heldout-v1-pairs.jsonl")?
@@ -1860,8 +1948,8 @@ require a separately named experiment, not silently replacing these results.
 </div>
 </div>
 </div>
-<div id="outline-container-orge0576d7" class="outline-2">
-<h2 id="orge0576d7"><span class="section-number-2">6.</span> Development recovery with a larger output allowance</h2>
+<div id="outline-container-org67f5a36" class="outline-2">
+<h2 id="org67f5a36"><span class="section-number-2">6.</span> Development recovery with a larger output allowance</h2>
 <div class="outline-text-2" id="text-6">
 <p>
 The thinking failure on pilot case 2 at seed 42 stopped at 3,072 tokens.
@@ -1954,7 +2042,7 @@ responses; those remain local with their hashes for audit.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org91b8ed7"><code># Verify retained development outcomes without performing inference or publishing downloaded text.
+<pre class="src src-mlpl" id="org6165353"><code># Verify retained development outcomes without performing inference or publishing downloaded text.
 r = parse_json(read_text("docs/results/native-budget-v1-summary.json")?)?
 print("control:", to_json(r.control)?)
 print("larger budget:", to_json(r.retry)?)
@@ -1996,12 +2084,12 @@ MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl \
 </div>
 </div>
 </div>
-<div id="outline-container-org1f7e03e" class="outline-2">
-<h2 id="org1f7e03e"><span class="section-number-2">7.</span> From “it produces reasoning” to “reasoning helps”</h2>
+<div id="outline-container-org8231f23" class="outline-2">
+<h2 id="org8231f23"><span class="section-number-2">7.</span> From “it produces reasoning” to “reasoning helps”</h2>
 <div class="outline-text-2" id="text-7">
 </div>
-<div id="outline-container-org6165353" class="outline-3">
-<h3 id="org6165353"><span class="section-number-3">7.1.</span> An operational success criterion</h3>
+<div id="outline-container-orgdfca9b1" class="outline-3">
+<h3 id="orgdfca9b1"><span class="section-number-3">7.1.</span> An operational success criterion</h3>
 <div class="outline-text-3" id="text-7-1">
 <p>
 The next milestone is higher held-out correctness from a declared reasoning
@@ -2029,8 +2117,8 @@ it is for final evaluation only. Voting agreement is not itself correctness.
 </p>
 </div>
 </div>
-<div id="outline-container-org67f5a36" class="outline-3">
-<h3 id="org67f5a36"><span class="section-number-3">7.2.</span> Is the model too small?</h3>
+<div id="outline-container-org3b83232" class="outline-3">
+<h3 id="org3b83232"><span class="section-number-3">7.2.</span> Is the model too small?</h3>
 <div class="outline-text-3" id="text-7-2">
 <p>
 Capacity is a plausible constraint, but our measurements do not identify
@@ -2058,8 +2146,8 @@ skills, and selecting a larger checkpoint cannot prove our training works.
 </p>
 </div>
 </div>
-<div id="outline-container-orgdfca9b1" class="outline-3">
-<h3 id="orgdfca9b1"><span class="section-number-3">7.3.</span> ICL, feedback in context, and actual training are different tests</h3>
+<div id="outline-container-org67a8f30" class="outline-3">
+<h3 id="org67a8f30"><span class="section-number-3">7.3.</span> ICL, feedback in context, and actual training are different tests</h3>
 <div class="outline-text-3" id="text-7-3">
 <p>
 In-context learning (ICL) would require comparing zero-shot prompts with
@@ -2086,12 +2174,12 @@ This is our proposed experiment order, not a claim of a measured result.
 </p>
 </div>
 </div>
-<div id="outline-container-orgdf31732" class="outline-3">
-<h3 id="orgdf31732"><span class="section-number-3">7.4.</span> Concrete improvement order</h3>
+<div id="outline-container-org22925db" class="outline-3">
+<h3 id="org22925db"><span class="section-number-3">7.4.</span> Concrete improvement order</h3>
 <div class="outline-text-3" id="text-7-4">
 </div>
-<div id="outline-container-org3b83232" class="outline-4">
-<h4 id="org3b83232"><span class="section-number-4">7.4.1.</span> Can we lift the token limit, and what is missing?</h4>
+<div id="outline-container-orgdf31732" class="outline-4">
+<h4 id="orgdf31732"><span class="section-number-4">7.4.1.</span> Can we lift the token limit, and what is missing?</h4>
 <div class="outline-text-4" id="text-7-4-1">
 <p>
 Yes. The original native demo caps output at 3,072 tokens, uses a
@@ -2126,8 +2214,8 @@ project-trained reasoning remain separate, unproved milestones.
 </p>
 </div>
 </div>
-<div id="outline-container-org67a8f30" class="outline-4">
-<h4 id="org67a8f30"><span class="section-number-4">7.4.2.</span> Experiments after the verifier correction</h4>
+<div id="outline-container-org1f7e03e" class="outline-4">
+<h4 id="org1f7e03e"><span class="section-number-4">7.4.2.</span> Experiments after the verifier correction</h4>
 <div class="outline-text-4" id="text-7-4-2">
 <ol class="org-ol">
 <li>Remove avoidable truncation with a measured output budget and retain the
@@ -2156,8 +2244,8 @@ improve a policy. Success on one must not be reported as success on both.
 </div>
 </div>
 </div>
-<div id="outline-container-orgaf9bb0d" class="outline-2">
-<h2 id="orgaf9bb0d"><span class="section-number-2">8.</span> Training: one real toy update, and the work still required for an LLM</h2>
+<div id="outline-container-org4d94ff7" class="outline-2">
+<h2 id="org4d94ff7"><span class="section-number-2">8.</span> Training: one real toy update, and the work still required for an LLM</h2>
 <div class="outline-text-2" id="text-8">
 <p>
 Turning on a pretrained model's thinking mode does not train it. No weights
@@ -2166,8 +2254,8 @@ reward signal, but reward computation and parameter optimization are
 separate operations.
 </p>
 </div>
-<div id="outline-container-org8231f23" class="outline-3">
-<h3 id="org8231f23"><span class="section-number-3">8.1.</span> From checked answers to relative rewards</h3>
+<div id="outline-container-org60a244f" class="outline-3">
+<h3 id="org60a244f"><span class="section-number-3">8.1.</span> From checked answers to relative rewards</h3>
 <div class="outline-text-3" id="text-8-1">
 <p>
 Suppose four independently sampled answers receive rewards <code>[1,1,0,0]</code>.
@@ -2179,7 +2267,7 @@ not implement the complete GRPO objective or a policy update.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org22925db"><code># Educational reward normalization, not a trained policy.
+<pre class="src src-mlpl" id="org7426fbe"><code># Educational reward normalization, not a trained policy.
 rewards = [1, 1, 0, 0]
 centered = rewards - mean(rewards)
 deviation = sqrt(reduce_add(centered * centered) / (tally(rewards) - 1))
@@ -2216,8 +2304,8 @@ LLM training result.
 </p>
 </div>
 </div>
-<div id="outline-container-org60a244f" class="outline-3">
-<h3 id="org60a244f"><span class="section-number-3">8.2.</span> A small, actual MLPL training experiment</h3>
+<div id="outline-container-orgaf9bb0d" class="outline-3">
+<h3 id="orgaf9bb0d"><span class="section-number-3">8.2.</span> A small, actual MLPL training experiment</h3>
 <div class="outline-text-3" id="text-8-2">
 <p>
 To make the difference concrete, fit the scalar model <code>prediction=w*x</code> to
@@ -2236,7 +2324,7 @@ that some number decreased.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org7426fbe"><code># Actual six-step scalar regression; no language-model weight is changed.
+<pre class="src src-mlpl" id="orgb7f66af"><code># Actual six-step scalar regression; no language-model weight is changed.
 w = param[1]
 w = [0]
 x = [1, 2, 3, 4]
@@ -2277,8 +2365,8 @@ feasibility of differentiating the external native model.
 </p>
 </div>
 </div>
-<div id="outline-container-orgb7f66af" class="outline-3">
-<h3 id="orgb7f66af"><span class="section-number-3">8.3.</span> The next training evidence we would require</h3>
+<div id="outline-container-org1ab41e8" class="outline-3">
+<h3 id="org1ab41e8"><span class="section-number-3">8.3.</span> The next training evidence we would require</h3>
 <div class="outline-text-3" id="text-8-3">
 <p>
 Start with a tiny trainable policy on a synthetic task with known rewards.
@@ -2298,8 +2386,8 @@ session is not a substitute for a differentiable student training path.
 </div>
 </div>
 </div>
-<div id="outline-container-org3a437a7" class="outline-2">
-<h2 id="org3a437a7"><span class="section-number-2">9.</span> Read, replay, rerun: three different activities</h2>
+<div id="outline-container-org8b1aca4" class="outline-2">
+<h2 id="org8b1aca4"><span class="section-number-2">9.</span> Read, replay, rerun: three different activities</h2>
 <div class="outline-text-2" id="text-9">
 <p>
 This document is both a report and an Emacs Org/Babel notebook using
@@ -2325,8 +2413,8 @@ budgets and metrics across implementations, then repeat with enough
 examples and seeds. We have not yet done this for MLPL versus Python.</li>
 </ol>
 </div>
-<div id="outline-container-org1ab41e8" class="outline-3">
-<h3 id="org1ab41e8"><span class="section-number-3">9.1.</span> Build the HTML or refresh the recorded calculations</h3>
+<div id="outline-container-org3a437a7" class="outline-3">
+<h3 id="org3a437a7"><span class="section-number-3">9.1.</span> Build the HTML or refresh the recorded calculations</h3>
 <div class="outline-text-3" id="text-9-1">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
@@ -2346,8 +2434,8 @@ Org source and committed JSONL/provenance files.
 </p>
 </div>
 </div>
-<div id="outline-container-org4d94ff7" class="outline-3">
-<h3 id="org4d94ff7"><span class="section-number-3">9.2.</span> Interactive Emacs setup</h3>
+<div id="outline-container-orgcb9b225" class="outline-3">
+<h3 id="orgcb9b225"><span class="section-number-3">9.2.</span> Interactive Emacs setup</h3>
 <div class="outline-text-3" id="text-9-2">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host. Then evaluate this setup once.
@@ -2383,8 +2471,8 @@ Press <code>C-c C-c</code> in an MLPL block to reproduce that calculation. The s
 </div>
 </div>
 </div>
-<div id="outline-container-orgcb9b225" class="outline-2">
-<h2 id="orgcb9b225"><span class="section-number-2">10.</span> Run the live experiment</h2>
+<div id="outline-container-org7b333fa" class="outline-2">
+<h2 id="org7b333fa"><span class="section-number-2">10.</span> Run the live experiment</h2>
 <div class="outline-text-2" id="text-10">
 <p>
 Start the first command shortly before the session to warm the model. The
@@ -2420,8 +2508,8 @@ saved evidence is a replay, not a secretly substituted live answer.
 </p>
 </div>
 </div>
-<div id="outline-container-org8b1aca4" class="outline-2">
-<h2 id="org8b1aca4"><span class="section-number-2">11.</span> Reproducibility inventory and remaining limits</h2>
+<div id="outline-container-org3dac46a" class="outline-2">
+<h2 id="org3dac46a"><span class="section-number-2">11.</span> Reproducibility inventory and remaining limits</h2>
 <div class="outline-text-2" id="text-11">
 <p>
 The Org source and standalone HTML are accompanied by committed raw

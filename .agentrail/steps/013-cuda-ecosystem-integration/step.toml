@@ -1,0 +1,8 @@
+number = 13
+slug = "cuda-ecosystem-integration"
+status = "pending"
+description = "User insists on Rust CUDA-related ML crates, not Ollama, and reuse of CUDA de..."
+role = "production"
+context_files = []
+created_at = "2026-09-29T17:55:32"
+commits = []

@@ -49,6 +49,42 @@ shared multiple-choice verifier false negative is reported separately below.
 
 * How the book, Python, and MLPL fit together
 
+** Intended backend and the reusable ecosystem
+
+The target is *Python + PyTorch → sw-MLPL + Rust CUDA ML support*.
+Ollama is not the intended implementation. Its measurements below are
+retained as external-baseline evidence. Native tensor storage, execution and
+autograd may remain in Rust while MLPL expresses the experiment and
+reasoning methods; efficient interpreter-only execution is not a prerequisite.
+
+The ecosystem already supplies substantial parts of this design:
+
+| Existing project | Inspected, reusable contribution | Current limit |
+|------------------+----------------------------------+---------------|
+| sw-MLPL CUDA demos | Candle/cudarc forward, backward and Adam; GPU head-only LoRA demo | Current selected binaries are CPU-only; CUDA 13.4 pairing is the recorded build gap; general Qwen3 coverage is unproved |
+| demo-ml-utils | Artifact utilities, low-rank adaptation, fixed-weight ICL controls, distilled ICRL policy, Rust causal-model provider contract | Qwen training recipes currently return unavailable pending that provider |
+| demo-mlpl-libraries | Pinned result/text/JSONL/safetensors-header/checkpoint libraries | Reuse requires namespace and contract compatibility, not copying working trees implicitly |
+| demo-extensions | Typed native handles, dynamic-library SDK, tokenizer and other generic providers | No general Qwen3 CUDA provider in the inspected packages |
+
+We ran the utility repository's low-rank adaptation, ICL controls and
+held-out ICRL rollout with our selected interpreter; all passed unchanged.
+The frozen ICRL teaching policy receives reward 3 versus 1 with reward
+context removed, with zero deployment weight updates. That is useful
+acceptance machinery, not a transformer or Qwen3 reasoning result.
+The adjacent older CLI's matrix probe explicitly fell back to CPU; correct
+numbers alone do not validate CUDA. The existing GPU demo's historical
+acceptance used CUDA 13.2, while this host now reports 13.4.
+
+The [[file:ecosystem-reuse.md][pinned inspection and local checks]] and
+[[file:rust-cuda-backend.md][backend integration contract]] define reuse before new implementation.
+Extension request E6 is scoped to the missing provider, not a new autodiff
+framework. [[file:book-reproduction-protocol.md][The book-base-v1 pilot design]] freezes 12 disjoint
+problems and direct/CoT/ten-sample-voting methods. No selected inference
+has run; native build/provider validation and a pinned execution record
+are prerequisites. There is no new accuracy claim in this protocol.
+
+** Method correspondence
+
 The book supplies the progression: generate text, evaluate it, allocate
 inference-time compute, refine solutions, then learn from rewards and
 teacher examples. The Python companion makes those methods concrete with

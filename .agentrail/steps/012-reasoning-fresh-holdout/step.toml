@@ -1,6 +1,6 @@
 number = 12
 slug = "reasoning-fresh-holdout"
-status = "pending"
+status = "in-progress"
 description = "Design and freeze a fresh paired holdout after the choice-v2 verifier correct..."
 role = "production"
 context_files = []

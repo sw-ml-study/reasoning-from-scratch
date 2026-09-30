@@ -70,6 +70,11 @@ curl transport pending longer HTTP-extension deadlines. This selected retry
 does not alter the pilot. Next: validate efficient inference of the book's
 exact Qwen3-0.6B-Base checkpoint and freeze a direct/CoT/voting comparison.
 The working 8B thinking-toggle experiment does not reproduce that baseline.
+The target is **MLPL + Rust CUDA**, reusing the existing CUDA demos and
+[demo-ml-utils/library/extension contracts](docs/ecosystem-reuse.md).
+The [12-case book pilot](docs/book-reproduction-protocol.md) is frozen but
+unrun: CUDA build compatibility and general Qwen3 provider acceptance remain
+prerequisites. Ollama is historical evidence, not the target backend.
 
 Revalidated on Arch Linux on 2026-09-29 with sw-MLPL 0.22.0, build
 `49c15b3e`. The verifier, evaluation harness, reference tokenizer and

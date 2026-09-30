@@ -309,6 +309,16 @@ source. Do not create a duplicate `CLAUDE.md`.
 
 ## Implementation contract
 
+- User clarification (2026-09-29): the target is sw-MLPL plus Rust CUDA ML
+  crates, not Ollama. Reuse the existing sw-MLPL CUDA/Candle/cudarc demos,
+  demo-ml-utils adaptation/provider contracts, demo-mlpl-libraries and
+  demo-extensions before proposing new machinery. Rust-owned autograd with
+  explicit backward/update calls is allowed; integrating every operation
+  into the interpreter's tape is not a prerequisite. Preserve the MLPL
+  reference and book-method semantics. Siblings remain read-only and Rust
+  delivery uses work orders. See docs/ecosystem-reuse.md and
+  docs/rust-cuda-backend.md. Existing Ollama evidence is historical.
+
 - User-authorized exception (2026-09-29): use native extension offload for
   serious inference inefficiencies instead of blocking the demo on core
   optimization. Keep the MLPL reference implementation and document future

@@ -312,3 +312,12 @@ source = "demos/native_budget.mlpl"
 test = "tests/test_backend.mlpl"
 documentation = "docs/native-reasoning-demo.md"
 status = "accepted"
+
+[[component]]
+id = "BOOKCUDA"
+slug = "book-base-cuda-reproduction"
+chapter = 4
+source = "docs/book-reproduction-protocol.md"
+test = "scripts/run-cuda-probe"
+documentation = "docs/rust-cuda-backend.md"
+status = "unavailable"
