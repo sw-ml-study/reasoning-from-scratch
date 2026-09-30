@@ -184,3 +184,9 @@ independent implementation and is not affiliated with the author or
 publisher.
 
 Copyright (c) 2026 Michael A Wright. Distributed under the [MIT License](LICENSE).
+
+The CUDA pilot now has real-model numerical acceptance and a committed
+execution manifest (see [the local backend record](docs/cuda-prototype.md)).
+`just book-cuda-smoke` exercises the full runner on an authored case;
+`just book-cuda` runs the frozen 144-generation comparison once. The latter
+has a two-hour cap and must be labeled incomplete if not all calls finish.

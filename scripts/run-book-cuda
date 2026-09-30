@@ -1,0 +1,44 @@
+#!/bin/sh
+# Run the frozen CUDA pilot or a clearly separated authored integration smoke.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+case "${1:-}" in
+    --smoke) BOOK_MODE=smoke; BOOK_OUT=out/book-cuda-smoke; BOOK_INPUT=out/book-cuda-smoke/input.jsonl; limit=200 ;;
+    '') BOOK_MODE=pilot; BOOK_OUT=out/book-cuda-v1; BOOK_INPUT=data/math500/book-base-v1.jsonl; limit=7220
+        [ -f docs/results/book-cuda-v1-execution.json ] || { echo 'execution record must be committed first' >&2; exit 1; }
+        git diff --quiet HEAD -- docs/results/book-cuda-v1-execution.json || exit 1
+        git ls-files --error-unmatch docs/results/book-cuda-v1-execution.json >/dev/null
+        [ ! -e "$BOOK_OUT/attempts.jsonl" ] || { echo 'pilot already attempted; do not overwrite or retry' >&2; exit 1; }
+        ;;
+    *) echo 'usage: run-book-cuda [--smoke]' >&2; exit 2 ;;
+esac
+mkdir -p "$BOOK_OUT"
+scripts/prepare-book-cuda > "$BOOK_OUT/prepare.log"
+if [ "$BOOK_MODE" = pilot ]; then sha256sum -c docs/results/book-cuda-v1-execution.sha256; fi
+mlpl=$(scripts/select-mlpl)
+[ "$(sha256sum "$mlpl" | awk '{print $1}')" = d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0 ] || { echo "interpreter differs from execution pin" >&2; exit 1; }
+QWEN_CUDA_LIBRARY=/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2/native/libmlpl_qwen3_cuda_prototype.so
+[ "$(sha256sum "$QWEN_CUDA_LIBRARY" | awk '{print $1}')" = da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd ] || exit 1
+EXTENSION_LIBRARY=$(scripts/select-extension hftok)
+REPO_ROOT=$repo
+LD_LIBRARY_PATH=/opt/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export BOOK_MODE BOOK_OUT BOOK_INPUT QWEN_CUDA_LIBRARY EXTENSION_LIBRARY REPO_ROOT LD_LIBRARY_PATH
+sha256sum -c <<'HASHES'
+35dc41080a3680858b27fa7e0533d2d547825316fc5dafe5d316f4ccc5a06132  data/math500/test.jsonl
+c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539  models/qwen3-0.6b-base/tokenizer.json
+HASHES
+timeout --signal=TERM --kill-after=5s "$limit" scripts/run-mlpl-demo demos/book_cuda.mlpl > "$BOOK_OUT/run.log" 2> "$BOOK_OUT/process.log" &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null || true' HUP INT TERM
+: > "$BOOK_OUT/memory.log"
+while kill -0 "$child" 2>/dev/null; do
+    nvidia-smi --query-gpu=timestamp,memory.used,utilization.gpu --format=csv,noheader >> "$BOOK_OUT/memory.log"
+    for pid in $(cat "/proc/$child/task/$child/children" 2>/dev/null || true); do
+        awk '/^VmHWM:/ { print }' "/proc/$pid/status" >> "$BOOK_OUT/memory.log" 2>/dev/null || true
+    done
+    sleep 2
+done
+wait "$child"
+if grep -E '^ *error:|Err\(' "$BOOK_OUT/run.log" >/dev/null; then tail -15 "$BOOK_OUT/run.log"; exit 1; fi
+grep '^FINISHED' "$BOOK_OUT/run.log"

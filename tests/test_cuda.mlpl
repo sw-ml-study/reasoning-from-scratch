@@ -1,5 +1,6 @@
 # CPU fixtures for native-provider greedy decoding; no extension or GPU required.
 include "lib/cuda/cuda.mlpl";
+include "lib/scaling/scaling.mlpl";
 
 def u:cuda_test_forward(request) {
   "A deterministic three-token model emits one then EOS after token one.";
@@ -36,6 +37,18 @@ def u:test_cuda_bounds() {
   u:assert_err(u:cuda_greedy(provider, [], 1, 2), "empty")?;
   u:assert_err(u:cuda_greedy(provider, [0], 0, 2), "zero")?;
   u:assert_err(u:cuda_greedy(provider, [0], 1.5, 2), "fraction")
+}
+
+@test {name: "native sampled decoding is reproducible and bounded", tags: ["cuda", "sample"]}
+def u:test_cuda_sample() {
+  "Identical seeds reproduce a full stream; nucleus probability one follows the deterministic fixture.";
+  options = {max_new: 4, eos: 2, seed: 42, temperature: 0.9, top_p: 0.9, max_ms: 10000};
+  provider = {forward: :u:cuda_test_forward, handle: 0};
+  first = u:cuda_decode(provider, [0], options)?;
+  second = u:cuda_decode(provider, [0], options)?;
+  u:assert_eq(first.ids, second.ids, "seed reproducibility")?;
+  u:assert_eq(first.ids, [1], "nucleus selects fixture")?;
+  u:assert_text_eq(first.stopped, "eos", "EOS stops sampled decoding")
 }
 
 u:run_registered_tests()

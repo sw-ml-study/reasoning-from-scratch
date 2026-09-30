@@ -534,3 +534,11 @@ Classify resident CUDA inference as **supported locally**, distribution and
 real-model reference equivalence as **missing**, and native Result/handle
 adaptation as **awkward**. The extension owns device storage, so the CPU
 interpreter's copying budget no longer blocks these inference smokes.
+
+Step 014 real-model acceptance now compares independent layer-streamed MLPL
+F64 logits to CUDA F32/BF16 on a five-token prompt: F32 maximum difference
+7.1162e-6 and identical argmax across variants. Full resident MLPL copying is
+not required for this validation-only path; inference remains Rust/CUDA.
+Seeded MLPL nucleus decoding measures about nine tokens/second including
+GPU forward, versus roughly 22–24 for greedy. Sampling cost is now a measured
+library throughput limitation, not a reason to change the frozen protocol.

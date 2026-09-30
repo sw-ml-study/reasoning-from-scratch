@@ -28,3 +28,44 @@ def u:cuda_greedy(provider, ids, max_new, eos) {
     ok({ids: generated, calls: calls, stopped: stopped})
   }
 }
+
+def u:cuda_decode(provider, ids, options) {
+  "Run greedy or seeded nucleus decoding with a per-call wall budget; weights and KV remain behind the callback. Requires scaling.mlpl for sampling.";
+  u:scaling_seed(options.seed)?;
+  if eq(tally(ids), 0) + lt(options.max_new, 1) + (1 - eq(options.max_new, floor(options.max_new))) + lt(options.temperature, 0) + (1 - gt(options.max_ms, 0)) {
+    err({kind: "generation_bounds", message: "invalid prompt or generation budget"})
+  } else {
+    sampled = gt(options.temperature, 0);
+    if sampled { u:scaling_controls(options.temperature, options.top_p)? };
+    uniforms = u:scaling_uniforms(options.seed, options.max_new)?;
+    started = clock_ms();
+    logits = call(provider.forward, {handle: provider.handle, ids: ids})?;
+    generated = [];
+    running = 1;
+    reason = "budget";
+    while running {
+      if gt(clock_ms() - started, options.max_ms) {
+        reason = "deadline";
+        running = 0
+      } else {
+        id = if sampled {
+          u:scaling_pick(u:scaling_nucleus(u:scaling_temperature(logits, options.temperature)?, options.top_p)?, at(uniforms, tally(generated)))?
+        } else {
+          argmax(logits)
+        };
+        if eq(id, options.eos) {
+          reason = "eos";
+          running = 0
+        } else {
+          generated = concat(generated, id);
+          if lt(tally(generated), options.max_new) {
+            logits = call(provider.forward, {handle: provider.handle, ids: [id]})?
+          } else {
+            running = 0
+          }
+        }
+      }
+    };
+    ok({ids: generated, stopped: reason, elapsed_ms: clock_ms() - started})
+  }
+}

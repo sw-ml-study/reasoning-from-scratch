@@ -121,3 +121,15 @@ cuda-reasoning:
 # Validate native GPU logits and cache against the tiny MLPL reference (opt-in).
 cuda-parity:
     ./scripts/run-cuda-parity
+
+# Independent real-checkpoint MLPL versus CUDA validation (slow, opt-in).
+cuda-real-parity:
+    ./scripts/run-cuda-real-parity
+
+# Frozen 12-case, 144-generation book pilot; requires committed execution pins.
+book-cuda:
+    ./scripts/run-book-cuda
+
+# Authored integration smoke, never counted in the frozen pilot.
+book-cuda-smoke:
+    ./scripts/run-book-cuda --smoke

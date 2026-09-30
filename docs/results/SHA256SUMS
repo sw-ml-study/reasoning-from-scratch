@@ -23,3 +23,7 @@ d133ab44a04be77fa6aeb6932a1ef38465c1e5ac0dfcd288a063b98bde4c4712  docs/results/n
 4f9b70122ffaa3268992c34c263b22baef5ad8873ddbac6d363f778f27ce4308  docs/results/cuda-tank-v1.txt
 fcddcee1a3f3bd9c7578369b063796b422dd33e7d94fc2645dbc8ff1e8b8d1b4  docs/results/cuda-parity-v1.txt
 dcb74ca7a3cce9953cb719dca20da21179415362df8c1c912a5783a1b3691fcf  docs/results/cuda-prototype-v1-artifacts.sha256
+5b1f470f0713ceaea8a8f16956e91b246148cbd4ad832b6c3b83da599900a94b  docs/results/book-cuda-v1-execution.json
+d41269015b93dc02cf8dab2ea1d8f5879a0b90f821947d8fd1f633d1d3daa6e9  docs/results/book-cuda-v1-execution.sha256
+1b32318270b8399fea3c5d91483305e0f37581607bf22789c79b91e9998fbb24  docs/results/book-cuda-v1-prompt-hashes.jsonl
+8784e71806ca3bd1e2494b241423e78dcf193bb26afdd01c4cab470cbc34fe31  docs/results/cuda-real-precision-v2.txt

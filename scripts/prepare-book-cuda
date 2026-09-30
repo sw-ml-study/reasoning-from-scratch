@@ -1,0 +1,23 @@
+#!/bin/sh
+# Prepare frozen local inputs and prompt hashes; never runs model inference.
+set -eu
+cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+sha256sum -c docs/results/book-base-v1-SHA256SUMS
+mkdir -p data/math500 out/book-cuda-v1 out/book-cuda-smoke
+perl <<'PERL'
+use strict; use warnings; use JSON::PP; use Digest::SHA qw(sha256_hex); use Encode qw(encode_utf8);
+my $j=JSON::PP->new->utf8->canonical; my %data;
+open my $f,'<','data/math500/test.jsonl' or die $!; while(<$f>){my $r=$j->decode($_);$data{$r->{unique_id}}=$r;}
+open my $s,'<','docs/results/book-base-v1-selection.jsonl' or die $!;
+open my $o,'>','data/math500/book-base-v1.jsonl' or die $!;
+open my $p,'>','out/book-cuda-v1/prompt-hashes.jsonl' or die $!;
+while(<$s>){my $r=$j->decode($_);my $d=$data{$r->{id}} or die 'missing id';
+ die 'problem changed' unless sha256_hex(encode_utf8($d->{problem})) eq $r->{problem_sha256};
+ die 'reference changed' unless sha256_hex(encode_utf8($d->{answer})) eq $r->{reference_sha256};
+ print $o $j->encode($d)."\n";
+ my $base="Solve the mathematics problem below.\nPut the final result on its own line, written exactly as \\boxed{RESULT}.\n\nProblem:\n".$d->{problem}."\n\nSolution:\n";
+ print $p $j->encode({id=>$r->{id},direct_sha256=>sha256_hex(encode_utf8($base)),cot_sha256=>sha256_hex(encode_utf8($base."\n\nExplain step by step."))})."\n";
+}
+open my $sm,'>','out/book-cuda-smoke/input.jsonl' or die $!;
+print $sm $j->encode({unique_id=>'authored-tank',problem=>'A tank contains 120 liters. It loses 35 liters, then gains 18 liters. How many liters remain?',answer=>'103',subject=>'arithmetic',level=>1})."\n";
+PERL

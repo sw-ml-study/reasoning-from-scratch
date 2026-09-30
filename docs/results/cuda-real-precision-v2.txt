@@ -1,0 +1,6 @@
+BF16 cached max difference: 0.3125 argmax: 12095
+F32 max difference: 0.0000071161325170265854 rms: 0.0000014584245785607196 argmax: 12095
+BF16 max difference: 0.3671539483761084 rms: 0.09026325183696857 argmax: 12095
+reference argmax: 12095
+PASS real-model precision and greedy-token checks
+PASS real-model precision and greedy-token checks

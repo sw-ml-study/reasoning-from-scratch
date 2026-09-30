@@ -186,3 +186,11 @@ but flawed reasoning. See `cuda-prototype.md`. The next step delivers
 provider acceptance/provenance and the frozen direct/CoT/voting pilot.
 Portable E6 delivery and real-model numerical equivalence remain outstanding;
 training is separate. Core copying optimization remains deferred.
+
+Step 014 execution preparation: real-model MLPL/CUDA numerical comparison,
+real tokenizer goldens, seeded native decoding and tie-abstaining vote tests
+pass; the complete 12-call authored smoke runs successfully. Execution and
+prompt hashes are frozen before any selected generation. Next: execute the
+144-call pilot under its existing two-hour cap, then publish complete or
+explicitly incomplete accounting. Sibling provider publication is awaiting
+user authorization; the pinned local backend is usable independently.

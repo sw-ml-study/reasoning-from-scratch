@@ -98,3 +98,35 @@ Measure paired gains and failure categories; do not tune on that held-out
 selection. Training needs separate native loss/backward/update/save/reload
 acceptance. Correct answers, valid explanations, and improved aggregate
 accuracy are three different claims.
+
+## Real-model acceptance and execution freeze, 2026-09-30
+
+Step 014 validates the full 151,936-logit vector for the non-evaluation prompt
+“The capital of France is” against independent MLPL F64 execution. The
+reference streams one layer at a time and completes in 134.922 seconds.
+CUDA F32 maximum absolute difference is 0.00000711613 (RMS 0.00000145842);
+BF16 maximum is 0.367154 (RMS 0.0902633). Cached BF16 differs from full BF16
+by at most 0.3125. Every variant chooses token 12095, “Paris.” This is one
+short real-model numerical check, not a guarantee of identical long traces.
+Run `just cuda-real-parity` with the documented interpreter override.
+
+Tokenizer acceptance also passes six fixture cases, eight real cases and NFC.
+An authored 12-call runner smoke completed in 73.466 seconds. Its deliberate
+64-token cap truncates the outputs; those are integration checks, not model
+accuracy measurements. A separate 64-token nucleus-sampling smoke took 7.188
+seconds, about 9 tokens/second. Greedy throughput must not be substituted for
+sampling throughput when estimating the pilot's cost.
+
+Provider 0.2.0 lives at `/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2`.
+Its SDK dependency is pinned by Git revision and no longer machine-specific;
+model-file canonical paths must remain within the supplied root. Source is
+also archived at `/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2-source.tar.gz`.
+Publication into the read-only extension sibling awaits explicit authorization.
+This does not block local inference using the pinned artifact.
+
+The execution record is `docs/results/book-cuda-v1-execution.json`; its source,
+artifact and prompt hashes are committed before selected inference. Run
+`just book-cuda`; the runner refuses to overwrite an existing attempt log.
+The frozen two-hour cap remains unchanged, and may yield an incomplete pilot.
+All raw downloaded questions, requests, token IDs and responses stay under
+ignored `data/` and `out/`. Numeric results will be published after the run.

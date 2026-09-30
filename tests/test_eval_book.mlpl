@@ -1,0 +1,29 @@
+# Frozen book-pilot vote accounting; references never break ties or select candidates.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/eval/book.mlpl";
+
+@test {name: "book voting abstains on ties even when reference matches", tags: ["eval", "book"]}
+def u:test_eval_book_tie() {
+  "A reference answer cannot resolve a tied plurality.";
+  result = u:eval_book_vote({keys: "2\n3", counts: [1, 1]}, "2");
+  u:assert_eq(result.correct, 0, "tie is not correct")?;
+  u:assert_eq(result.abstention, 1, "tie abstains")?;
+  u:assert_eq(result.eligible, 2, "both candidates counted")
+}
+
+@test {name: "book voting handles unique winners and empty eligibility", tags: ["eval", "book"]}
+def u:test_eval_book_winner() {
+  "A unique plurality wins without a majority, while no eligible answers abstains.";
+  result = u:eval_book_vote({keys: "2\n3\n4", counts: [2, 1, 1]}, "2");
+  u:assert_eq(result.correct, 1, "plurality correct")?;
+  result = u:eval_book_vote({keys: "", counts: []}, "2");
+  u:assert_eq(result.abstention, 1, "empty abstains")
+}
+
+u:run_registered_tests()

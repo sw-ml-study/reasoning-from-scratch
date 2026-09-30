@@ -1,0 +1,33 @@
+# Non-evaluation precision check: compare full GPU vocabulary against independent MLPL logits.
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+request = {root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 8, dtype: "f32", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"}
+h = _qwen3_cuda:open(request)
+f32 = _qwen3_cuda:forward({handle: h,ids: [785,6722,315,9625,374]})
+write_text("out/cuda-real-f32-logits.json",to_json(f32)?)?
+_qwen3_cuda:close({handle: h})
+request = {root: request.root, context: 8, dtype: "bf16", config_sha256: request.config_sha256, weights_sha256: request.weights_sha256}
+h = _qwen3_cuda:open(request)
+bf16 = _qwen3_cuda:forward({handle: h,ids: [785,6722,315,9625,374]})
+write_text("out/cuda-real-bf16-logits.json",to_json(bf16)?)?
+_qwen3_cuda:reset({handle: h})
+_qwen3_cuda:forward({handle: h,ids: [785,6722,315,9625]})
+cached = _qwen3_cuda:forward({handle: h,ids: [374]})
+print("BF16 cached max difference:",reduce(:max,abs(cached-bf16)),"argmax:",argmax(cached))
+_qwen3_cuda:close({handle: h})
+reference = parse_json(read_text("out/cuda-real-reference-logits.json")?)?
+print("F32 max difference:",reduce(:max,abs(f32-reference)),"rms:",sqrt(reduce_add((f32-reference)*(f32-reference))/tally(f32)),"argmax:",argmax(f32))
+print("BF16 max difference:",reduce(:max,abs(bf16-reference)),"rms:",sqrt(reduce_add((bf16-reference)*(bf16-reference))/tally(bf16)),"argmax:",argmax(bf16))
+print("reference argmax:",argmax(reference))
+if gt(reduce(:max, abs(f32 - reference)), 0.005) {
+  err("F32 reference mismatch")?
+}
+if gt(reduce(:max, abs(bf16 - reference)), 0.5) {
+  err("BF16 reference mismatch")?
+}
+if gt(reduce(:max, abs(cached - bf16)), 0.5) {
+  err("BF16 cache mismatch")?
+}
+if (1 - eq(argmax(f32), argmax(reference))) + (1 - eq(argmax(bf16), argmax(reference))) + (1 - eq(argmax(cached), argmax(reference))) {
+  err("next-token mismatch")?
+}
+print("PASS real-model precision and greedy-token checks")

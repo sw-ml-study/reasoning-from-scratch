@@ -1,6 +1,6 @@
 number = 14
 slug = "book-cuda-pilot"
-status = "pending"
+status = "in-progress"
 description = "Use the working local MLPL/Rust/CUDA prototype documented in docs/cuda-protot..."
 role = "production"
 context_files = []

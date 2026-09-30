@@ -1,0 +1,29 @@
+# Independent real-checkpoint MLPL reference, streamed one layer at a time for validation only.
+include "vendor/swml/lib/safetensors-header/header.mlpl";
+include "lib/text/text.mlpl";
+include "lib/eval/data.mlpl";
+include "lib/qwen3/qwen3.mlpl";
+include "lib/safetensors/names.mlpl";
+include "lib/safetensors/plan.mlpl";
+include "lib/safetensors/load.mlpl";
+include "lib/smoke/smoke.mlpl";
+def u:cuda_reference_layer(h, c, i) {
+  "Read just one layer as temporary fields, avoiding a resident full-model closure.";
+  {wq: u:st_read_projection(h,c,i,"wq","BF16")?, wk: u:st_read_projection(h,c,i,"wk","BF16")?, wv: u:st_read_projection(h,c,i,"wv","BF16")?, wo: u:st_read_projection(h,c,i,"wo","BF16")?, qn: u:st_read_projection(h,c,i,"qn","BF16")?, kn: u:st_read_projection(h,c,i,"kn","BF16")?, n1: u:st_read_projection(h,c,i,"n1","BF16")?, n2: u:st_read_projection(h,c,i,"n2","BF16")?, gate: u:st_read_projection(h,c,i,"gate","BF16")?, up: u:st_read_projection(h,c,i,"up","BF16")?, down: u:st_read_projection(h,c,i,"down","BF16")?}
+}
+config = u:smoke_config(parse_json(read_text("models/qwen3-0.6b-base/config.json")?)?, 8)?
+h = u:st_open("models/qwen3-0.6b-base/model.safetensors", {})?
+ids = [785, 6722, 315, 9625, 374]
+started = clock_ms()
+x = gather_rows(u:st_read_tensor(h, u:st_embedding_name(), [config.vocab, config.emb], "BF16")?, ids)
+tables = u:qwen_rope_tables(config.head_dim, config.rope_base, config.context)
+i = 0
+while lt(i, config.layers) {
+  x = u:qwen_block(config, u:cuda_reference_layer(h,config,i), tables, x, 0);
+  print("layer:", i, "elapsed_ms:", clock_ms() - started);
+  i = i + 1
+}
+x = u:qwen_rms_norm(x, u:st_read_tensor(h, u:st_final_norm_name(), [config.emb], "BF16")?, config.eps)
+logits = flatten(matmul(reshape(last_row(x), [1, config.emb]), transpose(u:st_read_tensor(h, u:st_embedding_name(), [config.vocab, config.emb], "BF16")?)))
+write_text("out/cuda-real-reference-logits.json", to_json(logits)?)?
+print("PASS real MLPL forward; argmax:", argmax(logits), "elapsed_ms:", clock_ms() - started)

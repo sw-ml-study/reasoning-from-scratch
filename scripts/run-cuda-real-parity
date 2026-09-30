@@ -1,0 +1,16 @@
+#!/bin/sh
+# Slow opt-in independent real-model reference; no held-out questions used.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+QWEN_CUDA_LIBRARY=${QWEN_CUDA_LIBRARY:-/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v2/native/libmlpl_qwen3_cuda_prototype.so}
+REPO_ROOT=$repo
+LD_LIBRARY_PATH=/opt/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export QWEN_CUDA_LIBRARY REPO_ROOT LD_LIBRARY_PATH
+mkdir -p out
+timeout 600 scripts/run-mlpl-demo demos/cuda_real_reference.mlpl > out/cuda-real-reference.log 2>&1
+grep '^PASS real MLPL forward' out/cuda-real-reference.log
+timeout 60 scripts/run-mlpl-demo demos/cuda_real_precision.mlpl > out/cuda-real-precision.log 2>&1
+cat out/cuda-real-precision.log
+if grep -E '^ *error:|Err\(' out/cuda-real-precision.log >/dev/null; then exit 1; fi
+grep '^PASS real-model precision' out/cuda-real-precision.log >/dev/null

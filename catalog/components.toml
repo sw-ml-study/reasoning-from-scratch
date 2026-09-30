@@ -330,3 +330,12 @@ source = "lib/cuda/cuda.mlpl"
 test = "tests/test_cuda.mlpl"
 documentation = "docs/cuda-prototype.md"
 status = "accepted"
+
+[[component]]
+id = "BOOKVOTE"
+slug = "frozen-book-vote-accounting"
+chapter = 4
+source = "lib/eval/book.mlpl"
+test = "tests/test_eval_book.mlpl"
+documentation = "docs/book-reproduction-protocol.md"
+status = "accepted"

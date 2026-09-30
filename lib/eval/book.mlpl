@@ -1,0 +1,10 @@
+# Frozen book-pilot reporting helpers. Requires scaling/consistency.mlpl and verify/grade.mlpl. Candidate collection is reference-free; references enter only final grading.
+
+def u:eval_book_vote(state, reference) {
+  "Grade a unique normalized-answer plurality; ties and no eligible responses abstain regardless of the reference.";
+  report = u:scaling_vote_report(state, 0);
+  abstention = report.tied + eq(tally(state.counts), 0);
+  {correct: if abstention {
+      0
+    } else { u:verify_grade(report.answer, reference) }, abstention: abstention, eligible: reduce_add(state.counts), votes: report.votes}
+}
