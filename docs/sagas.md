@@ -290,3 +290,12 @@ or an explicitly budget-limited result; resident-copy profiling moves to021.
 The live store is `out/book-full500-v1-store`; never run reconciliation during
 an active session. Controller logs and a boundary-stop file live under
 `out/book-full500-control`. Native language-model training remains separate.
+
+First bounded session: 38/2500 successful calls, 16924 tokens, three caps,
+zero errors/interruptions, 930.392s elapsed. Public progress-01 summary/method
+records preserve partial denominators and withhold full paired comparisons.
+Continuation runs in managed process session87318, controller PID606988 at
+launch, with logs in out/book-full500-control/controller.log. Verify liveness
+before resuming; terminal-shell backgrounding alone is not a persistence
+promise. Step020 must collect the full/budget-limited result. No completed
+full500 accuracy or Python speed ratio is claimed.

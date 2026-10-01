@@ -678,7 +678,35 @@ a toy-kernel result, not a Qwen speedup or a Python comparison. Model graph
 capture needs stable cache addresses and shapes, followed by numerical and
 seeded-token parity and repeated end-to-end measurements.
 
+** First full500 execution snapshot
+
+The [[file:book-full500-progress.md][first bounded session]] completes 38 of 2500 calls in 930.4 seconds,
+producing 16924 tokens with zero backend errors or interruptions. Three outputs
+reach the 2048-token cap. Continuation is running; the remaining calls are
+pending. The frozen MLPL runner publishes [[file:results/book-full500-v1-progress-01.json][numeric accounting]] and
+[[file:results/book-full500-v1-progress-01-methods.jsonl][method records]] without redistributing questions or generated text.
+
+| Method | Cases with all required responses | Correct recorded | Planned cases |
+|--------+-----------------------------------+------------------+---------------|
+| Direct | 7 | 2 | 500 |
+| Greedy chain of thought | 8 | 3 | 500 |
+| Three-sample vote | 7 | 5 | 500 |
+
+This is incomplete accounting, not full-set accuracy. Unfinished cases remain
+pending, and full-set paired comparisons are withheld. The small ordered prefix
+cannot establish the full-dataset benefit of reasoning.
+
+The session includes 6.3 seconds loading, 5.2 seconds in prefill steps and
+912.7 seconds in decode steps; both step times include native selection.
+Throughput including overhead is 18.2 tokens/second. Sampled peaks are
+2403 MiB of device memory and 1782728 KiB host memory. These host wall spans
+include CUDA launch/transfer waits; they are not kernel utilization. CPU
+fixture checks ran during part of this session. This is operational timing,
+not a controlled Python comparison. The full experiment retains its 48-hour
+budget and will report all denominators if it ends incomplete.
+
 * Current scope and next experiments
+
 
 
 | Current scope | Next deliverable | Acceptance evidence |

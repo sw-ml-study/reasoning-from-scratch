@@ -82,13 +82,17 @@ details[open] summary { margin-bottom:1.5rem; }
 <li><a href="#org4180c98">9.2. Execute and check a real parameter update</a></li>
 </ul>
 </li>
-<li><a href="#orgb33cf44">10. Scaling the book experiment to 500 cases</a></li>
-<li><a href="#org1566902">11. Current scope and next experiments</a></li>
-<li><a href="#org6165353">12. Reproduce and publish this document</a>
+<li><a href="#org1566902">10. Scaling the book experiment to 500 cases</a>
 <ul>
-<li><a href="#orgd5c0387">12.1. Identify the experimental inputs</a></li>
-<li><a href="#org91b8ed7">12.2. Refresh the calculations and build HTML</a></li>
-<li><a href="#orge0576d7">12.3. Run individual blocks in Emacs</a></li>
+<li><a href="#orgb33cf44">10.1. First full500 execution snapshot</a></li>
+</ul>
+</li>
+<li><a href="#orgd5c0387">11. Current scope and next experiments</a></li>
+<li><a href="#org67f5a36">12. Reproduce and publish this document</a>
+<ul>
+<li><a href="#org91b8ed7">12.1. Identify the experimental inputs</a></li>
+<li><a href="#orge0576d7">12.2. Refresh the calculations and build HTML</a></li>
+<li><a href="#org6165353">12.3. Run individual blocks in Emacs</a></li>
 </ul>
 </li>
 </ul>
@@ -1320,8 +1324,8 @@ before/after accuracy.
 </div>
 </div>
 </div>
-<div id="outline-container-orgb33cf44" class="outline-2">
-<h2 id="orgb33cf44"><span class="section-number-2">10.</span> Scaling the book experiment to 500 cases</h2>
+<div id="outline-container-org1566902" class="outline-2">
+<h2 id="org1566902"><span class="section-number-2">10.</span> Scaling the book experiment to 500 cases</h2>
 <div class="outline-text-2" id="text-10">
 <p>
 The <a href="book-full500-runner.md">MLPL runner</a> prepares all 500 author-ordered cases: 500 direct answers,
@@ -1364,9 +1368,82 @@ capture needs stable cache addresses and shapes, followed by numerical and
 seeded-token parity and repeated end-to-end measurements.
 </p>
 </div>
+<div id="outline-container-orgb33cf44" class="outline-3">
+<h3 id="orgb33cf44"><span class="section-number-3">10.1.</span> First full500 execution snapshot</h3>
+<div class="outline-text-3" id="text-10-1">
+<p>
+The <a href="book-full500-progress.md">first bounded session</a> completes 38 of 2500 calls in 930.4 seconds,
+producing 16924 tokens with zero backend errors or interruptions. Three outputs
+reach the 2048-token cap. Continuation is running; the remaining calls are
+pending. The frozen MLPL runner publishes <a href="results/book-full500-v1-progress-01.json">numeric accounting</a> and
+<a href="results/book-full500-v1-progress-01-methods.jsonl">method records</a> without redistributing questions or generated text.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Method</th>
+<th scope="col" class="org-right">Cases with all required responses</th>
+<th scope="col" class="org-right">Correct recorded</th>
+<th scope="col" class="org-right">Planned cases</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Direct</td>
+<td class="org-right">7</td>
+<td class="org-right">2</td>
+<td class="org-right">500</td>
+</tr>
+
+<tr>
+<td class="org-left">Greedy chain of thought</td>
+<td class="org-right">8</td>
+<td class="org-right">3</td>
+<td class="org-right">500</td>
+</tr>
+
+<tr>
+<td class="org-left">Three-sample vote</td>
+<td class="org-right">7</td>
+<td class="org-right">5</td>
+<td class="org-right">500</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+This is incomplete accounting, not full-set accuracy. Unfinished cases remain
+pending, and full-set paired comparisons are withheld. The small ordered prefix
+cannot establish the full-dataset benefit of reasoning.
+</p>
+
+<p>
+The session includes 6.3 seconds loading, 5.2 seconds in prefill steps and
+912.7 seconds in decode steps; both step times include native selection.
+Throughput including overhead is 18.2 tokens/second. Sampled peaks are
+2403 MiB of device memory and 1782728 KiB host memory. These host wall spans
+include CUDA launch/transfer waits; they are not kernel utilization. CPU
+fixture checks ran during part of this session. This is operational timing,
+not a controlled Python comparison. The full experiment retains its 48-hour
+budget and will report all denominators if it ends incomplete.
+</p>
 </div>
-<div id="outline-container-org1566902" class="outline-2">
-<h2 id="org1566902"><span class="section-number-2">11.</span> Current scope and next experiments</h2>
+</div>
+</div>
+<div id="outline-container-orgd5c0387" class="outline-2">
+<h2 id="orgd5c0387"><span class="section-number-2">11.</span> Current scope and next experiments</h2>
 <div class="outline-text-2" id="text-11">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1427,12 +1504,12 @@ mathematical errors.
 </p>
 </div>
 </div>
-<div id="outline-container-org6165353" class="outline-2">
-<h2 id="org6165353"><span class="section-number-2">12.</span> Reproduce and publish this document</h2>
+<div id="outline-container-org67f5a36" class="outline-2">
+<h2 id="org67f5a36"><span class="section-number-2">12.</span> Reproduce and publish this document</h2>
 <div class="outline-text-2" id="text-12">
 </div>
-<div id="outline-container-orgd5c0387" class="outline-3">
-<h3 id="orgd5c0387"><span class="section-number-3">12.1.</span> Identify the experimental inputs</h3>
+<div id="outline-container-org91b8ed7" class="outline-3">
+<h3 id="org91b8ed7"><span class="section-number-3">12.1.</span> Identify the experimental inputs</h3>
 <div class="outline-text-3" id="text-12-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1508,8 +1585,8 @@ directories. Publishing the report does not redistribute them.
 </p>
 </div>
 </div>
-<div id="outline-container-org91b8ed7" class="outline-3">
-<h3 id="org91b8ed7"><span class="section-number-3">12.2.</span> Refresh the calculations and build HTML</h3>
+<div id="outline-container-orge0576d7" class="outline-3">
+<h3 id="orge0576d7"><span class="section-number-3">12.2.</span> Refresh the calculations and build HTML</h3>
 <div class="outline-text-3" id="text-12-2">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
@@ -1537,8 +1614,8 @@ also includes the Org source, MLPL libraries and committed numeric evidence.
 </p>
 </div>
 </div>
-<div id="outline-container-orge0576d7" class="outline-3">
-<h3 id="orge0576d7"><span class="section-number-3">12.3.</span> Run individual blocks in Emacs</h3>
+<div id="outline-container-org6165353" class="outline-3">
+<h3 id="org6165353"><span class="section-number-3">12.3.</span> Run individual blocks in Emacs</h3>
 <div class="outline-text-3" id="text-12-3">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host, then evaluate this setup once.

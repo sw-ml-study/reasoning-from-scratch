@@ -138,11 +138,12 @@ the cumulative budget, and stops immediately on failed sessions, malformed
 summaries or zero new calls. It does not automatically retry a failed session.
 Fixture-only controller acceptance is part of `just check`.
 
-For a detached run from the repository root, with the documented `MLPL` set:
+Run in a persistent terminal or managed long-running process, from the repository
+root with the documented `MLPL` set:
 
 ```sh
 mkdir -p out/book-full500-control
-nohup scripts/continue-book-full500 > out/book-full500-control/controller.log 2>&1 < /dev/null &
+just book-full500-continue > out/book-full500-control/controller.log 2>&1
 ```
 
 The controller PID is recorded in `out/book-full500-control/pid`. Create

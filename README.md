@@ -39,6 +39,10 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+[Full500 is running](docs/book-full500-progress.md). The first session completes
+38/2500 calls and 16924 tokens in 15m30s, with zero backend errors and three
+token caps. Continuation is active; full-set accuracy remains pending.
+
 The [full500 runner](docs/book-full500-runner.md) is implemented and tested:
 500 cases, 1000 prompt hashes and 2500 request identities are prepared. Durable
 replay, interruption/error accounting and corruption rejection pass. A ten-call
