@@ -1,8 +1,9 @@
 number = 18
 slug = "cuda-attribution-full500-runner"
-status = "in-progress"
+status = "completed"
 description = "Continue performance dogfooding from docs/cuda-performance.md. Preserve prima..."
 role = "production"
 context_files = []
 created_at = "2026-09-30T17:43:26"
-commits = []
+completed_at = "2026-09-30T19:51:04"
+commits = ["cb09d9a996c58386460ec4e966500c3576fab74c"]
