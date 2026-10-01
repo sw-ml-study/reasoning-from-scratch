@@ -1,8 +1,9 @@
 number = 21
 slug = "full500-terminal-progress"
-status = "in-progress"
+status = "completed"
 description = "User requests a script they can run continuously in another terminal instead ..."
 role = "production"
 context_files = []
 created_at = "2026-10-01T09:23:17"
-commits = []
+completed_at = "2026-10-01T09:29:31"
+commits = ["22ef54c059c95b8ec612463cc3a131103a320d22"]
