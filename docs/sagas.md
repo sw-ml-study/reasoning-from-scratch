@@ -1,5 +1,11 @@
 # Saga queue
 
+Step 022 `verifier-overflow-recovery` adds finite/range guards, bounded Euclid,
+logarithmic powers, adversarial native tests and an explicit grading-v2 source
+amendment. Read-only prefix replay preserves 641 prior eligible grades; all
+1087 generated responses are retained. See [diagnosis](grading-overflow.md).
+Full500 results are now step 023; resident-copy profiling is step 024.
+
 Only one saga is active at a time. Later sagas are initialized after the
 preceding saga is completed and archived. Newly discovered work is inserted
 with Agentrail commands, never by editing append-only `.agentrail/` state.

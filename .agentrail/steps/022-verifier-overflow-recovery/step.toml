@@ -1,0 +1,8 @@
+number = 22
+slug = "verifier-overflow-recovery"
+status = "in-progress"
+description = "Fix and test the full500 numeric-grader overflow hang and related nonfinite/e..."
+role = "production"
+context_files = []
+created_at = "2026-10-01T14:55:51"
+commits = []

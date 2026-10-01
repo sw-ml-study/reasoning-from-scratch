@@ -995,16 +995,41 @@ def u:verify_exact_limit() {
   9007199254740992
 }
 
+def u:verify_finite(x) {
+  "True only for finite real values; infinity and NaN cannot provide numerical evidence.";
+  eq(x - x, 0)
+}
+
+def u:verify_integer_safe(x) {
+  "True for finite integers within the exact binary64 range.";
+  u:verify_finite(x) * eq(x, round(x)) * (1 - gt(abs(x), u:verify_exact_limit()))
+}
+
+def u:verify_invalid() {
+  "An unavailable arithmetic result that propagates through subsequent arithmetic.";
+  u:verify_float(0 / 0)
+}
+
 def u:verify_gcd(a, b) {
-  "Greatest common divisor of two magnitudes, by Euclid.";
-  x = abs(a);
-  y = abs(b);
-  while y {
-    t = mod(x, y);
-    x = y;
-    y = t
-  };
-  x
+  "Bounded Euclid on exact integers; zero signals unavailable operands or exhausted work.";
+  if u:verify_integer_safe(a) * u:verify_integer_safe(b) {
+    x = abs(a);
+    y = abs(b);
+    steps = 0;
+    while gt(y, 0) * lt(steps, 128) {
+      t = mod(x, y);
+      x = y;
+      y = t;
+      steps = steps + 1
+    };
+    if eq(y, 0) {
+      x
+    } else {
+      0
+    }
+  } else {
+    0
+  }
 }
 
 def u:verify_float(v) {
@@ -1028,7 +1053,7 @@ approximate.
 #+begin_src mlpl :tangle ../lib/verify/number.mlpl
 def u:verify_rational(n, d) {
   "An exact rational reduced to lowest terms with the sign in the numerator; degrades to floating point on a zero denominator or once a part exceeds the exact-integer limit.";
-  if d {
+  if u:verify_integer_safe(n) * u:verify_integer_safe(d) * (1 - eq(d, 0)) {
     sign = if lt(d, 0) {
       0 - 1
     } else {
@@ -1120,20 +1145,36 @@ def u:verify_sqrt(a) {
 }
 #+end_src
 
-Exponentiation is repeated multiplication for an exact base and an exact
+Exponentiation uses bounded squaring for an exact base and an exact
 integer exponent, which keeps =2**10= exact; anything else falls back to the
 floating builtin. A negative exponent inverts.
 
 #+begin_src mlpl :tangle ../lib/verify/number.mlpl
 def u:verify_pow_int(a, k) {
-  "Raise a value to a non-negative integer power by repeated multiplication.";
-  result = {num: 1, den: 1, exact: 1};
-  i = 0;
-  while i - k {
-    result = u:verify_mul(result, a);
-    i = i + 1
-  };
-  result
+  "Raise to a nonnegative exact integer power with at most 54 squaring steps; overflow stays unavailable.";
+  if u:verify_integer_safe(k) * (1 - lt(k, 0)) * u:verify_finite(u:verify_value(a)) {
+    result = {num: 1, den: 1, exact: 1};
+    base = a;
+    remaining = k;
+    valid = 1;
+    while gt(remaining, 0) * valid {
+      if mod(remaining, 2) {
+        result = u:verify_mul(result, base)
+      } else {
+        0
+      };
+      remaining = floor(remaining / 2);
+      if gt(remaining, 0) {
+        base = u:verify_mul(base, base)
+      } else {
+        0
+      };
+      valid = u:verify_finite(u:verify_value(result)) * u:verify_finite(u:verify_value(base))
+    };
+    if valid {
+      result
+    } else { u:verify_invalid() }
+  } else { u:verify_invalid() }
 }
 
 def u:verify_pow(a, b) {
@@ -1163,19 +1204,23 @@ comparison is numeric within a relative tolerance.
 #+begin_src mlpl :tangle ../lib/verify/number.mlpl
 def u:verify_equal_values(a, b) {
   "1 when two values are equal: cross-multiplied exactly when both are exact and within the integer limit, else within a relative tolerance of 1e-9.";
-  both_exact = a.exact * b.exact;
-  cross_small = lt(abs(a.num * b.den), u:verify_exact_limit()) * lt(abs(b.num * a.den), u:verify_exact_limit());
-  if both_exact * cross_small {
-    if a.num * b.den - b.num * a.den {
-      0
+  x = u:verify_value(a);
+  y = u:verify_value(b);
+  if u:verify_finite(x) * u:verify_finite(y) {
+    both_exact = a.exact * b.exact;
+    cross_small = lt(abs(a.num * b.den), u:verify_exact_limit()) * lt(abs(b.num * a.den), u:verify_exact_limit());
+    if both_exact * cross_small {
+      if a.num * b.den - b.num * a.den {
+        0
+      } else {
+        1
+      }
     } else {
-      1
+      scale = reduce(:max, [1, abs(x), abs(y)]);
+      lt(abs(x / scale - y / scale), 0.000000001) + eq(abs(x / scale - y / scale), 0.000000001)
     }
   } else {
-    x = u:verify_value(a);
-    y = u:verify_value(b);
-    scale = reduce(:max, [1, abs(x), abs(y)]);
-    1 - gt(abs(x - y), 0.000000001 * scale)
+    0
   }
 }
 #+end_src
@@ -1219,6 +1264,11 @@ def u:verify_fail(kind, message) {
 def u:verify_step(pos, value) {
   "A successful parse step: the value and the position just past it.";
   {ok: 1, pos: pos, value: value, kind: "", message: ""}
+}
+
+def u:verify_number_step(pos, value) {
+  "Reject nonfinite numeric subexpressions before a later operation can hide them.";
+  if u:verify_finite(u:verify_value(value)) { u:verify_step(pos, value) } else { u:verify_fail("range", "expression has no finite real value") }
 }
 
 def u:verify_skip(s, i) {
@@ -1286,7 +1336,7 @@ def u:verify_scan_number(s, i) {
     } else {
       0
     };
-    u:verify_step(pos, value)
+    if u:verify_finite(u:verify_value(value)) { u:verify_number_step(pos, value) } else { u:verify_fail("range", "number exceeds finite arithmetic range") }
   } else {
     u:verify_fail("syntax", "expected a number")
   }
@@ -1320,7 +1370,7 @@ def u:verify_parse_primary(s, i) {
       inner = u:verify_parse_expr(s, pos + 1);
       if inner.ok {
         after = u:verify_skip(s, inner.pos);
-        if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, inner.value) } else { u:verify_fail("syntax", "missing closing parenthesis") }
+        if str_eq(u:text_char_at(s, after), ")") { u:verify_number_step(after + 1, inner.value) } else { u:verify_fail("syntax", "missing closing parenthesis") }
       } else {
         inner
       }
@@ -1337,7 +1387,7 @@ def u:verify_parse_primary(s, i) {
               inner = u:verify_parse_expr(s, open + 1);
               if inner.ok {
                 after = u:verify_skip(s, inner.pos);
-                if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, u:verify_sqrt(inner.value)) } else { u:verify_fail("syntax", "missing closing parenthesis after sqrt") }
+                if str_eq(u:text_char_at(s, after), ")") { u:verify_number_step(after + 1, u:verify_sqrt(inner.value)) } else { u:verify_fail("syntax", "missing closing parenthesis after sqrt") }
               } else {
                 inner
               }
@@ -1346,9 +1396,9 @@ def u:verify_parse_primary(s, i) {
             }
           } else {
             if str_eq(name, "pi") {
-              u:verify_step(stop, u:verify_float(pi()))
+              u:verify_number_step(stop, u:verify_float(pi()))
             } else {
-              if str_eq(name, "e") { u:verify_step(stop, u:verify_float(e())) } else { u:verify_fail("symbolic", str_concat("free symbol: ", name)) }
+              if str_eq(name, "e") { u:verify_number_step(stop, u:verify_float(e())) } else { u:verify_fail("symbolic", str_concat("free symbol: ", name)) }
             }
           }
         } else {
@@ -1374,7 +1424,7 @@ def u:verify_parse_power(s, i) {
     pos = u:verify_skip(s, base.pos);
     if str_eq(u:text_char_at(s, pos), "*") * str_eq(u:text_char_at(s, pos + 1), "*") {
       exponent = u:verify_parse_unary(s, pos + 2);
-      if exponent.ok { u:verify_step(exponent.pos, u:verify_pow(base.value, exponent.value)) } else {
+      if exponent.ok { u:verify_number_step(exponent.pos, u:verify_pow(base.value, exponent.value)) } else {
         exponent
       }
     } else {
@@ -1391,7 +1441,7 @@ def u:verify_parse_unary(s, i) {
   c = u:text_char_at(s, pos);
   if str_eq(c, "-") {
     inner = u:verify_parse_unary(s, pos + 1);
-    if inner.ok { u:verify_step(inner.pos, u:verify_neg(inner.value)) } else {
+    if inner.ok { u:verify_number_step(inner.pos, u:verify_neg(inner.value)) } else {
       inner
     }
   } else {
@@ -1442,7 +1492,7 @@ def u:verify_parse_term(s, i) {
         running = 0
       }
     };
-    if failure.ok { u:verify_step(pos, value) } else {
+    if failure.ok { u:verify_number_step(pos, value) } else {
       failure
     }
   } else {
@@ -1474,7 +1524,7 @@ def u:verify_parse_expr(s, i) {
         running = 0
       }
     };
-    if failure.ok { u:verify_step(pos, value) } else {
+    if failure.ok { u:verify_number_step(pos, value) } else {
       failure
     }
   } else {
@@ -1502,7 +1552,11 @@ def u:verify_parse(text) {
         if rest - str_len(trimmed) {
           err({kind: "syntax", message: "trailing characters"})
         } else {
-          ok(parsed.value)
+          if u:verify_finite(u:verify_value(parsed.value)) {
+            ok(parsed.value)
+          } else {
+            err({kind: "range", message: "expression has no finite real value"})
+          }
         }
       } else {
         err({kind: parsed.kind, message: parsed.message})

@@ -15,6 +15,11 @@ def u:verify_step(pos, value) {
   {ok: 1, pos: pos, value: value, kind: "", message: ""}
 }
 
+def u:verify_number_step(pos, value) {
+  "Reject nonfinite numeric subexpressions before a later operation can hide them.";
+  if u:verify_finite(u:verify_value(value)) { u:verify_step(pos, value) } else { u:verify_fail("range", "expression has no finite real value") }
+}
+
 def u:verify_skip(s, i) {
   "Index of the first non-space character at or after i.";
   n = str_len(s);
@@ -72,7 +77,7 @@ def u:verify_scan_number(s, i) {
     } else {
       0
     };
-    u:verify_step(pos, value)
+    if u:verify_finite(u:verify_value(value)) { u:verify_number_step(pos, value) } else { u:verify_fail("range", "number exceeds finite arithmetic range") }
   } else {
     u:verify_fail("syntax", "expected a number")
   }
@@ -99,7 +104,7 @@ def u:verify_parse_primary(s, i) {
       inner = u:verify_parse_expr(s, pos + 1);
       if inner.ok {
         after = u:verify_skip(s, inner.pos);
-        if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, inner.value) } else { u:verify_fail("syntax", "missing closing parenthesis") }
+        if str_eq(u:text_char_at(s, after), ")") { u:verify_number_step(after + 1, inner.value) } else { u:verify_fail("syntax", "missing closing parenthesis") }
       } else {
         inner
       }
@@ -116,7 +121,7 @@ def u:verify_parse_primary(s, i) {
               inner = u:verify_parse_expr(s, open + 1);
               if inner.ok {
                 after = u:verify_skip(s, inner.pos);
-                if str_eq(u:text_char_at(s, after), ")") { u:verify_step(after + 1, u:verify_sqrt(inner.value)) } else { u:verify_fail("syntax", "missing closing parenthesis after sqrt") }
+                if str_eq(u:text_char_at(s, after), ")") { u:verify_number_step(after + 1, u:verify_sqrt(inner.value)) } else { u:verify_fail("syntax", "missing closing parenthesis after sqrt") }
               } else {
                 inner
               }
@@ -125,9 +130,9 @@ def u:verify_parse_primary(s, i) {
             }
           } else {
             if str_eq(name, "pi") {
-              u:verify_step(stop, u:verify_float(pi()))
+              u:verify_number_step(stop, u:verify_float(pi()))
             } else {
-              if str_eq(name, "e") { u:verify_step(stop, u:verify_float(e())) } else { u:verify_fail("symbolic", str_concat("free symbol: ", name)) }
+              if str_eq(name, "e") { u:verify_number_step(stop, u:verify_float(e())) } else { u:verify_fail("symbolic", str_concat("free symbol: ", name)) }
             }
           }
         } else {
@@ -145,7 +150,7 @@ def u:verify_parse_power(s, i) {
     pos = u:verify_skip(s, base.pos);
     if str_eq(u:text_char_at(s, pos), "*") * str_eq(u:text_char_at(s, pos + 1), "*") {
       exponent = u:verify_parse_unary(s, pos + 2);
-      if exponent.ok { u:verify_step(exponent.pos, u:verify_pow(base.value, exponent.value)) } else {
+      if exponent.ok { u:verify_number_step(exponent.pos, u:verify_pow(base.value, exponent.value)) } else {
         exponent
       }
     } else {
@@ -162,7 +167,7 @@ def u:verify_parse_unary(s, i) {
   c = u:text_char_at(s, pos);
   if str_eq(c, "-") {
     inner = u:verify_parse_unary(s, pos + 1);
-    if inner.ok { u:verify_step(inner.pos, u:verify_neg(inner.value)) } else {
+    if inner.ok { u:verify_number_step(inner.pos, u:verify_neg(inner.value)) } else {
       inner
     }
   } else {
@@ -207,7 +212,7 @@ def u:verify_parse_term(s, i) {
         running = 0
       }
     };
-    if failure.ok { u:verify_step(pos, value) } else {
+    if failure.ok { u:verify_number_step(pos, value) } else {
       failure
     }
   } else {
@@ -239,7 +244,7 @@ def u:verify_parse_expr(s, i) {
         running = 0
       }
     };
-    if failure.ok { u:verify_step(pos, value) } else {
+    if failure.ok { u:verify_number_step(pos, value) } else {
       failure
     }
   } else {
@@ -262,7 +267,11 @@ def u:verify_parse(text) {
         if rest - str_len(trimmed) {
           err({kind: "syntax", message: "trailing characters"})
         } else {
-          ok(parsed.value)
+          if u:verify_finite(u:verify_value(parsed.value)) {
+            ok(parsed.value)
+          } else {
+            err({kind: "range", message: "expression has no finite real value"})
+          }
         }
       } else {
         err({kind: parsed.kind, message: parsed.message})

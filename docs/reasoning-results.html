@@ -82,19 +82,21 @@ details[open] summary { margin-bottom:1.5rem; }
 <li><a href="#org4180c98">9.2. Execute and check a real parameter update</a></li>
 </ul>
 </li>
-<li><a href="#org91b8ed7">10. Scaling the book experiment to 500 cases</a>
+<li><a href="#org6165353">10. Scaling the book experiment to 500 cases</a>
 <ul>
-<li><a href="#orgb33cf44">10.1. First full500 execution snapshot</a></li>
-<li><a href="#org1566902">10.2. Live execution supervision</a></li>
-<li><a href="#orgd5c0387">10.3. Terminal progress and provisional reasoning benefit</a></li>
+<li><a href="#orgb33cf44">10.1. Numeric grading and unfinished reasoning</a></li>
+<li><a href="#org1566902">10.2. Execution protocol</a></li>
+<li><a href="#orgd5c0387">10.3. First full500 execution snapshot</a></li>
+<li><a href="#org91b8ed7">10.4. Live execution supervision</a></li>
+<li><a href="#orge0576d7">10.5. Terminal progress and provisional reasoning benefit</a></li>
 </ul>
 </li>
-<li><a href="#orge0576d7">11. Current scope and next experiments</a></li>
-<li><a href="#org3b83232">12. Reproduce and publish this document</a>
+<li><a href="#org67f5a36">11. Current scope and next experiments</a></li>
+<li><a href="#orgdf31732">12. Reproduce and publish this document</a>
 <ul>
-<li><a href="#org6165353">12.1. Identify the experimental inputs</a></li>
-<li><a href="#org67f5a36">12.2. Refresh the calculations and build HTML</a></li>
-<li><a href="#orgdfca9b1">12.3. Run individual blocks in Emacs</a></li>
+<li><a href="#orgdfca9b1">12.1. Identify the experimental inputs</a></li>
+<li><a href="#org3b83232">12.2. Refresh the calculations and build HTML</a></li>
+<li><a href="#org67a8f30">12.3. Run individual blocks in Emacs</a></li>
 </ul>
 </li>
 </ul>
@@ -1326,9 +1328,45 @@ before/after accuracy.
 </div>
 </div>
 </div>
-<div id="outline-container-org91b8ed7" class="outline-2">
-<h2 id="org91b8ed7"><span class="section-number-2">10.</span> Scaling the book experiment to 500 cases</h2>
+<div id="outline-container-org6165353" class="outline-2">
+<h2 id="org6165353"><span class="section-number-2">10.</span> Scaling the book experiment to 500 cases</h2>
 <div class="outline-text-2" id="text-10">
+</div>
+<div id="outline-container-orgb33cf44" class="outline-3">
+<h3 id="orgb33cf44"><span class="section-number-3">10.1.</span> Numeric grading and unfinished reasoning</h3>
+<div class="outline-text-3" id="text-10-1">
+<p>
+The book's chapter 3 implementation uses SymPy integers and symbolic
+simplification. Our MLPL evaluator uses bounded exact rationals and finite
+floating arithmetic: nonfinite literals and subexpressions return a range
+failure, integer powers use logarithmic work, and GCD has a finite work bound.
+This handles out-of-range responses safely but does not provide arbitrary-
+precision symbolic parity. See <a href="grading-overflow.md">the arithmetic contract and primary-source comparison</a>.
+</p>
+
+<p>
+One observed greedy response illustrates why a long explanation is not proof
+of reasoning quality. For the smallest positive multiple of 450 using only
+zeros and ones, the model emits a one followed by repeated zeros until the
+2048-token cap. Since 450 = 9 × 50, the answer must end in two zeros and contain
+a positive multiple of nine ones. The smallest valid answer is 11111111100;
+the generated digit sum of one proves its answer incorrect. A sampled response
+lists multiples until its cap instead. Neither continuation solves the task.
+</p>
+
+<p>
+At the 1087-call checkpoint, bounded grading scores 652 complete method groups.
+All 641 grades shared with the previous report agree. Correct counts are
+38/217 direct, 99/218 greedy CoT and 99/217 three-vote; these unequal, incomplete
+cohorts are provisional. Generation settings remain frozen; grading is recorded
+under an explicit versioned amendment. Repetition stopping and verified
+refinement are separate future comparisons, not changes to this experiment.
+</p>
+</div>
+</div>
+<div id="outline-container-org1566902" class="outline-3">
+<h3 id="org1566902"><span class="section-number-3">10.2.</span> Execution protocol</h3>
+<div class="outline-text-3" id="text-10-2">
 <p>
 The <a href="book-full500-runner.md">MLPL runner</a> prepares all 500 author-ordered cases: 500 direct answers,
 500 greedy chain-of-thought answers and 1500 sampled answers for three-vote
@@ -1370,9 +1408,10 @@ capture needs stable cache addresses and shapes, followed by numerical and
 seeded-token parity and repeated end-to-end measurements.
 </p>
 </div>
-<div id="outline-container-orgb33cf44" class="outline-3">
-<h3 id="orgb33cf44"><span class="section-number-3">10.1.</span> First full500 execution snapshot</h3>
-<div class="outline-text-3" id="text-10-1">
+</div>
+<div id="outline-container-orgd5c0387" class="outline-3">
+<h3 id="orgd5c0387"><span class="section-number-3">10.3.</span> First full500 execution snapshot</h3>
+<div class="outline-text-3" id="text-10-3">
 <p>
 The <a href="book-full500-progress.md">first bounded session</a> completes 38 of 2500 calls in 930.4 seconds,
 producing 16924 tokens with zero backend errors or interruptions. Three outputs
@@ -1443,9 +1482,9 @@ budget and will report all denominators if it ends incomplete.
 </p>
 </div>
 </div>
-<div id="outline-container-org1566902" class="outline-3">
-<h3 id="org1566902"><span class="section-number-3">10.2.</span> Live execution supervision</h3>
-<div class="outline-text-3" id="text-10-2">
+<div id="outline-container-org91b8ed7" class="outline-3">
+<h3 id="org91b8ed7"><span class="section-number-3">10.4.</span> Live execution supervision</h3>
+<div class="outline-text-3" id="text-10-4">
 <p>
 An independent <a href="book-full500-watchdog.md">watchdog</a> checks the immutable journal every minute without
 taking the writer lock. MLPL validates checksums, request identities and state
@@ -1472,9 +1511,9 @@ publishes local progress; it does not schedule future chat notifications.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd5c0387" class="outline-3">
-<h3 id="orgd5c0387"><span class="section-number-3">10.3.</span> Terminal progress and provisional reasoning benefit</h3>
-<div class="outline-text-3" id="text-10-3">
+<div id="outline-container-orge0576d7" class="outline-3">
+<h3 id="orge0576d7"><span class="section-number-3">10.5.</span> Terminal progress and provisional reasoning benefit</h3>
+<div class="outline-text-3" id="text-10-5">
 <p>
 Run <code>just book-full500-status</code> in another terminal for an immediate report and
 updates every ten minutes. Supply <code>60</code> for minute updates or <code>--once</code> for one
@@ -1504,8 +1543,8 @@ reasoning step, and do not trigger score-based early stopping.
 </div>
 </div>
 </div>
-<div id="outline-container-orge0576d7" class="outline-2">
-<h2 id="orge0576d7"><span class="section-number-2">11.</span> Current scope and next experiments</h2>
+<div id="outline-container-org67f5a36" class="outline-2">
+<h2 id="org67f5a36"><span class="section-number-2">11.</span> Current scope and next experiments</h2>
 <div class="outline-text-2" id="text-11">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1566,12 +1605,12 @@ mathematical errors.
 </p>
 </div>
 </div>
-<div id="outline-container-org3b83232" class="outline-2">
-<h2 id="org3b83232"><span class="section-number-2">12.</span> Reproduce and publish this document</h2>
+<div id="outline-container-orgdf31732" class="outline-2">
+<h2 id="orgdf31732"><span class="section-number-2">12.</span> Reproduce and publish this document</h2>
 <div class="outline-text-2" id="text-12">
 </div>
-<div id="outline-container-org6165353" class="outline-3">
-<h3 id="org6165353"><span class="section-number-3">12.1.</span> Identify the experimental inputs</h3>
+<div id="outline-container-orgdfca9b1" class="outline-3">
+<h3 id="orgdfca9b1"><span class="section-number-3">12.1.</span> Identify the experimental inputs</h3>
 <div class="outline-text-3" id="text-12-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1647,8 +1686,8 @@ directories. Publishing the report does not redistribute them.
 </p>
 </div>
 </div>
-<div id="outline-container-org67f5a36" class="outline-3">
-<h3 id="org67f5a36"><span class="section-number-3">12.2.</span> Refresh the calculations and build HTML</h3>
+<div id="outline-container-org3b83232" class="outline-3">
+<h3 id="org3b83232"><span class="section-number-3">12.2.</span> Refresh the calculations and build HTML</h3>
 <div class="outline-text-3" id="text-12-2">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
@@ -1676,8 +1715,8 @@ also includes the Org source, MLPL libraries and committed numeric evidence.
 </p>
 </div>
 </div>
-<div id="outline-container-orgdfca9b1" class="outline-3">
-<h3 id="orgdfca9b1"><span class="section-number-3">12.3.</span> Run individual blocks in Emacs</h3>
+<div id="outline-container-org67a8f30" class="outline-3">
+<h3 id="org67a8f30"><span class="section-number-3">12.3.</span> Run individual blocks in Emacs</h3>
 <div class="outline-text-3" id="text-12-3">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host, then evaluate this setup once.

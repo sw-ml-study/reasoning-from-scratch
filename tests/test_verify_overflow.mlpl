@@ -1,0 +1,60 @@
+# Authored adversarial numeric fixtures: nonfinite values, huge integers and unbounded-looking exponents must terminate without false matches.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/verify/linear.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/eval/author.mlpl";
+
+@test {name: "nonfinite inputs cannot enter gcd or compare equal", tags: ["verify", "overflow"]}
+def u:test_verify_nonfinite() {
+  "Infinity and NaN are unavailable numerical evidence, not matches or Euclidean-loop operands.";
+  inf = 1e308 * 1e308;
+  nan = inf - inf;
+  u:assert_eq(u:verify_finite(inf), 0, "infinity rejected")?;
+  u:assert_eq(u:verify_finite(nan), 0, "NaN rejected")?;
+  u:assert_eq(u:verify_finite(123), 1, "finite accepted")?;
+  u:assert_eq(u:verify_gcd(inf, 1), 0, "invalid gcd sentinel")?;
+  u:assert_eq(u:verify_gcd(1, nan), 0, "NaN gcd sentinel")?;
+  u:assert_eq(u:verify_rational(inf, 1).exact, 0, "nonfinite is never exact")?;
+  u:assert_eq(u:verify_equal_values(u:verify_float(inf), u:verify_float(7)), 0, "infinity versus finite")?;
+  u:assert_eq(u:verify_equal_values(u:verify_float(nan), u:verify_float(nan)), 0, "NaNs cannot match")?;
+  u:assert_eq(u:verify_equal_values(u:verify_float(inf), u:verify_float(inf)), 0, "infinities are not finite answers")
+}
+
+@test {name: "huge literals and scientific exponents are classified safely", tags: ["verify", "overflow"]}
+def u:test_verify_large_literals() {
+  "Long digit runs fit the character budget but must not hang or match ordinary answers.";
+  digits = "1";
+  i = 0;
+  while lt(i, 1843) {
+    digits = str_concat(digits, "0");
+    i = i + 1
+  };
+  u:assert_err(u:verify_parse(digits), "overflow classified")?;
+  u:assert_eq(u:eval_author_grade(digits, "2"), 0, "oversized integer is not two")?;
+  u:assert_err(u:verify_parse("1e999999999999999999999999"), "huge scientific exponent")?;
+  u:assert_err(u:verify_parse("1e-999999999999999999999999"), "huge negative exponent unavailable")?;
+  u:assert_eq(u:eval_author_grade("1e999", "2e999"), 0, "different overflow values never match")?;
+  u:assert_eq(u:verify_equivalent("1/0", "7"), 0, "division by zero")?;
+  u:assert_err(u:verify_parse("(1/0)**0"), "invalid intermediate cannot be erased by power zero")?;
+  u:assert_err(u:verify_parse("(1e300*1e300)**0"), "overflow intermediate cannot become one")?;
+  u:assert_err(u:verify_parse("sqrt(-1)"), "invalid real root")
+}
+
+@test {name: "integer powers terminate for huge or invalid exponents", tags: ["verify", "overflow"]}
+def u:test_verify_bounded_powers() {
+  "Exponentiation has bounded work and retains normal exact and negative-power semantics.";
+  u:assert_eq(u:verify_value(u:verify_pow_int(u:verify_rational(1, 1), 1000000000000)), 1, "large exponent constant base")?;
+  u:assert_eq(u:verify_value(u:verify_pow(u:verify_rational(2, 1), u:verify_rational(0 - 10, 1))), 0.0009765625, "negative exponent")?;
+  u:assert_eq(u:verify_finite(u:verify_value(u:verify_pow_int(u:verify_rational(2, 1), 0 - 1))), 0, "invalid negative helper exponent")?;
+  u:assert_eq(u:verify_finite(u:verify_value(u:verify_pow_int(u:verify_rational(2, 1), 1.5))), 0, "fractional helper exponent")?;
+  u:assert_err(u:verify_parse("2**1000000000000"), "overflow power classified")?;
+  u:assert_err(u:verify_parse("2**-1000000000000"), "underflow path unavailable instead of false zero")
+}
+
+u:run_registered_tests()

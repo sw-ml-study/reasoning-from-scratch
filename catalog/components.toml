@@ -43,6 +43,7 @@ status = "accepted"
 
 [[component]]
 id = "VNUM"
+# Overflow safety acceptance also runs tests/test_verify_overflow.mlpl.
 slug = "exact-rational-arithmetic"
 chapter = 3
 source = "lib/verify/number.mlpl"

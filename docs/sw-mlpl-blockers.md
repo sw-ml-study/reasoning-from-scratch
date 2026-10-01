@@ -1,5 +1,14 @@
 # sw-MLPL capability ledger
 
+## Numeric grading range safety (2026-10-01)
+
+**Supported in MLPL:** finite checks, bounded GCD and logarithmic integer powers
+fix the application grader's overflow hang; no interpreter change is required.
+`tests/test_verify_overflow.mlpl` covers adversarial arithmetic. **Awkward:**
+binary64 exact-rational limits fall short of SymPy arbitrary precision.
+Future generic big-integer/rational offload belongs in an extension work order,
+not a bespoke model kernel or a sibling edit. See [evidence and prevention](grading-overflow.md).
+
 ## Current book reproduction result, 2026-09-30
 
 **Resident native inference and the first-ten experiment: supported and

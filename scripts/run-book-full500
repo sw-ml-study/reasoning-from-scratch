@@ -12,7 +12,15 @@ case "$mode" in
     BOOK_PREPARED=out/book-full500-prepared; BOOK_EXPECT_RUN_ID=book-full500-v1
     git ls-files --error-unmatch docs/results/book-full500-v1-execution.json >/dev/null
     git diff --quiet HEAD -- docs/results/book-full500-v1-execution.json docs/results/book-full500-v1-execution.sha256 docs/results/book-full500-v1-prompt-hashes.sha256 docs/results/book-full500-v1-plan.jsonl
-    sha256sum -c docs/results/book-full500-v1-execution.sha256
+    case "${BOOK_GRADER_VERSION:-v1}" in
+      v1) sha256sum -c docs/results/book-full500-v1-execution.sha256 ;;
+      bounded-v2)
+        git ls-files --error-unmatch docs/results/book-full500-v1-grading-v2.sha256 scripts/check-grading-amendment >/dev/null
+        git diff --quiet HEAD -- docs/results/book-full500-v1-grading-v2.sha256 scripts/check-grading-amendment
+        scripts/check-grading-amendment
+        ;;
+      *) echo 'unknown grading revision' >&2; exit 2 ;;
+    esac
     sha256sum -c docs/results/book-full500-v1-prompt-hashes.sha256
     [ "$mode" != --reconcile ] || BOOK_MAX_CALLS=0
     ;;
@@ -41,7 +49,10 @@ QWEN_BLOCKING_SYNC=0
 QWEN_SINGLE_STREAM=0
 export BOOK_PREPARED BOOK_EXPECT_RUN_ID BOOK_STORE_ROOT BOOK_WALL_MS BOOK_MAX_CALLS BOOK_SESSION BOOK_UNIX_MS BOOK_FIXTURE_CRASH BOOK_FIXTURE_ERROR STORE_LIBRARY QWEN_CUDA_LIBRARY EXTENSION_LIBRARY REPO_ROOT LD_LIBRARY_PATH QWEN_BLOCKING_SYNC QWEN_SINGLE_STREAM
 log=$BOOK_PREPARED/session-$BOOK_SESSION.log
-printf 'source_commit=%s session=%s\n' "$(git rev-parse HEAD)" "$BOOK_SESSION"
+printf 'source_commit=%s session=%s grader=%s\n' "$(git rev-parse HEAD)" "$BOOK_SESSION" "${BOOK_GRADER_VERSION:-v1}"
+if [ "${BOOK_GRADER_VERSION:-v1}" = bounded-v2 ]; then
+  sha256sum docs/results/book-full500-v1-execution.sha256 docs/results/book-full500-v1-grading-v2.sha256 > "$BOOK_PREPARED/grading-$BOOK_SESSION.sha256"
+fi
 scripts/run-mlpl-demo demos/book_full500.mlpl > "$log" 2>&1 &
 child=$!
 trap 'kill -TERM "$child" 2>/dev/null || true; exit 130' HUP INT TERM

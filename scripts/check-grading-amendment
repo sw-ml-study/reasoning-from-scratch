@@ -1,0 +1,18 @@
+#!/bin/sh
+# Only the numeric grader and its launch/validation plumbing may change.
+set -eu
+old=${1:-docs/results/book-full500-v1-execution.sha256}
+new=${2:-docs/results/book-full500-v1-grading-v2.sha256}
+awk '
+NR==FNR { if (seen[$2]++) exit 1; original[$2]=$1; next }
+{
+  if (updated[$2]++) exit 1
+  if ($2 in original) {
+    if ($1 != original[$2] && $2 != "lib/verify/number.mlpl" && $2 != "lib/verify/expr.mlpl" && $2 != "scripts/run-book-full500") exit 1
+  } else if ($2 != "scripts/check-grading-amendment") exit 1
+}
+END {
+  for (path in original) if (!(path in updated)) exit 1
+  if (!("scripts/check-grading-amendment" in updated)) exit 1
+}' "$old" "$new" || { echo 'grading amendment changes generation inputs or has incomplete/duplicate pins' >&2; exit 1; }
+sha256sum -c "$new"

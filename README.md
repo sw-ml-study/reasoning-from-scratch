@@ -39,6 +39,10 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+The numeric grader now rejects overflow/NaN safely and bounds integer-power
+work. Regrading the saved full500 prefix preserves all 641 previously reported
+eligible grades. [Diagnosis, book comparison and versioned recovery](docs/grading-overflow.md).
+
 Run `just book-full500-status` in another terminal for progress percentage,
 projected ETA and provisional reasoning results every ten minutes. Add `60`
 for minute updates or `--once` for one report. Ctrl-C stops only this viewer.

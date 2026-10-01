@@ -8,6 +8,11 @@ its divergences from the reference implementation are listed explicitly.
 
 ## Implementation map
 
+Numeric parsing reports `range` when a literal or subexpression is nonfinite.
+GCD accepts only bounded exact integers and has a 128-iteration limit; integer
+powers use at most 54 squaring steps. NaN/infinity cannot compare numerically
+equal. Literal equality is unchanged. See [overflow coverage and limitations](grading-overflow.md).
+
 | Stage | Module | Prefix |
 |---|---|---|
 | character scanning (classes, search, trim, replace, braces, numbers) | `lib/text/text.mlpl` | `u:text_` |

@@ -645,6 +645,32 @@ before/after accuracy.
 
 * Scaling the book experiment to 500 cases
 
+** Numeric grading and unfinished reasoning
+
+The book's chapter 3 implementation uses SymPy integers and symbolic
+simplification. Our MLPL evaluator uses bounded exact rationals and finite
+floating arithmetic: nonfinite literals and subexpressions return a range
+failure, integer powers use logarithmic work, and GCD has a finite work bound.
+This handles out-of-range responses safely but does not provide arbitrary-
+precision symbolic parity. See [[file:grading-overflow.md][the arithmetic contract and primary-source comparison]].
+
+One observed greedy response illustrates why a long explanation is not proof
+of reasoning quality. For the smallest positive multiple of 450 using only
+zeros and ones, the model emits a one followed by repeated zeros until the
+2048-token cap. Since 450 = 9 × 50, the answer must end in two zeros and contain
+a positive multiple of nine ones. The smallest valid answer is 11111111100;
+the generated digit sum of one proves its answer incorrect. A sampled response
+lists multiples until its cap instead. Neither continuation solves the task.
+
+At the 1087-call checkpoint, bounded grading scores 652 complete method groups.
+All 641 grades shared with the previous report agree. Correct counts are
+38/217 direct, 99/218 greedy CoT and 99/217 three-vote; these unequal, incomplete
+cohorts are provisional. Generation settings remain frozen; grading is recorded
+under an explicit versioned amendment. Repetition stopping and verified
+refinement are separate future comparisons, not changes to this experiment.
+
+** Execution protocol
+
 The [[file:book-full500-runner.md][MLPL runner]] prepares all 500 author-ordered cases: 500 direct answers,
 500 greedy chain-of-thought answers and 1500 sampled answers for three-vote
 selection. Its [[file:results/book-full500-v1-execution.json][execution manifest]], 1000 prompt hashes and 2500 request
