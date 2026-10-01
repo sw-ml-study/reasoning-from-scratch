@@ -1,0 +1,12 @@
+{"max_new":128,"native":0,"rep":0,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":13746.401505}
+{"max_new":128,"native":1,"rep":0,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":6144.56374}
+{"max_new":128,"native":1,"rep":1,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":5458.491380999996}
+{"max_new":128,"native":0,"rep":1,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":15497.006059000003}
+{"max_new":128,"native":0,"rep":2,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":14164.677971999998}
+{"max_new":128,"native":1,"rep":2,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":5886.962814999999}
+{"max_new":128,"native":1,"rep":3,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":6510.471531999996}
+{"max_new":128,"native":0,"rep":3,"seed":43,"stopped":"budget","temperature":0.9,"tokens":128,"wall_ms":13581.24844499999}
+{"max_new":128,"native":0,"rep":4,"seed":43,"stopped":"budget","temperature":0,"tokens":128,"wall_ms":5563.423505000013}
+{"max_new":128,"native":1,"rep":4,"seed":43,"stopped":"budget","temperature":0,"tokens":128,"wall_ms":4501.212818}
+{"max_new":128,"native":1,"rep":5,"seed":43,"stopped":"budget","temperature":0,"tokens":128,"wall_ms":5615.792344000001}
+{"max_new":128,"native":0,"rep":5,"seed":43,"stopped":"budget","temperature":0,"tokens":128,"wall_ms":5645.184653000004}

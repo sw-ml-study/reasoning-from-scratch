@@ -1,0 +1,71 @@
+# Matched reference/native decoding on one authored prompt, with alternating order and exact token equality. No benchmark questions are used.
+include "lib/scaling/scaling.mlpl";
+include "lib/cuda/cuda.mlpl";
+include "lib/cuda/offload.mlpl";
+
+def u:cuda_profile_forward(request) {
+  "Normalize SDK array success versus Result failure for the reference loop.";
+  value = _qwen3_cuda:forward(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+def u:cuda_profile_step(request) {
+  "Normalize SDK scalar success versus Result failure for the offloaded loop.";
+  value = _qwen3_cuda:step(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+tok = _hftok:load_path(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 2048, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+prompt = _hftok:encode(tok, "A water tank holds 120 liters, loses 35 liters, then gains 18 liters. Explain the calculations step by step and give the final answer in a box.")
+warm = _qwen3_cuda:forward({handle: h, ids: [785, 6722, 315, 9625, 374]})
+rep = 0
+while lt(rep, 6) {
+  mode = 0;
+  saved = [];
+  temperature = if lt(rep, 4) {
+    0.9
+  } else {
+    0
+  };
+  options = {max_new: 128, eos: 151643, seed: 43, temperature: temperature, top_p: 0.9, max_ms: 120000};
+  while lt(mode, 2) {
+    native = if eq(rep - 2 * floor(rep / 2), 0) {
+      mode
+    } else {
+      1 - mode
+    };
+    _qwen3_cuda:reset({handle: h});
+    start = clock_ms();
+    result = if native {
+      u:cuda_decode_native({step: :u:cuda_profile_step, handle: h}, prompt, options)?
+    } else {
+      u:cuda_decode({forward: :u:cuda_profile_forward, handle: h}, prompt, options)?
+    };
+    elapsed = clock_ms() - start;
+    if eq(mode, 0) {
+      saved = result.ids
+    } else {
+      if 1 - equal(saved, result.ids) {
+        err("matched token sequence differs")?
+      }
+    };
+    print(to_json({rep: rep, native: native, temperature: temperature, wall_ms: elapsed, tokens: tally(result.ids), stopped: result.stopped, seed: 43, max_new: 128})?);
+    mode = mode + 1
+  };
+  print("MATCH", rep);
+  rep = rep + 1
+}
+_qwen3_cuda:close({handle: h})
+_hftok:close(tok)
+print("PASS identical generated tokens with native selection")

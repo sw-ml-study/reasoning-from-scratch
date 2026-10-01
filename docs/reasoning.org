@@ -7563,3 +7563,326 @@ if summary.complete {
 }
 ok(1)
 #+end_src
+
+* Native selection and measured performance
+
+The native step implements the reference sampling contract using supplied
+MLPL uniforms and returns one token instead of a vocabulary vector. MLPL
+retains seed, EOS, budget and error handling. Fixture tests compare selected
+tokens to the independent MLPL sampler. The opt-in drivers measure forward,
+transfer and selection separately, then assert exact matched-generation
+parity. The [[file:cuda-performance.md][performance analysis]] records the scoped results and upstream
+optimization requests; none changes the frozen first-ten experiment.
+
+
+#+begin_src mlpl :tangle ../lib/cuda/offload.mlpl
+# Native forward-and-selection adapter. Requires scaling.mlpl. MLPL supplies the seeded uniforms, controls, input tokens and stopping rules; the native callback returns one token.
+
+def u:cuda_decode_native(provider, ids, options) {
+  "Decode through a parity-checked native step; preserve explicit MLPL random draws and stop accounting without transferring vocabulary arrays.";
+  u:scaling_seed(options.seed)?;
+  u:scaling_scalar(options.max_new, "max_new")?;
+  u:scaling_scalar(options.temperature, "temperature")?;
+  u:scaling_scalar(options.max_ms, "max_ms")?;
+  if eq(tally(ids), 0) + lt(options.max_new, 1) + (1 - eq(options.max_new, floor(options.max_new))) + lt(options.temperature, 0) + (1 - gt(options.max_ms, 0)) {
+    err({kind: "generation_bounds", message: "invalid prompt or generation budget"})
+  } else {
+    u:scaling_controls(1, options.top_p)?;
+    uniforms = u:scaling_uniforms(options.seed, options.max_new)?;
+    started = clock_ms();
+    inputs = ids;
+    generated = [];
+    running = 1;
+    reason = "budget";
+    while running {
+      if gt(clock_ms() - started, options.max_ms) {
+        reason = "deadline";
+        running = 0
+      } else {
+        id = call(provider.step, {handle: provider.handle, ids: inputs, temperature: options.temperature, top_p: options.top_p, uniform: at(uniforms, tally(generated))})?;
+        if eq(id, options.eos) {
+          reason = "eos";
+          running = 0
+        } else {
+          generated = concat(generated, id);
+          inputs = [id];
+          if eq(tally(generated), options.max_new) {
+            running = 0
+          }
+        }
+      }
+    };
+    ok({ids: generated, stopped: reason, elapsed_ms: clock_ms() - started})
+  }
+}
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/cuda_profile_stages.mlpl
+# Fixed-token resident decode; synchronized stages exclude answer quality.
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 2048, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+lengths = [32, 256, 1024]
+group = 0
+while lt(group, tally(lengths)) {
+  length = at(lengths, group);
+  _qwen3_cuda:reset({handle: h});
+  prefill = _qwen3_cuda:profile({handle: h, ids: ones([length]) * 785});
+  print(to_json({kind: "prefill", length: length, input_ms: prefill.input_ms, forward_ms: prefill.forward_ms, transfer_ms: prefill.transfer_ms})?);
+  i = 0;
+  while lt(i, 16) {
+    started = clock_ms();
+    result = _qwen3_cuda:profile({handle: h, ids: [785]});
+    outer_ms = clock_ms() - started;
+    print(to_json({kind: "decode", length: length, iteration: i, outer_ms: outer_ms, input_ms: result.input_ms, forward_ms: result.forward_ms, transfer_ms: result.transfer_ms, forward_cpu_ms: result.forward_cpu_ms, transfer_cpu_ms: result.transfer_cpu_ms, gpu_span_ms: result.gpu_span_ms, position: result.position})?);
+    i = i + 1
+  };
+  group = group + 1
+}
+_qwen3_cuda:reset({handle: h})
+logits = _qwen3_cuda:forward({handle: h, ids: [785, 6722, 315, 9625, 374]})
+write_text("out/cuda-profile-logits.json", to_json(logits)?)?
+_qwen3_cuda:close({handle: h})
+print("PASS fixed token CUDA profile")
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/cuda_profile_sampler.mlpl
+# Fixed-input timing of production selection primitives; no generated answers.
+include "lib/scaling/scaling.mlpl";
+logits = parse_json(read_text("out/cuda-profile-logits.json")?)?
+probs = u:scaling_temperature(logits, 0.9)?
+filtered = u:scaling_nucleus(probs, 0.9)?
+i = 0
+while lt(i, 12) {
+  start = clock_ms();
+  selected = argmax(logits);
+  greedy_ms = clock_ms() - start;
+  start = clock_ms();
+  probs = u:scaling_temperature(logits, 0.9)?;
+  temperature_ms = clock_ms() - start;
+  start = clock_ms();
+  filtered = u:scaling_nucleus(probs, 0.9)?;
+  nucleus_ms = clock_ms() - start;
+  start = clock_ms();
+  selected = u:scaling_pick(filtered, 0.5)?;
+  pick_ms = clock_ms() - start;
+  print(to_json({iteration: i, vocab: tally(logits), greedy_ms: greedy_ms, temperature_ms: temperature_ms, nucleus_ms: nucleus_ms, pick_ms: pick_ms, selected: selected})?);
+  i = i + 1
+}
+print("PASS sampler profile")
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/cuda_profile_primitives.mlpl
+# Isolate array primitives and the sampler's repeated validation passes.
+include "lib/scaling/scaling.mlpl";
+v = parse_json(read_text("out/cuda-profile-logits.json")?)?
+i = 0
+while lt(i, 8) {
+  t = clock_ms();
+  checked = u:scaling_vector(v, "scores")?;
+  validation_ms = clock_ms() - t;
+  t = clock_ms();
+  p = softmax(v);
+  softmax_ms = clock_ms() - t;
+  t = clock_ms();
+  p = u:scaling_normalize(p)?;
+  normalize_ms = clock_ms() - t;
+  t = clock_ms();
+  order = grade_down(p);
+  sort_ms = clock_ms() - t;
+  t = clock_ms();
+  sorted = u:scaling_gather(p, order);
+  gather_ms = clock_ms() - t;
+  t = clock_ms();
+  total = running_sum(p);
+  scan_ms = clock_ms() - t;
+  t = clock_ms();
+  inverse = grade_up(order);
+  inverse_sort_ms = clock_ms() - t;
+  print(to_json({iteration: i, validation_ms: validation_ms, softmax_ms: softmax_ms, normalize_ms: normalize_ms, sort_ms: sort_ms, gather_ms: gather_ms, scan_ms: scan_ms, inverse_sort_ms: inverse_sort_ms})?);
+  i = i + 1
+}
+print("PASS primitive profile")
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/cuda_profile_native_sample.mlpl
+# Compare native f64 selection to production MLPL on fixed vocabulary logits.
+include "lib/scaling/scaling.mlpl";
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+logits = parse_json(read_text("out/cuda-profile-logits.json")?)?
+expected = u:scaling_nucleus(u:scaling_temperature(logits, 0.9)?, 0.9)?
+actual = _qwen3_cuda:distribution({logits: logits, temperature: 0.9, top_p: 0.9})
+print("exact distribution parity:", equal(actual, expected), "max difference:", reduce(:max, abs(actual - expected)))
+if 1 - equal(actual, expected) {
+  err("distribution parity failure")?
+}
+i = 0
+while lt(i, 12) {
+  uniform = i / 12;
+  reference = u:scaling_pick(expected, uniform)?;
+  start = clock_ms();
+  selected = _qwen3_cuda:sample({logits: logits, temperature: 0.9, top_p: 0.9, uniform: uniform});
+  elapsed = clock_ms() - start;
+  if 1 - eq(reference, selected) {
+    err("selection parity failure")?
+  };
+  print(to_json({iteration: i, elapsed_ms: elapsed, selected: selected})?);
+  i = i + 1
+}
+print("PASS native fixed-logit parity and timing")
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/cuda_profile_matched.mlpl
+# Matched reference/native decoding on one authored prompt, with alternating order and exact token equality. No benchmark questions are used.
+include "lib/scaling/scaling.mlpl";
+include "lib/cuda/cuda.mlpl";
+include "lib/cuda/offload.mlpl";
+
+def u:cuda_profile_forward(request) {
+  "Normalize SDK array success versus Result failure for the reference loop.";
+  value = _qwen3_cuda:forward(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+def u:cuda_profile_step(request) {
+  "Normalize SDK scalar success versus Result failure for the offloaded loop.";
+  value = _qwen3_cuda:step(request);
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+namespace = load_extension(env("EXTENSION_LIBRARY")?)
+tok = _hftok:load_path(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 2048, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+prompt = _hftok:encode(tok, "A water tank holds 120 liters, loses 35 liters, then gains 18 liters. Explain the calculations step by step and give the final answer in a box.")
+warm = _qwen3_cuda:forward({handle: h, ids: [785, 6722, 315, 9625, 374]})
+rep = 0
+while lt(rep, 6) {
+  mode = 0;
+  saved = [];
+  temperature = if lt(rep, 4) {
+    0.9
+  } else {
+    0
+  };
+  options = {max_new: 128, eos: 151643, seed: 43, temperature: temperature, top_p: 0.9, max_ms: 120000};
+  while lt(mode, 2) {
+    native = if eq(rep - 2 * floor(rep / 2), 0) {
+      mode
+    } else {
+      1 - mode
+    };
+    _qwen3_cuda:reset({handle: h});
+    start = clock_ms();
+    result = if native {
+      u:cuda_decode_native({step: :u:cuda_profile_step, handle: h}, prompt, options)?
+    } else {
+      u:cuda_decode({forward: :u:cuda_profile_forward, handle: h}, prompt, options)?
+    };
+    elapsed = clock_ms() - start;
+    if eq(mode, 0) {
+      saved = result.ids
+    } else {
+      if 1 - equal(saved, result.ids) {
+        err("matched token sequence differs")?
+      }
+    };
+    print(to_json({rep: rep, native: native, temperature: temperature, wall_ms: elapsed, tokens: tally(result.ids), stopped: result.stopped, seed: 43, max_new: 128})?);
+    mode = mode + 1
+  };
+  print("MATCH", rep);
+  rep = rep + 1
+}
+_qwen3_cuda:close({handle: h})
+_hftok:close(tok)
+print("PASS identical generated tokens with native selection")
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/cuda_profile_report.mlpl
+# Offline MLPL analysis of fixed-input performance measurements; all inputs are public numeric records.
+include "lib/text/text.mlpl";
+
+def u:cuda_profile_column(text, field, filters) {
+  "Select numeric measurements by exact record-field filters; reject malformed JSON.";
+  lines = str_split(text, "\n");
+  keys = record_keys(filters);
+  values = [];
+  i = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      matched = 1;
+      j = 0;
+      while lt(j, list_len(keys)) {
+        key = list_get(keys, j)?;
+        matched = matched * str_eq(to_json(record_get(row, key)?)?, to_json(record_get(filters, key)?)?);
+        j = j + 1
+      };
+      if matched {
+        values = concat(values, record_get(row, field)?)
+      }
+    };
+    i = i + 1
+  };
+  ok(values)
+}
+
+def u:cuda_profile_stats(values) {
+  "Summarize a nonempty numeric vector using mean, median and full observed range.";
+  n = tally(values);
+  if eq(n, 0) {
+    err("no timing records")
+  } else {
+    order = grade_up(values);
+    lower = at(values, at(order, floor((n - 1) / 2)));
+    upper = at(values, at(order, floor(n / 2)));
+    ok({count: n, mean: mean(values), median: (lower + upper) / 2, min: at(values, at(order, 0)), max: at(values, at(order, n - 1))})
+  }
+}
+
+known = u:cuda_profile_stats([9, 1, 3, 7])?
+if (1 - eq(known.mean, 5)) + (1 - eq(known.median, 5)) + (1 - eq(known.min, 1)) + (1 - eq(known.max, 9)) {
+  err("timing summary golden differs")?
+}
+matched = read_text("docs/results/cuda-profile-v3-matched.jsonl")?
+reference = u:cuda_profile_column(matched, "wall_ms", {native: 0, temperature: 0.9})?
+native = u:cuda_profile_column(matched, "wall_ms", {native: 1, temperature: 0.9})?
+greedy_reference = u:cuda_profile_column(matched, "wall_ms", {native: 0, temperature: 0})?
+greedy_native = u:cuda_profile_column(matched, "wall_ms", {native: 1, temperature: 0})?
+if (1 - eq(tally(reference), 4)) + (1 - eq(tally(native), 4)) + (1 - eq(tally(greedy_reference), 2)) + (1 - eq(tally(greedy_native), 2)) {
+  err("incomplete timing pairs")?
+}
+summary = {sampled_reference_ms: mean(reference), sampled_native_ms: mean(native), sampled_speedup: reduce_add(reference) / reduce_add(native), greedy_reference_ms: mean(greedy_reference), greedy_native_ms: mean(greedy_native), greedy_speedup: reduce_add(greedy_reference) / reduce_add(greedy_native), sampled_reference_tokens_s: 128000 / mean(reference), sampled_native_tokens_s: 128000 / mean(native)}
+print(to_json(summary)?)
+write_text("out/cuda-profile-v3-summary.json", to_json(summary)?)?
+files = ["sampler", "primitives", "native_sample", "stages"]
+fields = {sampler: ["temperature_ms", "nucleus_ms", "pick_ms", "greedy_ms"], primitives: ["validation_ms", "softmax_ms", "normalize_ms", "sort_ms", "inverse_sort_ms", "gather_ms", "scan_ms"], native_sample: ["elapsed_ms"], stages: ["forward_ms", "transfer_ms", "outer_ms", "forward_cpu_ms", "gpu_span_ms"]}
+i = 0
+while lt(i, list_len(files)) {
+  name = list_get(files, i)?;
+  text = read_text(str_concat("docs/results/cuda-profile-v3-", str_concat(name, ".jsonl")))?;
+  columns = record_get(fields, name)?;
+  j = 0;
+  while lt(j, list_len(columns)) {
+    field = list_get(columns, j)?;
+    print(name, field, to_json(u:cuda_profile_stats(u:cuda_profile_column(text, field, {})?)?)?);
+    j = j + 1
+  };
+  i = i + 1
+}
+print("PASS complete paired performance summary")
+#+end_src

@@ -1,0 +1,30 @@
+# Isolate array primitives and the sampler's repeated validation passes.
+include "lib/scaling/scaling.mlpl";
+v = parse_json(read_text("out/cuda-profile-logits.json")?)?
+i = 0
+while lt(i, 8) {
+  t = clock_ms();
+  checked = u:scaling_vector(v, "scores")?;
+  validation_ms = clock_ms() - t;
+  t = clock_ms();
+  p = softmax(v);
+  softmax_ms = clock_ms() - t;
+  t = clock_ms();
+  p = u:scaling_normalize(p)?;
+  normalize_ms = clock_ms() - t;
+  t = clock_ms();
+  order = grade_down(p);
+  sort_ms = clock_ms() - t;
+  t = clock_ms();
+  sorted = u:scaling_gather(p, order);
+  gather_ms = clock_ms() - t;
+  t = clock_ms();
+  total = running_sum(p);
+  scan_ms = clock_ms() - t;
+  t = clock_ms();
+  inverse = grade_up(order);
+  inverse_sort_ms = clock_ms() - t;
+  print(to_json({iteration: i, validation_ms: validation_ms, softmax_ms: softmax_ms, normalize_ms: normalize_ms, sort_ms: sort_ms, gather_ms: gather_ms, scan_ms: scan_ms, inverse_sort_ms: inverse_sort_ms})?);
+  i = i + 1
+}
+print("PASS primitive profile")

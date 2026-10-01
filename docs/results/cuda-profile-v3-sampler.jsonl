@@ -1,0 +1,12 @@
+{"greedy_ms":0.524386,"iteration":0,"nucleus_ms":59.416174999999996,"pick_ms":23.848465000000004,"selected":12095,"temperature_ms":12.754207999999998,"vocab":151936}
+{"greedy_ms":0.5024990000000003,"iteration":1,"nucleus_ms":56.53315099999999,"pick_ms":23.336908000000022,"selected":12095,"temperature_ms":14.990785000000017,"vocab":151936}
+{"greedy_ms":0.5044740000000161,"iteration":2,"nucleus_ms":57.525312999999954,"pick_ms":23.663828000000024,"selected":12095,"temperature_ms":15.773176999999976,"vocab":151936}
+{"greedy_ms":0.5183989999999881,"iteration":3,"nucleus_ms":56.42345499999999,"pick_ms":23.494913999999994,"selected":12095,"temperature_ms":15.538825000000031,"vocab":151936}
+{"greedy_ms":0.5037419999999884,"iteration":4,"nucleus_ms":57.29884499999997,"pick_ms":23.698383999999976,"selected":12095,"temperature_ms":15.205894999999998,"vocab":151936}
+{"greedy_ms":0.5016110000000253,"iteration":5,"nucleus_ms":56.200504999999964,"pick_ms":23.735602000000085,"selected":12095,"temperature_ms":15.436151999999993,"vocab":151936}
+{"greedy_ms":0.5148759999999584,"iteration":6,"nucleus_ms":57.45458999999994,"pick_ms":23.53183899999999,"selected":12095,"temperature_ms":15.404264000000012,"vocab":151936}
+{"greedy_ms":0.4922679999999673,"iteration":7,"nucleus_ms":56.861211000000026,"pick_ms":23.70943699999998,"selected":12095,"temperature_ms":14.689947999999958,"vocab":151936}
+{"greedy_ms":0.510101000000077,"iteration":8,"nucleus_ms":59.26803599999994,"pick_ms":24.257986000000074,"selected":12095,"temperature_ms":14.874881999999957,"vocab":151936}
+{"greedy_ms":0.5038449999999557,"iteration":9,"nucleus_ms":56.718616999999995,"pick_ms":23.842238000000066,"selected":12095,"temperature_ms":16.375317999999993,"vocab":151936}
+{"greedy_ms":0.5335600000000795,"iteration":10,"nucleus_ms":58.30325099999993,"pick_ms":23.784520000000157,"selected":12095,"temperature_ms":15.12828300000001,"vocab":151936}
+{"greedy_ms":0.508080000000291,"iteration":11,"nucleus_ms":57.643804000000046,"pick_ms":23.642140000000154,"selected":12095,"temperature_ms":15.097745999999916,"vocab":151936}

@@ -1,0 +1,1 @@
+{"greedy_native_ms":5058.502581000001,"greedy_reference_ms":5604.304079000009,"greedy_speedup":1.1078978391846763,"sampled_native_ms":6000.122366999998,"sampled_native_tokens_s":21.332898259539785,"sampled_reference_ms":14247.333495249997,"sampled_reference_tokens_s":8.984137280332119,"sampled_speedup":2.374507155655481}

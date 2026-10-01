@@ -58,13 +58,23 @@ Correct answers: **3/10 direct, 4/10 greedy CoT, 6/10 three-sample voting**.
 This is a measured reasoning benefit on the fixed demonstration slice, not
 a full 500-case result.
 
+**Performance dogfooding identifies and reduces a concrete cost.**
+The full-vocabulary MLPL sampler takes 96.29 ms/token versus 12.18 ms through
+Rust. The resident native-selection adapter produces exactly the same
+128-token sampled traces at **21.33 versus 8.98 tokens/s (2.37×)** in four
+matched pairs. This is a speedup over our reference selector, not a measured
+Python comparison. [Profiles and owner-specific fixes](docs/cuda-performance.md)
+include remaining CUDA stalls and the [full500 protocol](docs/book-full500-protocol.md).
+Run `just cuda-profile stages`, then `sampler`, `primitives`, `native-sample`
+and `matched`; use `just cuda-profile-report` for offline numeric analysis.
+
 Read the [publishable HTML report](docs/reasoning-results.html) or its
 [Org/ob-mlpl source](docs/reasoning-results.org) for methods, paired results,
 actual runtimes, analysis of generated reasoning, comparisons with the book
 and planned work. The article explains the working implementation without
-a development-history narrative. `just research-refresh` executes five
+a development-history narrative. `just research-refresh` executes six
 offline MLPL blocks: sampling, extraction/voting/verification, measured-result
-analysis, relative rewards and an analytic-checked gradient update.
+analysis, paired performance, relative rewards and an analytic-checked gradient update.
 `just research-html` exports without inference.
 
 Independent real-checkpoint numerical checks now compare a layer-streamed
@@ -81,7 +91,7 @@ read-only sibling policy. General symbolic grader parity, full 500-case
 scale and real language-model training remain separate milestones. This is
 pretrained base-model inference; no Qwen3 weights have been trained here.
 
-The fixture suite has 185 native tests; `just check` also checks
+The fixture suite has 189 native tests; `just check` also checks
 provenance, style, exact literate tangles and offline report replay. Tests
 never download weights or run the real model. The MLPL reference remains
 available for algorithmic validation; interpreter efficiency work is deferred

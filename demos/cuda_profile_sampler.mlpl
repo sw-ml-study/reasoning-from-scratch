@@ -1,0 +1,23 @@
+# Fixed-input timing of production selection primitives; no generated answers.
+include "lib/scaling/scaling.mlpl";
+logits = parse_json(read_text("out/cuda-profile-logits.json")?)?
+probs = u:scaling_temperature(logits, 0.9)?
+filtered = u:scaling_nucleus(probs, 0.9)?
+i = 0
+while lt(i, 12) {
+  start = clock_ms();
+  selected = argmax(logits);
+  greedy_ms = clock_ms() - start;
+  start = clock_ms();
+  probs = u:scaling_temperature(logits, 0.9)?;
+  temperature_ms = clock_ms() - start;
+  start = clock_ms();
+  filtered = u:scaling_nucleus(probs, 0.9)?;
+  nucleus_ms = clock_ms() - start;
+  start = clock_ms();
+  selected = u:scaling_pick(filtered, 0.5)?;
+  pick_ms = clock_ms() - start;
+  print(to_json({iteration: i, vocab: tally(logits), greedy_ms: greedy_ms, temperature_ms: temperature_ms, nucleus_ms: nucleus_ms, pick_ms: pick_ms, selected: selected})?);
+  i = i + 1
+}
+print("PASS sampler profile")

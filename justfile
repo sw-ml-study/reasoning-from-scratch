@@ -146,3 +146,11 @@ book-author-smoke:
 book-author-report:
     mkdir -p out
     ./scripts/run-mlpl-demo demos/book_author_report.mlpl
+
+# Fixed-input CUDA/selection profiling; opt-in, never part of the fixture gate.
+cuda-profile mode="stages":
+    ./scripts/run-cuda-profile {{mode}}
+
+# Recompute paired performance summaries from public numeric evidence.
+cuda-profile-report:
+    ./scripts/run-mlpl-demo demos/cuda_profile_report.mlpl

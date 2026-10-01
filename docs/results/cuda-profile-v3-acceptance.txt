@@ -1,0 +1,12 @@
+2026-09-30 isolated Qwen3 CUDA provider v3 acceptance
+Rust unit tests: 5 passed (analytic distribution, stable ties/CDF boundaries,
+invalid sampling values, invalid token IDs, handle type rejection).
+Fixed real vocabulary: 151936 logits; exact native/MLPL distribution equality;
+maximum absolute difference 0; all 12 supplied-uniform selections match.
+Matched resident-generation trials: 6/6 complete with exact token equality.
+Four sampled pairs (temperature .9/top-p .9/seed43), two greedy pairs;
+alternating reference/native order; same authored tank prompt; max_new128;
+all calls produce128 tokens and stop at budget. No accuracy claim.
+MLPL adapter tests: supplied-uniform sequence parity, budget, EOS exclusion,
+invalid inputs and native errors. Full native test suite:189 passed.
+Default synchronization and allocation-event tracking retained.

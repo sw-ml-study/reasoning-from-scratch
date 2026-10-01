@@ -26,4 +26,12 @@ def u:test_verify_linear_bounds() {
   u:assert_err(u:verify_linear_parse("sin(x)"), "unknown function")
 }
 
+@test {name: "known nonlinear identities remain explicit grading coverage gaps", tags: ["verify", "symbolic"]}
+def u:test_verify_linear_coverage() {
+  "Independently authored equivalent nonlinear forms cannot be classified as disproven by the bounded linear parser.";
+  u:assert_err(u:verify_linear_parse("(x+1)^2"), "square expansion unsupported")?;
+  u:assert_err(u:verify_linear_parse("x*x+2*x+1"), "equivalent polynomial unsupported")?;
+  u:assert_err(u:verify_linear_parse("sin(x)^2+cos(x)^2"), "trigonometric identity unsupported")
+}
+
 u:run_registered_tests()

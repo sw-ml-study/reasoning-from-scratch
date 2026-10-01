@@ -1,0 +1,25 @@
+# Fixed-token resident decode; synchronized stages exclude answer quality.
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 2048, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"})
+lengths = [32, 256, 1024]
+group = 0
+while lt(group, tally(lengths)) {
+  length = at(lengths, group);
+  _qwen3_cuda:reset({handle: h});
+  prefill = _qwen3_cuda:profile({handle: h, ids: ones([length]) * 785});
+  print(to_json({kind: "prefill", length: length, input_ms: prefill.input_ms, forward_ms: prefill.forward_ms, transfer_ms: prefill.transfer_ms})?);
+  i = 0;
+  while lt(i, 16) {
+    started = clock_ms();
+    result = _qwen3_cuda:profile({handle: h, ids: [785]});
+    outer_ms = clock_ms() - started;
+    print(to_json({kind: "decode", length: length, iteration: i, outer_ms: outer_ms, input_ms: result.input_ms, forward_ms: result.forward_ms, transfer_ms: result.transfer_ms, forward_cpu_ms: result.forward_cpu_ms, transfer_cpu_ms: result.transfer_cpu_ms, gpu_span_ms: result.gpu_span_ms, position: result.position})?);
+    i = i + 1
+  };
+  group = group + 1
+}
+_qwen3_cuda:reset({handle: h})
+logits = _qwen3_cuda:forward({handle: h, ids: [785, 6722, 315, 9625, 374]})
+write_text("out/cuda-profile-logits.json", to_json(logits)?)?
+_qwen3_cuda:close({handle: h})
+print("PASS fixed token CUDA profile")

@@ -1,0 +1,73 @@
+# Offline MLPL analysis of fixed-input performance measurements; all inputs are public numeric records.
+include "lib/text/text.mlpl";
+
+def u:cuda_profile_column(text, field, filters) {
+  "Select numeric measurements by exact record-field filters; reject malformed JSON.";
+  lines = str_split(text, "\n");
+  keys = record_keys(filters);
+  values = [];
+  i = 0;
+  while lt(i, list_len(lines)) {
+    line = u:text_trim(list_get(lines, i)?);
+    if str_len(line) {
+      row = parse_json(line)?;
+      matched = 1;
+      j = 0;
+      while lt(j, list_len(keys)) {
+        key = list_get(keys, j)?;
+        matched = matched * str_eq(to_json(record_get(row, key)?)?, to_json(record_get(filters, key)?)?);
+        j = j + 1
+      };
+      if matched {
+        values = concat(values, record_get(row, field)?)
+      }
+    };
+    i = i + 1
+  };
+  ok(values)
+}
+
+def u:cuda_profile_stats(values) {
+  "Summarize a nonempty numeric vector using mean, median and full observed range.";
+  n = tally(values);
+  if eq(n, 0) {
+    err("no timing records")
+  } else {
+    order = grade_up(values);
+    lower = at(values, at(order, floor((n - 1) / 2)));
+    upper = at(values, at(order, floor(n / 2)));
+    ok({count: n, mean: mean(values), median: (lower + upper) / 2, min: at(values, at(order, 0)), max: at(values, at(order, n - 1))})
+  }
+}
+
+known = u:cuda_profile_stats([9, 1, 3, 7])?
+if (1 - eq(known.mean, 5)) + (1 - eq(known.median, 5)) + (1 - eq(known.min, 1)) + (1 - eq(known.max, 9)) {
+  err("timing summary golden differs")?
+}
+matched = read_text("docs/results/cuda-profile-v3-matched.jsonl")?
+reference = u:cuda_profile_column(matched, "wall_ms", {native: 0, temperature: 0.9})?
+native = u:cuda_profile_column(matched, "wall_ms", {native: 1, temperature: 0.9})?
+greedy_reference = u:cuda_profile_column(matched, "wall_ms", {native: 0, temperature: 0})?
+greedy_native = u:cuda_profile_column(matched, "wall_ms", {native: 1, temperature: 0})?
+if (1 - eq(tally(reference), 4)) + (1 - eq(tally(native), 4)) + (1 - eq(tally(greedy_reference), 2)) + (1 - eq(tally(greedy_native), 2)) {
+  err("incomplete timing pairs")?
+}
+summary = {sampled_reference_ms: mean(reference), sampled_native_ms: mean(native), sampled_speedup: reduce_add(reference) / reduce_add(native), greedy_reference_ms: mean(greedy_reference), greedy_native_ms: mean(greedy_native), greedy_speedup: reduce_add(greedy_reference) / reduce_add(greedy_native), sampled_reference_tokens_s: 128000 / mean(reference), sampled_native_tokens_s: 128000 / mean(native)}
+print(to_json(summary)?)
+write_text("out/cuda-profile-v3-summary.json", to_json(summary)?)?
+files = ["sampler", "primitives", "native_sample", "stages"]
+fields = {sampler: ["temperature_ms", "nucleus_ms", "pick_ms", "greedy_ms"], primitives: ["validation_ms", "softmax_ms", "normalize_ms", "sort_ms", "inverse_sort_ms", "gather_ms", "scan_ms"], native_sample: ["elapsed_ms"], stages: ["forward_ms", "transfer_ms", "outer_ms", "forward_cpu_ms", "gpu_span_ms"]}
+i = 0
+while lt(i, list_len(files)) {
+  name = list_get(files, i)?;
+  text = read_text(str_concat("docs/results/cuda-profile-v3-", str_concat(name, ".jsonl")))?;
+  columns = record_get(fields, name)?;
+  j = 0;
+  while lt(j, list_len(columns)) {
+    field = list_get(columns, j)?;
+    print(name, field, to_json(u:cuda_profile_stats(u:cuda_profile_column(text, field, {})?)?)?);
+    j = j + 1
+  };
+  i = i + 1
+}
+print("PASS complete paired performance summary")

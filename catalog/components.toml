@@ -287,7 +287,7 @@ status = "accepted"
 
 [[component]]
 id = "RESEARCH"
-# Book-method article: five executable sampling, voting, analysis and learning examples;
+# Book-method article: six executable sampling, voting, accuracy/performance and learning examples;
 # separates measured inference gains from planned native language-model training.
 slug = "reproducible-results-report"
 chapter = 3
@@ -375,4 +375,15 @@ chapter = 4
 source = "lib/eval/book_report.mlpl"
 test = "tests/test_eval_book_report.mlpl"
 documentation = "docs/book-author-protocol.md"
+status = "accepted"
+
+[[component]]
+id = "CUDASELECT"
+# Measured 2.37x sampled generation improvement on exact-matched 128-token traces;
+# native provider remains an isolated pinned source/build handoff.
+slug = "resident-native-selection"
+chapter = 4
+source = "lib/cuda/offload.mlpl"
+test = "tests/test_cuda_offload.mlpl"
+documentation = "docs/cuda-performance.md"
 status = "accepted"

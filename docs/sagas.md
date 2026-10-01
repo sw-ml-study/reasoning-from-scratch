@@ -226,3 +226,21 @@ targeted grading gaps and freezes a resumable full 500-case protocol before
 paying that inference cost. Core resident-copy work is deferred as step 017.
 Provider publication still awaits sibling-write authorization; native
 language-model training needs separate acceptance.
+
+Step 016 delivers the dogfooding performance evidence and native selection
+adapter. The fixed full-vocabulary sampler costs 96.29ms in MLPL versus 12.18ms
+through the Rust extension; four matched 128-token sampled pairs improve from
+14.247s to 6.000s (2.3745x) with exact token equality. Two greedy pairs also
+match. Three adapter tests and one authored grading-coverage test bring the
+fixture total to 189. Six report blocks and 54 exact tangles cover the new
+methods, profiler drivers and MLPL numeric analysis. CUDA stage measurements
+retain substantial unexplained stalls; generic driver wall time is not
+misreported as kernel occupancy. Core/library/extension work orders record
+ownership and acceptance rather than blaming implementation language.
+
+The full500 method/accounting protocol is frozen in
+[book-full500-protocol.md](book-full500-protocol.md), but execution has not
+started and its resumable runner is not yet implemented. The next step
+combines deeper CUDA attribution, long-context acceptance and the tested
+resumable runner before committing to full500 execution cost. Native training
+and provider publication remain separate deliverables.

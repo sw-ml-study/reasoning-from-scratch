@@ -1,0 +1,28 @@
+#!/bin/sh
+# Opt-in bounded performance evidence; no evaluation questions and no production-result overwrite.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+mode=${1:-stages}
+case "$mode" in
+    stages|sampler|primitives|native-sample|matched) ;;
+    *) echo 'usage: run-cuda-profile [stages|sampler|primitives|native-sample|matched]' >&2; exit 2 ;;
+esac
+QWEN_CUDA_LIBRARY=${QWEN_CUDA_LIBRARY:-/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v3/native/libmlpl_qwen3_cuda_profile.so}
+EXTENSION_LIBRARY=${EXTENSION_LIBRARY:-$repo/../demo-extensions/extensions/hftok/native/x86_64-unknown-linux-gnu/libmlpl_extension_hftok.so}
+REPO_ROOT=$repo
+LD_LIBRARY_PATH=/opt/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+QWEN_BLOCKING_SYNC=${QWEN_BLOCKING_SYNC:-0}
+QWEN_SINGLE_STREAM=${QWEN_SINGLE_STREAM:-0}
+case "$QWEN_BLOCKING_SYNC" in 0|1) ;; *) echo 'QWEN_BLOCKING_SYNC must be 0 or 1' >&2; exit 2 ;; esac
+case "$QWEN_SINGLE_STREAM" in 0|1) ;; *) echo 'QWEN_SINGLE_STREAM must be 0 or 1' >&2; exit 2 ;; esac
+export QWEN_CUDA_LIBRARY EXTENSION_LIBRARY REPO_ROOT LD_LIBRARY_PATH QWEN_BLOCKING_SYNC QWEN_SINGLE_STREAM
+mkdir -p out
+[ -f "$QWEN_CUDA_LIBRARY" ] || { echo 'Build the pinned v3 provider; see docs/cuda-performance.md' >&2; exit 1; }
+case "$mode" in sampler|primitives|native-sample)
+    [ -f out/cuda-profile-logits.json ] || { echo 'Run just cuda-profile stages first' >&2; exit 1; } ;;
+esac
+name=$(printf '%s' "$mode" | tr '-' '_')
+printf 'profile mode=%s blocking_sync=%s single_stream_experiment=%s\n' "$mode" "$QWEN_BLOCKING_SYNC" "$QWEN_SINGLE_STREAM"
+sha256sum "$QWEN_CUDA_LIBRARY"
+timeout 240 scripts/run-mlpl-demo "demos/cuda_profile_$name.mlpl"

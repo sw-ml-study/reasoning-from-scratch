@@ -1,0 +1,55 @@
+# Native selection callback contracts retain MLPL seeds, budgets, stopping and errors.
+include "lib/cuda/cuda.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/cuda/offload.mlpl";
+
+def u:cuda_offload_fixture_forward(request) {
+  "A fixed stochastic vocabulary for comparing reference and offloaded decoding.";
+  ok([1, 2, 3])
+}
+
+def u:cuda_offload_fixture_step(request) {
+  "Use the independent MLPL sampler to emulate a native step with supplied uniforms.";
+  logits = u:cuda_offload_fixture_forward(request)?;
+  if eq(request.temperature, 0) {
+    ok(argmax(logits))
+  } else {
+    u:scaling_pick(u:scaling_nucleus(u:scaling_temperature(logits, request.temperature)?, request.top_p)?, request.uniform)
+  }
+}
+
+def u:cuda_offload_fixture_error(request) {
+  "Provider failures must propagate without a success-shaped generation result.";
+  err("authored provider failure")
+}
+
+@test {name: "native selection preserves supplied seed stream and token budget", tags: ["cuda", "offload"]}
+def u:test_cuda_offload_parity() {
+  "Identical next-token choices follow from identical logits, controls and uniforms.";
+  options = {max_new: 12, eos: 99, seed: 43, temperature: 0.9, top_p: 0.9, max_ms: 10000};
+  expected = u:cuda_decode({forward: :u:cuda_offload_fixture_forward, handle: 0}, [0], options)?;
+  actual = u:cuda_decode_native({step: :u:cuda_offload_fixture_step, handle: 0}, [0], options)?;
+  u:assert_eq(actual.ids, expected.ids, "seeded token stream")?;
+  u:assert_eq(tally(actual.ids), 12, "exact budget")?;
+  u:assert_text_eq(actual.stopped, "budget", "budget stop")
+}
+
+@test {name: "native selection excludes immediate EOS in greedy mode", tags: ["cuda", "offload"]}
+def u:test_cuda_offload_eos() {
+  "An EOS result consumes one native call but produces no output token.";
+  result = u:cuda_decode_native({step: :u:cuda_offload_fixture_step, handle: 0}, [0], {max_new: 4, eos: 2, seed: 42, temperature: 0, top_p: 0.9, max_ms: 10000})?;
+  u:assert_eq(result.ids, [], "EOS excluded")?;
+  u:assert_text_eq(result.stopped, "eos", "EOS reason")
+}
+
+@test {name: "native selection validates controls and propagates provider errors", tags: ["cuda", "offload"]}
+def u:test_cuda_offload_errors() {
+  "Invalid budgets and provider failures remain errors, not partial successes.";
+  provider = {step: :u:cuda_offload_fixture_error, handle: 0};
+  options = {max_new: 4, eos: 2, seed: 42, temperature: 0.9, top_p: 0.9, max_ms: 10000};
+  u:assert_err(u:cuda_decode_native(provider, [0], options), "provider failure")?;
+  u:assert_err(u:cuda_decode_native(provider, [], options), "empty prompt")?;
+  u:assert_err(u:cuda_decode_native(provider, [0], {max_new: 0, eos: 2, seed: 42, temperature: 0, top_p: 0.9, max_ms: 10000}), "zero budget")
+}
+
+u:run_registered_tests()

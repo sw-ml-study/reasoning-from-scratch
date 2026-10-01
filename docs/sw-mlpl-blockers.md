@@ -13,12 +13,23 @@ inference-time reasoning benefit on the fixed ten-case sample, not full
 limit is not a GPU capacity limit. See [the report](reasoning-results.html)
 and [numeric provenance](results/book-author-v2-provenance.json).
 
-**Sampling throughput: awkward, measured, usable for the demo.** Aggregate
-decode rates are 18.28 tokens/s for greedy CoT and 8.24 for sampling. These
-include different trace lengths; profile native forward, vocabulary transfer
-and MLPL selection separately before attributing the cost. Use native
-extension offload for the dominant inefficiency, retaining fixed-input MLPL
-parity tests. Core optimization remains deferred.
+**Sampling implementation cost: measured and reduced.** Fixed-vocabulary
+MLPL selection costs 96.29 ms/token; native selection through the ABI costs
+12.18 ms. The resident step gives exact matched tokens at 21.33 versus
+8.98 tokens/s (2.37x) over four sampled pairs. The reference library repeats
+validation/normalization, sorts twice and creates full-vocabulary temporaries;
+core array ownership and marshalling also copy payloads. R14 and the library
+request specify allocation profiling and semantics-preserving improvements.
+See [the performance evidence](cuda-performance.md). No demo-ml-utils hot-path
+cost was observed because that package supplies contracts rather than this
+runtime implementation.
+
+**Native forward/transfer variability: awkward, unresolved.** Fixed-token
+instrumentation observes occasional long stalls despite much faster minima.
+Calling-thread CPU time includes spin waiting, and CUDA event spans include
+host launch gaps. Kernel/driver tracing is required before assigning all wall
+time to GPU arithmetic. The pinned native selector is accepted locally;
+long-context and full500 execution remain separate from this bounded result.
 
 **Remaining application coverage and delivery gaps:** general symbolic
 equivalence is not yet a full SymPy replacement; this does not establish a
@@ -29,10 +40,10 @@ extension sibling awaits authorization. Numerical comparison to independent
 MLPL F64 now passes on the tested real prompt; PyTorch RNG/precision identity
 and the full 500-case outcome remain unproved.
 
-The completion gate has 185 native tests, 47 exact literate tangles and five
+The completion gate has 189 native tests, 54 exact literate tangles and six
 offline publication blocks. The report explains the book methods, the actual
 MLPL/Rust boundary, measured results and planned work; its executable blocks
-cover production sampling/voting, numeric result replay and learning examples.
+cover production sampling/voting, numeric result/performance replay and learning examples.
 The dated sections below preserve earlier evidence;
 Ollama is historical and is not part of the current experiment.
 

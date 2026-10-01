@@ -1,0 +1,8 @@
+number = 17
+slug = "cuda-attribution-full500-runner"
+status = "pending"
+description = "Continue performance dogfooding from docs/cuda-performance.md. Preserve prima..."
+role = "production"
+context_files = []
+created_at = "2026-09-30T17:43:26"
+commits = []

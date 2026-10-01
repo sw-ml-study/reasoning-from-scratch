@@ -133,3 +133,16 @@ manifest.
 
 - A tokenizer: that is native work (`demo-extensions-requests.md`).
 - Anything on the autograd tape (`sw-mlpl-requests.md`).
+
+## Vocabulary-scale sampling efficiency (2026-09-30)
+
+The consumer's production sampler validates and normalizes full vocabulary
+vectors repeatedly, sorts probabilities and then sorts the permutation again
+to restore token order. See [measured profile](cuda-performance.md). The next
+library candidate should share a validated-distribution representation or a
+checked outer boundary with internal trusted helpers, and use scatter/inverse
+permutation when an efficient generic primitive exists. Preserve immutable
+reference behavior and exact supplied-uniform tests. Do not remove input
+validation or silently normalize votes differently to improve a benchmark.
+The native extension supplies the immediate measured alternative; no sibling
+library was modified from the consumer checkout.

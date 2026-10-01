@@ -333,3 +333,30 @@ generic native selection operation checked against the MLPL reference at
 fixed logits and supplied uniforms. Preserve temperature, top-p, crossing
 token, stable tie and explicit-RNG semantics; do not change the completed
 experiment's settings or scores. Keep core-interpreter optimization deferred.
+
+### E6 native selection and stage profiling handoff, 2026-09-30
+
+The consumer now supplies an isolated v3 implementation of `sample`,
+`distribution`, `step` (resident forward plus token selection), and `profile`
+(synchronized native stages). Source/build/hash handoff and acceptance are in
+[cuda-performance.md](cuda-performance.md). The `step` request contains the
+boxed model handle, input IDs, temperature, top-p and a **supplied MLPL uniform**;
+the result is one token ID. No native RNG or answer-aware selection is added.
+
+The sampler retains f64 arithmetic, stable lower-ID token ties, the crossing
+nucleus token, vocabulary-order categorical CDF and exact boundary ownership.
+It scatters sorted probabilities back by ID instead of sorting the inverse
+permutation. Consumer fixture tests retain seed, budget, EOS and error
+contracts. Real-logit probability arrays and matched generation must agree
+before any production run is switched; v2's primary generation pins stay fixed.
+
+Remaining provider work: profile CUDA kernel/driver/allocator time with an
+actual kernel trace. Event spans include host launch gaps; wall time is not
+GPU kernel occupancy. Investigate unfused attention, KV expansion, temporary
+allocations and synchronization independently, with fixed token/context
+lengths and host/GPU contention recorded. Neither blocking synchronization
+nor disabling allocation event tracking has established a stall remedy in
+these bounded probes; keep defaults unchanged. Shipping a single-stream
+optimization requires enforcing tensor/stream lifetime isolation, not merely
+assuming it. Publish the provider through demo-extensions only after the
+consumer's parity and native tests, with the portable pinned build inputs.

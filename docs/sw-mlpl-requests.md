@@ -340,3 +340,33 @@ Affected work: tokenizer facade integration and real-model responder adapter.
 Workaround: carry the handle in a record accepted by the evaluator, then
 call the native encoder/decoder on `box.handle`. The strict parity runner
 uses this explicit MLPL adapter. No upstream source was modified.
+
+## R14. Vocabulary-scale array-copy and sampling cost (measured, 2026-09-30)
+
+**Awkward, not a missing language capability.** The reasoning consumer's
+151,936-logit profile measures roughly 95 ms/token in its MLPL sampler.
+Reproduce with `just cuda-profile stages`, then `sampler` and `primitives`;
+see [performance evidence](cuda-performance.md). The alternative Rust
+implementation preserves the f64 distribution and supplied-uniform decisions.
+
+Source inspection at build `49c15b3e` shows `DenseArray` derives `Clone` over
+`Vec<f64>` (`components/array/crates/mlpl-array/src/dense.rs`). Record and
+Result reads clone payloads in `components/eval/crates/mlpl-eval/src/eval.rs`;
+assignment also clones values. The sampler passes several full vectors through
+user functions, Results and generic operations. These copies are real source
+behavior; their exact share of total time has not yet been allocation-profiled.
+Do not attribute all 95 ms to a single core defect.
+
+Requested core investigation: instrument allocations/bytes copied for the
+committed primitive profile; introduce borrowed/shared immutable array storage
+or copy-on-write only with aliasing/autograd regression coverage. Specialize
+contiguous rank-one reductions/softmax where measurements justify it. Preserve
+f64 arithmetic order, stable grading ties and categorical boundaries. Compare
+identical fixed input vectors at sizes 128, 4096 and 151936, including memory,
+then run the consumer's exact probability and supplied-uniform acceptance.
+
+Library-side repeated validation/normalization and the second inverse argsort
+are separate optimization opportunities; do not disguise them as core gaps.
+The tested native extension is the immediate workaround. `demo-ml-utils`
+provides useful provider/acceptance contracts but does not execute this hot
+path; there is no evidence that its implementation causes these measurements.

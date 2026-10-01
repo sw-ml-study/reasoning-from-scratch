@@ -1,0 +1,24 @@
+# Compare native f64 selection to production MLPL on fixed vocabulary logits.
+include "lib/scaling/scaling.mlpl";
+namespace = load_extension(env("QWEN_CUDA_LIBRARY")?)
+logits = parse_json(read_text("out/cuda-profile-logits.json")?)?
+expected = u:scaling_nucleus(u:scaling_temperature(logits, 0.9)?, 0.9)?
+actual = _qwen3_cuda:distribution({logits: logits, temperature: 0.9, top_p: 0.9})
+print("exact distribution parity:", equal(actual, expected), "max difference:", reduce(:max, abs(actual - expected)))
+if 1 - equal(actual, expected) {
+  err("distribution parity failure")?
+}
+i = 0
+while lt(i, 12) {
+  uniform = i / 12;
+  reference = u:scaling_pick(expected, uniform)?;
+  start = clock_ms();
+  selected = _qwen3_cuda:sample({logits: logits, temperature: 0.9, top_p: 0.9, uniform: uniform});
+  elapsed = clock_ms() - start;
+  if 1 - eq(reference, selected) {
+    err("selection parity failure")?
+  };
+  print(to_json({iteration: i, elapsed_ms: elapsed, selected: selected})?);
+  i = i + 1
+}
+print("PASS native fixed-logit parity and timing")

@@ -35,7 +35,7 @@ not pretrain a language model. In this experiment the 596,049,920 parameters
 remain fixed. MLPL training objectives and toy updates are implemented;
 training this native language model is a separate, unfinished stage.
 
-This document is executable research. Five named =ob-mlpl= blocks run the
+This document is executable research. Six named =ob-mlpl= blocks run the
 production sampling and verification libraries, recompute the measured
 results, and illustrate reward normalization and a checked gradient update.
 Their outputs are recorded below and checked before publication.
@@ -398,6 +398,82 @@ The underlying [[file:results/book-author-v2-attempts.jsonl][50 attempt records]
 [[file:results/book-author-v2-summary.json][summary]] preserve the full denominator. Regrading generated text additionally
 requires the retained local responses and downloaded reference answers.
 
+** Making the implementation faster
+
+A matched performance experiment measures the cost of the MLPL/native
+boundary and token selection using an authored prompt. Native Rust sampling
+preserves the MLPL f64 distribution, supplied uniforms and selected token
+sequence. The resident step returns one token ID while MLPL retains seeds,
+controls and stopping. It improves sampled generation from *8.98 to 21.33
+tokens/s*: *2.37× faster* on the same prompt and hardware.
+
+| Matched workload | MLPL selection | Native selection |
+|------------------+----------------+------------------|
+| Sampled, mean for 128 tokens (four pairs) | 14.247 s | 6.000 s |
+| Greedy, mean for 128 tokens (two pairs) | 5.604 s | 5.059 s |
+
+Every paired token sequence is identical. These are capped performance
+traces on one authored prompt and seed, separate from answer accuracy.
+They do not establish a speedup over the book's Python implementation.
+
+A fixed-vocabulary profile measures 96.29 ms per sampled token in MLPL:
+15.11 ms for temperature/softmax, 57.47 ms for nucleus filtering and 23.71 ms
+for categorical selection. Native selection through the extension takes
+12.18 ms. Repeated full-vector checks and normalization, two sorts and array
+copies are concrete optimization targets. The native selector eliminates
+the inverse sort and keeps vocabulary arrays inside the provider when using
+the resident step.
+
+CUDA forward and transfer measurements still vary substantially. A
+synchronized fixed-token profile records forward calls from 5.02 to 99.35 ms;
+final-logit conversion/transfer ranges from 0.323 to 42.52 ms. Kernel/driver
+tracing is needed to attribute the long delays precisely. These instrumented
+stage timings are not summed with the separate sampler profile to predict
+end-to-end latency. See the [[file:cuda-performance.md][performance analysis and reproducible commands]]
+for measurements, ownership of fixes and native source/build identities.
+
+The following offline block recomputes the sampled speedup from all eight
+sampled timing records. The live benchmark asserts exact token equality;
+this block verifies the recorded aggregate independently.
+
+#+name: replay-performance
+#+begin_src mlpl
+# Recompute the paired native-selection performance result from numeric evidence.
+include "../lib/text/text.mlpl";
+lines = str_split(read_text("docs/results/cuda-profile-v3-matched.jsonl")?, "\n")
+reference = []
+native = []
+i = 0
+while lt(i, list_len(lines)) {
+  line = u:text_trim(list_get(lines, i)?);
+  if str_len(line) {
+    row = parse_json(line)?;
+    if gt(row.temperature, 0) {
+      if row.native { native = concat(native, row.wall_ms) } else { reference = concat(reference, row.wall_ms) }
+    }
+  };
+  i = i + 1
+}
+expected = parse_json(read_text("docs/results/cuda-profile-v3-summary.json")?)?
+speedup = reduce_add(reference) / reduce_add(native)
+print("sampled paired trials:", tally(reference))
+print("MLPL mean seconds:", mean(reference) / 1000)
+print("native mean seconds:", mean(native) / 1000)
+print("matched speedup:", speedup)
+if eq(tally(reference), 4) * eq(tally(native), 4) * eq(mean(reference), expected.sampled_reference_ms) * eq(mean(native), expected.sampled_native_ms) * eq(speedup, expected.sampled_speedup) {
+  ok("paired performance matches recorded evidence")
+} else {
+  err("paired performance evidence differs")
+}
+#+end_src
+
+#+RESULTS: replay-performance
+: sampled paired trials: 4
+: MLPL mean seconds: 14.247333495249997
+: native mean seconds: 6.000122366999998
+: matched speedup: 2.374507155655481
+: Ok(paired performance matches recorded evidence)
+
 * Demonstrate the working model
 
 An authored prompt asks about a tank with 120 liters, losing 35 and then
@@ -525,7 +601,7 @@ before/after accuracy.
 | Current scope | Next deliverable | Acceptance evidence |
 |---------------+------------------+---------------------|
 | Ten-case inference comparison is measured | Full author-ordered 500-case direct/CoT/voting experiment | Frozen inputs and controls; resumable attempt accounting; all cases retained in the denominator |
-| Native forward and MLPL sampling work | Profile forward, vocabulary transfer and selection; offload dominant costs through Rust | Fixed-logit/supplied-uniform parity and matched generation timing before changing the backend |
+| Native forward and MLPL sampling work | Further kernel/driver attribution and long-context native-selection acceptance | Fixed-logit/supplied-uniform parity and matched generation timing before changing the backend |
 | Numeric, tuple, literal and bounded linear-symbolic grading work | Broader independent equivalence fixtures and coverage | Separate unsupported equivalence from genuine incorrect answers |
 | CUDA provider has a pinned local build and source archive | Publish an installable native extension package | Reproducible build and consumer numerical/sampling acceptance |
 | MLPL learning objectives and toy updates are tested | Native language-model training, then GRPO/distillation evaluation | Gradient/update/save/reload checks followed by held-out reasoning gains |
@@ -571,7 +647,7 @@ just research-html
 just check
 #+end_src
 
-=research-refresh= executes the five named offline MLPL blocks, saves their
+=research-refresh= executes the six named offline MLPL blocks, saves their
 results and exports HTML. =research-html= exports stored results without
 executing blocks. Neither command launches model inference or downloads.
 The completion gate checks recorded outputs and exact HTML export, along

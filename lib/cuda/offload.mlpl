@@ -1,0 +1,39 @@
+# Native forward-and-selection adapter. Requires scaling.mlpl. MLPL supplies the seeded uniforms, controls, input tokens and stopping rules; the native callback returns one token.
+
+def u:cuda_decode_native(provider, ids, options) {
+  "Decode through a parity-checked native step; preserve explicit MLPL random draws and stop accounting without transferring vocabulary arrays.";
+  u:scaling_seed(options.seed)?;
+  u:scaling_scalar(options.max_new, "max_new")?;
+  u:scaling_scalar(options.temperature, "temperature")?;
+  u:scaling_scalar(options.max_ms, "max_ms")?;
+  if eq(tally(ids), 0) + lt(options.max_new, 1) + (1 - eq(options.max_new, floor(options.max_new))) + lt(options.temperature, 0) + (1 - gt(options.max_ms, 0)) {
+    err({kind: "generation_bounds", message: "invalid prompt or generation budget"})
+  } else {
+    u:scaling_controls(1, options.top_p)?;
+    uniforms = u:scaling_uniforms(options.seed, options.max_new)?;
+    started = clock_ms();
+    inputs = ids;
+    generated = [];
+    running = 1;
+    reason = "budget";
+    while running {
+      if gt(clock_ms() - started, options.max_ms) {
+        reason = "deadline";
+        running = 0
+      } else {
+        id = call(provider.step, {handle: provider.handle, ids: inputs, temperature: options.temperature, top_p: options.top_p, uniform: at(uniforms, tally(generated))})?;
+        if eq(id, options.eos) {
+          reason = "eos";
+          running = 0
+        } else {
+          generated = concat(generated, id);
+          inputs = [id];
+          if eq(tally(generated), options.max_new) {
+            running = 0
+          }
+        }
+      }
+    };
+    ok({ids: generated, stopped: reason, elapsed_ms: clock_ms() - started})
+  }
+}
