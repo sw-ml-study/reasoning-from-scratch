@@ -2,7 +2,8 @@
 
 The runner is implemented and the full input set is prepared: **500 cases,
 1000 rendered prompts and 2500 immutable request identities**. No full500
-model responses have been generated at this freeze. The published ten-case
+model responses had been generated at the freeze. Execution started on
+2026-10-01 at 03:09 UTC and is now running; final results remain pending. The published ten-case
 scores remain unchanged. [Execution manifest](results/book-full500-v1-execution.json),
 [planned keys](results/book-full500-v1-plan.jsonl) and
 [prompt hashes](results/book-full500-v1-prompt-hashes.sha256) fix the experiment.
@@ -128,3 +129,31 @@ archive is `/disk1/tmp/reasoning-tools/durable-store-source.tar.gz`. Build with
 --offline`. [Native hashes](results/full500-native-artifacts.sha256) pin source
 and library. Publication as an installable sibling extension remains separate;
 no sibling or stable installed tool was modified.
+
+## Unattended continuation
+
+`just book-full500-continue` runs successive 15-minute sessions using the
+unchanged frozen runner. It holds a controller lock, stops at completion or
+the cumulative budget, and stops immediately on failed sessions, malformed
+summaries or zero new calls. It does not automatically retry a failed session.
+Fixture-only controller acceptance is part of `just check`.
+
+For a detached run from the repository root, with the documented `MLPL` set:
+
+```sh
+mkdir -p out/book-full500-control
+nohup scripts/continue-book-full500 > out/book-full500-control/controller.log 2>&1 < /dev/null &
+```
+
+The controller PID is recorded in `out/book-full500-control/pid`. Create
+`out/book-full500-control/STOP` to request a stop after the current session;
+remove that file only when intentionally resuming. Do not start a manual
+runner or reconciliation while a session is live: the native store rejects
+concurrent access. After a failed session, inspect its log before deciding
+whether to reconcile and resume; interrupted calls retain their original
+accounting. Reboot recovery is explicit, not an installed system service.
+
+If a manually launched session already holds the native store lock, the
+controller first waits up to 30 minutes for that session to finish. It releases
+that lock before invoking MLPL. This initial wait is tested separately from
+the controller lock; it never reconciles or modifies an active worker's journal.

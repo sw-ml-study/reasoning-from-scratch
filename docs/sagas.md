@@ -280,3 +280,13 @@ Next: execute/resume the frozen full500 experiment, retaining all denominators
 and reporting incomplete results honestly. Planning range 15.3–24.6h is an
 estimate; the cumulative budget is 48h. Stable-cache CUDA graph work, native
 package publication and language-model training remain separate deliverables.
+
+Step 019 starts the frozen full500 execution and adds tested unattended
+continuation across 15-minute sessions. The controller preserves the MLPL
+runner's budget/accounting, rejects concurrent controllers and stops on failed
+sessions or malformed/no-progress summaries. The inference source/provider
+pins remain unchanged. Step 020 collects and publishes the final experiment
+or an explicitly budget-limited result; resident-copy profiling moves to021.
+The live store is `out/book-full500-v1-store`; never run reconciliation during
+an active session. Controller logs and a boundary-stop file live under
+`out/book-full500-control`. Native language-model training remains separate.

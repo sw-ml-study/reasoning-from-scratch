@@ -1,9 +1,9 @@
 # Full MATH-500 inference protocol
 
-Protocol `book-full500-v1`, frozen design on 2026-09-30. Execution is **not
-started**. The tested [resumable runner](book-full500-runner.md) now prepares
+Protocol `book-full500-v1`, frozen design on 2026-09-30. Execution is **running
+and incomplete**, started at 2026-10-01 03:09 UTC. The tested [resumable runner](book-full500-runner.md) now prepares
 500 cases, 1000 prompt hashes and 2500 immutable request identities. Its
-execution manifest must be committed before generating benchmark answers.
+execution manifest was committed before generating benchmark answers.
 The first-ten `book-author-v2` primary results remain immutable.
 
 ## Inputs and controls
@@ -66,8 +66,8 @@ Use a tested generic persistence service with those sync boundaries before
 acknowledging a started or terminal record. See [E7](demo-extensions-requests.md).
 The isolated durable-store extension passes process-crash injection at file
 sync, publication and directory sync. Runner replay, corruption, duplication
-and interrupted/error denominator fixtures pass. No full500 answers have
-been generated; physical power-loss behavior is not experimentally tested.
+and interrupted/error denominator fixtures pass. Full500 generation is active;
+physical power-loss behavior is not experimentally tested.
 
 ## Quality and runtime reporting
 

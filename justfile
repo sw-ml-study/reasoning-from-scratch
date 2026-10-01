@@ -170,3 +170,7 @@ book-full500 *args:
 # Opt-in native persistence/recovery fixtures; no GPU or downloaded dataset.
 book-full500-store-check:
     ./scripts/check-full500-store
+
+# Continue the frozen experiment unattended in bounded sessions (opt-in).
+book-full500-continue:
+    ./scripts/continue-book-full500

@@ -1,0 +1,8 @@
+number = 20
+slug = "book-full500-results"
+status = "pending"
+description = "Collect and finalize the running frozen book-full500-v1 experiment launched i..."
+role = "production"
+context_files = []
+created_at = "2026-09-30T20:12:54"
+commits = []

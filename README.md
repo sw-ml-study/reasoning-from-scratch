@@ -43,8 +43,9 @@ The [full500 runner](docs/book-full500-runner.md) is implemented and tested:
 500 cases, 1000 prompt hashes and 2500 request identities are prepared. Durable
 replay, interruption/error accounting and corruption rejection pass. A ten-call
 authored CUDA smoke completes in 30.9 seconds with no backend errors. Full500
-answers are not generated yet; the planning range is 15.3–24.6 hours, with a
-48-hour cumulative execution budget. This is an estimate, not a measured ETA.
+generation is now running against those frozen inputs, with bounded unattended
+continuation. Final accuracy is pending. The planning range is 15.3–24.6 hours,
+with a 48-hour cumulative execution budget. This is an estimate, not a measured ETA.
 
 [CUDA tracing](docs/cuda-tracing.md) now separates kernel spans from driver
 launch and transfer delays: 48 decode windows average 57.21 ms, with 4.66 ms

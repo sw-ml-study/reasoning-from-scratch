@@ -1,6 +1,6 @@
 number = 19
 slug = "book-full500-execution"
-status = "pending"
+status = "in-progress"
 description = "Execute and resume the frozen book-full500-v1 experiment using scripts/run-bo..."
 role = "production"
 context_files = []

@@ -415,3 +415,12 @@ source = "lib/cuda/accounted.mlpl"
 test = "tests/test_cuda_accounted.mlpl"
 documentation = "docs/book-full500-runner.md"
 status = "accepted"
+
+[[component]]
+id = "FULL500CONTINUE"
+slug = "bounded-experiment-continuation"
+chapter = 4
+source = "scripts/continue-book-full500"
+test = "tests/check-full500-continuation.sh"
+documentation = "docs/book-full500-runner.md"
+status = "accepted"

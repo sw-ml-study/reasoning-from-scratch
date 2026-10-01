@@ -1,0 +1,50 @@
+#!/bin/sh
+# Continue the frozen MLPL experiment across bounded sessions; never retry a failed session automatically.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+control=out/book-full500-control
+summary=out/book-full500-prepared/last-summary.json
+mkdir -p "$control"
+exec 9>"$control/lock"
+flock -n 9 || { echo 'another full500 controller holds the lock' >&2; exit 1; }
+printf '%s\n' "$$" > "$control/pid"
+child=
+trap 'if [ -n "$child" ]; then kill -TERM "$child" 2>/dev/null || true; fi; exit 130' HUP INT TERM
+# Freeze orchestration at the manifest default. The MLPL runner owns cumulative accounting.
+BOOK_WALL_MS=900000
+BOOK_MAX_CALLS=2500
+export BOOK_WALL_MS BOOK_MAX_CALLS
+unset BOOK_STORE_ROOT
+validate_summary() {
+    jq -e '.run_id == "book-full500-v1" and (.complete == 0 or .complete == 1) and (.session_calls | type == "number") and .session_calls >= 0 and (.charged_prior_ms | type == "number") and .charged_prior_ms >= 0 and (.session_elapsed_ms | type == "number") and .session_elapsed_ms >= 0' "$summary" >/dev/null
+}
+# A manually launched first session may already own the store. Wait without
+# opening or reconciling it; release the advisory lock before invoking MLPL.
+if [ -f out/book-full500-v1-store/.lock ]; then
+    echo "WAIT for active session store lock (up to 30 minutes)"
+    flock -x -w 1800 out/book-full500-v1-store/.lock true || { echo "store remains busy; inspect worker before resuming" >&2; exit 1; }
+fi
+session=0
+while [ "$session" -lt 192 ]; do
+    if [ -f "$control/STOP" ]; then echo 'PAUSED at session boundary by STOP file'; exit 0; fi
+    if [ -f "$summary" ]; then
+        validate_summary || { echo 'invalid MLPL session summary; refusing continuation' >&2; exit 1; }
+        if jq -e '.complete == 1' "$summary" >/dev/null; then echo 'COMPLETE all planned attempts accounted for'; exit 0; fi
+        if jq -e '.charged_prior_ms + .session_elapsed_ms >= 172800000' "$summary" >/dev/null; then echo 'BUDGET exhausted; experiment incomplete'; exit 0; fi
+    fi
+    session=$((session+1))
+    stamp=$(date -u +%Y%m%dT%H%M%S)-$$-$session
+    echo "START session=$session utc=$stamp"
+    scripts/run-book-full500 > "$control/session-$stamp.log" 2>&1 &
+    child=$!
+    status=0
+    wait "$child" || status=$?
+    child=
+    if [ "$status" -ne 0 ]; then echo "FAILED session=$session exit=$status; manual diagnosis required" >&2; exit "$status"; fi
+    validate_summary || { echo 'invalid MLPL session summary; refusing continuation' >&2; exit 1; }
+    cat "$summary"
+    printf '\n'
+    if jq -e '.session_calls == 0 and .complete == 0' "$summary" >/dev/null; then echo 'NO PROGRESS; stopping without another session'; exit 0; fi
+done
+echo 'SESSION LIMIT reached; inspect accounting before resuming'

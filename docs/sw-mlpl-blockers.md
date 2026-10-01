@@ -628,3 +628,8 @@ symbolic simplification remains **missing** for full SymPy-equivalent grading.
 - Full500 inputs are prepared without answer generation. See
   [runner status](book-full500-runner.md); native provider/store publication
   outside this machine remains separate from local prototype acceptance.
+
+- **Supported orchestration:** a fixture-tested shell controller invokes the
+  frozen MLPL runner across bounded sessions, respecting its accounting and
+  stopping on errors or no progress. It adds no generation or grading semantics.
+  Full500 generation is now active; completion and accuracy remain pending.
