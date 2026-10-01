@@ -1,0 +1,44 @@
+#!/bin/sh
+# Stop only this repository's positively identified experiment controller/store owner.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+control=out/book-full500-control
+mkdir -p "$control"
+touch "$control/STOP"
+controller_ok() {
+    case "$1" in ''|*[!0-9]*) return 1;; esac
+    [ "$(readlink "/proc/$1/cwd" 2>/dev/null || true)" = "$repo" ] || return 1
+    tr '\000' '\n' < "/proc/$1/cmdline" 2>/dev/null | grep -Fx -e scripts/continue-book-full500 -e "$repo/scripts/continue-book-full500" >/dev/null
+}
+native_ok() {
+    case "$1" in ''|*[!0-9]*) return 1;; esac
+    [ "$(readlink "/proc/$1/exe" 2>/dev/null || true)" = /disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl ] || return 1
+    [ "$(readlink "/proc/$1/cwd" 2>/dev/null || true)" = "$repo" ] || return 1
+    for fd in /proc/"$1"/fd/*; do
+        if [ "$(readlink "$fd" 2>/dev/null || true)" = "$repo/out/book-full500-v1-store/.lock" ]; then return 0; fi
+    done
+    return 1
+}
+controller=$(cat "$control/pid" 2>/dev/null || true)
+owners=$(fuser "$repo/out/book-full500-v1-store/.lock" 2>/dev/null || true)
+if controller_ok "$controller"; then
+    kill -TERM "$controller" 2>/dev/null || true
+    echo "STOP controller=$controller"
+else
+    echo 'No matching live controller; no unrelated PID signaled'
+fi
+for owner in $owners; do
+    if native_ok "$owner"; then
+        kill -TERM "$owner" 2>/dev/null || true
+        echo "STOP native_store_owner=$owner"
+    fi
+done
+# Allow normal cleanup; only an unchanged matching owner is eligible for forced termination.
+sleep 5
+for owner in $owners; do
+    if native_ok "$owner"; then
+        kill -KILL "$owner" 2>/dev/null || true
+        echo "KILL unresponsive_native_store_owner=$owner"
+    fi
+done

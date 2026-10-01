@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work=$(mktemp -d "$repo/out/watch-native-stop.XXXXXX")
+mkdir -p "$work/scripts" "$work/out/book-full500-control" "$work/out/book-full500-v1-store"
+cp "$repo/scripts/stop-book-full500" "$work/scripts/"
+cat > "$work/hold.mlpl" <<'MLPL'
+# Model-free native journal owner for scoped termination acceptance.
+namespace = load_extension("/disk1/tmp/reasoning-tools/durable-store/target/release/libmlpl_durable_store.so")
+h = _durable_store:open({root: env("STOP_TEST_ROOT")?})
+print("READY")
+started = clock_ms()
+n = 0
+while lt(clock_ms() - started, 30000) { n = n + 1 }
+_durable_store:close({handle: h})
+MLPL
+cd "$work"
+STOP_TEST_ROOT=$work/out/book-full500-v1-store /disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl --source-dir "$work" --data-dir "$work" -f "$work/hold.mlpl" > "$work/owner.log" 2>&1 &
+owner=$!
+tries=0
+while ! grep -q READY "$work/owner.log"; do
+  tries=$((tries+1))
+  [ "$tries" -lt 100 ] || { cat "$work/owner.log"; exit 1; }
+  sleep 0.05
+done
+scripts/stop-book-full500 > "$work/stop.log" 2>&1
+status=0
+wait "$owner" || status=$?
+[ "$status" -ne 0 ]
+grep -q "STOP native_store_owner=$owner" "$work/stop.log"
+echo "PASS pinned native journal owner terminated; isolated fixture=$work"

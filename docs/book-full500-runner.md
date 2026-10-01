@@ -158,3 +158,11 @@ If a manually launched session already holds the native store lock, the
 controller first waits up to 30 minutes for that session to finish. It releases
 that lock before invoking MLPL. This initial wait is tested separately from
 the controller lock; it never reconciles or modifies an active worker's journal.
+
+## Periodic health supervision
+
+The user-authorized [watchdog](book-full500-watchdog.md) independently checks
+live immutable records every minute. It maintains a readable local dashboard
+and stops verified experiment processes on confirmed backend errors, corruption
+or conservative stall thresholds. Generation/source pins remain unchanged;
+watchdog termination becomes explicit interruption accounting, never a retry.

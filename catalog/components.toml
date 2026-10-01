@@ -424,3 +424,12 @@ source = "scripts/continue-book-full500"
 test = "tests/check-full500-continuation.sh"
 documentation = "docs/book-full500-runner.md"
 status = "accepted"
+
+[[component]]
+id = "FULL500WATCH"
+slug = "live-experiment-health-policy"
+chapter = 4
+source = "lib/watch/watch.mlpl"
+test = "tests/test_watch.mlpl"
+documentation = "docs/book-full500-watchdog.md"
+status = "accepted"

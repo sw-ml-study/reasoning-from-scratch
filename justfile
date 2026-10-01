@@ -174,3 +174,15 @@ book-full500-store-check:
 # Continue the frozen experiment unattended in bounded sessions (opt-in).
 book-full500-continue:
     ./scripts/continue-book-full500
+
+# Observe live progress every minute and stop verified experiment processes on failure.
+book-full500-watch:
+    ./scripts/watch-book-full500
+
+# Read-only live check: alerts, but never signals a worker.
+book-full500-progress:
+    ./scripts/watch-book-full500 --once
+
+# Optional model-free native stop acceptance; requires the pinned durable-store extension.
+book-full500-watch-native-check:
+    ./scripts/check-watch-native-stop

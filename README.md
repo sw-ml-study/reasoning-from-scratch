@@ -39,6 +39,11 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+[Live monitoring](docs/book-full500-watchdog.md) now checks the experiment every
+minute, refreshes a local dashboard, and stops verified workers on confirmed
+execution failures or conservative stall thresholds. It does not stop based
+on mathematical accuracy.
+
 [Full500 is running](docs/book-full500-progress.md). The first session completes
 38/2500 calls and 16924 tokens in 15m30s, with zero backend errors and three
 token caps. Continuation is active; full-set accuracy remains pending.

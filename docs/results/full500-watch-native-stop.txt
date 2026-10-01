@@ -1,0 +1,1 @@
+PASS pinned native journal owner terminated; isolated fixture=/disk1/github/sw-ml-study/reasoning-from-scratch/out/watch-native-stop.mTQhMW

@@ -1,0 +1,8 @@
+number = 20
+slug = "book-full500-watchdog"
+status = "in-progress"
+description = "User requests periodic progress and failure monitoring with authority to term..."
+role = "production"
+context_files = []
+created_at = "2026-10-01T06:52:41"
+commits = []

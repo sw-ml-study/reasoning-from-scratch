@@ -79,3 +79,6 @@ e80a69954b183b898909b2dcaa02a2fb76c9dbdef21033aa72b2e62279a62386  docs/results/f
 6b7134313af4fb5ae6d447dca094144f5cc62491dcb0736a63732fd97308e7be  docs/results/book-full500-v1-progress-01.json
 6eefaaf21455ca01aa3ea89c0441fb3c6dba1b6c89bdb800e2ddf35f959538f3  docs/results/book-full500-v1-progress-01-methods.jsonl
 e8d1e989a6e60ed990b66729224620197b346e11ecc1a1b2bed384d2dfc2d8b4  docs/results/book-full500-v1-progress-01-memory.txt
+f1fdfabe104c348b7e1a766dbc3fb3b11b8f312a1333e947501ffb9dd731c12a  docs/results/full500-watch-native-stop.txt
+5ef403f9a4b82ff26cefeeab0a8acf22f0bcd5873c4af43d3c3acdc82f875026  docs/results/full500-watch-shell-tests.txt
+9b5ba2a607392b784b0cea629a5cdfc67528daf1045c1f90e91a6d03e213719f  docs/results/full500-watch-first.json

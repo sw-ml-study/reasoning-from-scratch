@@ -8568,3 +8568,130 @@ write_atomic(str_concat(prepared, "/manifest.json"), to_json({run_id: run_id, ba
 if 1 - fixture { _hftok:close(tok) }
 print("PREPARED", run_id, "cases", cases, "calls", cases * 5)
 #+end_src
+
+
+#+begin_src mlpl :tangle ../lib/watch/watch.mlpl
+# Operational watchdog policy, independent of generation and mathematical grading. No dependencies.
+
+def u:watch_status(errors, interrupted, complete, inflight, call_age, idle_age, controller_alive) {
+  "Stop on infrastructure failure or conservative wall thresholds; mathematical accuracy is deliberately not an input.";
+  if gt(errors, 0) {
+    "backend_error"
+  } else {
+    if gt(interrupted, 0) {
+      "interrupted"
+    } else {
+      if complete {
+        "complete"
+      } else {
+        if 1 - controller_alive {
+          "controller_missing"
+        } else {
+          if gt(inflight, 1) {
+            "multiple_inflight"
+          } else {
+            if inflight * ge(call_age, 600) {
+              "call_timeout"
+            } else {
+              if (1 - inflight) * ge(idle_age, 300) {
+                "idle_timeout"
+              } else {
+                "running"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:watch_stop_status(status, budget_exhausted, stop_requested) {
+  "Classify an absent controller's expected exit without hiding an observed failure.";
+  if str_eq(status, "controller_missing") {
+    if budget_exhausted {
+      "budget_exhausted"
+    } else {
+      if stop_requested {
+        "paused"
+      } else {
+        status
+      }
+    }
+  } else {
+    status
+  }
+}
+#+end_src
+
+
+#+begin_src mlpl :tangle ../demos/watch_book_full500.mlpl
+# Read immutable published records without opening the live store lock; validate identities and compute operational progress in MLPL.
+include "lib/text/text.mlpl";
+include "lib/journal/journal.mlpl";
+include "lib/journal/store.mlpl";
+include "lib/watch/watch.mlpl";
+
+def u:watch_body(path) {
+  "Read a published immutable envelope and verify its exact UTF8 checksum.";
+  envelope = parse_json(read_text(path)?)?;
+  if (1 - eq(envelope.version, 1)) + (1 - str_eq(u:journal_hash(envelope.body)?, envelope.sha256)) {
+    err("watchdog record checksum mismatch")?
+  };
+  parse_json(envelope.body)
+}
+
+namespace = load_extension(env("STORE_LIBRARY")?)
+root = env("WATCH_STORE")?
+plan = u:journal_plan(read_text("docs/results/book-full500-v1-plan.jsonl")?, "book-full500-v1", 500)?
+files_text = u:text_trim(read_text(env("WATCH_FILES")?)?)
+files = if str_len(files_text) {
+  str_split(files_text, "\n")
+} else {
+  []
+}
+state = zeros([plan.count])
+tokens = 0
+caps = 0
+wall_ms = 0
+i = 0
+while lt(i, list_len(files)) {
+  path = list_get(files, i)?;
+  event = u:watch_body(path)?;
+  if 1 - str_eq(path, str_concat(root, str_concat("/", u:journal_name(event.ordinal, event.kind)))) {
+    err("unexpected watchdog record filename")?
+  };
+  # A start can be published after the shell enumerates starts but before it enumerates terminals.
+  if (1 - str_eq(event.kind, "start")) * eq(at(state, event.ordinal), 0) {
+    start = u:watch_body(str_concat(root, str_concat("/", u:journal_name(event.ordinal, "start"))))?;
+    state = u:journal_apply(state, plan, start)?
+  };
+  state = u:journal_apply(state, plan, event)?;
+  u:journal_terminal(event)?;
+  if str_eq(event.kind, "success") {
+    tokens = tokens + event.tokens;
+    caps = caps + str_eq(event.stopped, "budget");
+    wall_ms = wall_ms + event.wall_ms
+  };
+  i = i + 1
+}
+accounting = u:journal_summary(state)?
+inflight = reduce_add(eq(state, 1))
+now = parse_json(env("WATCH_NOW")?)?
+call_age = if inflight {
+  now - parse_json(env("WATCH_LAST_START")?)?
+} else {
+  0
+}
+idle_age = now - parse_json(env("WATCH_LAST_RECORD")?)?
+alive = parse_json(env("WATCH_ALIVE")?)?
+if lt(call_age, 0) + lt(idle_age, 0) {
+  err("watchdog clock moved backward")?
+}
+status = u:watch_status(accounting.errors, accounting.interrupted, accounting.complete, inflight, call_age, idle_age, alive)
+last_session = parse_json(read_text("out/book-full500-prepared/last-summary.json")?)?
+status = u:watch_stop_status(status, ge(last_session.charged_prior_ms + last_session.session_elapsed_ms, 172800000), parse_json(env("WATCH_STOP_REQUESTED")?)?)
+report = {run_id: "book-full500-v1", unix_seconds: now, status: status, accounting: accounting, inflight: inflight, call_age_seconds: call_age, idle_age_seconds: idle_age, tokens: tokens, capped: caps, successful_call_wall_ms: wall_ms, controller_alive: alive}
+write_atomic(env("WATCH_REPORT")?, to_json(report)?)?
+print("WATCH", to_json(report)?)
+#+end_src

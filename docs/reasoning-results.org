@@ -705,7 +705,29 @@ fixture checks ran during part of this session. This is operational timing,
 not a controlled Python comparison. The full experiment retains its 48-hour
 budget and will report all denominators if it ends incomplete.
 
+** Live execution supervision
+
+An independent [[file:book-full500-watchdog.md][watchdog]] checks the immutable journal every minute without
+taking the writer lock. MLPL validates checksums, request identities and state
+transitions, then evaluates operational health. A local HTML dashboard reloads
+every minute and displays counts, tokens, caps, errors and the current call's age.
+
+After confirming a fault twice, two seconds apart, the monitor stops only the
+verified experiment controller or pinned interpreter holding its journal lock.
+The triggers include a backend error, corrupt evidence, a disappeared worker,
+a ten-minute call or a five-minute idle gap. These conservative wall thresholds
+can interrupt an unusually slow valid call; such a call remains an interruption,
+not an incorrect mathematical answer or an automatically retried request.
+Mathematical accuracy and token caps alone do not trigger stopping. This keeps
+operational supervision separate from the frozen method comparison.
+
+The acceptance fixtures test health thresholds, planned stops, observer failures,
+process scoping and an isolated native journal owner's termination. The live
+experiment continues with unchanged generation/source pins. This monitoring
+publishes local progress; it does not schedule future chat notifications.
+
 * Current scope and next experiments
+
 
 
 

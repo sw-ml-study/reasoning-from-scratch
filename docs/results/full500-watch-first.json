@@ -1,0 +1,1 @@
+{"accounting":{"complete":0,"errors":0,"interrupted":0,"pending":2411,"planned_calls":2500,"planned_cases":500,"successes":89,"successful_groups":[18,17,18]},"call_age_seconds":4,"capped":7,"controller_alive":1,"idle_age_seconds":4,"inflight":1,"run_id":"book-full500-v1","status":"running","successful_call_wall_ms":2345884.579882,"tokens":42727,"unix_seconds":1790863609}

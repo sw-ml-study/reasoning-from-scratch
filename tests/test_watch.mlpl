@@ -1,0 +1,27 @@
+# Watchdog policy acceptance: infrastructure health, bounded stalls, and no accuracy-based early stopping.
+include "lib/watch/watch.mlpl";
+
+@test {name: "watchdog health and stopping thresholds", tags: ["watch"]}
+def u:test_watch_policy() {
+  "A live healthy call can run below the threshold; errors and ten-minute stalls stop.";
+  u:assert_eq(u:watch_status(0, 0, 0, 1, 599, 0, 1), "running", "long healthy call")?;
+  u:assert_eq(u:watch_status(0, 0, 0, 1, 600, 0, 1), "call_timeout", "ten minute threshold")?;
+  u:assert_eq(u:watch_status(1, 0, 0, 1, 1, 0, 1), "backend_error", "first error stops")?;
+  u:assert_eq(u:watch_status(0, 1, 0, 1, 1, 0, 1), "interrupted", "interruption requires review")?;
+  u:assert_eq(u:watch_status(0, 0, 0, 0, 1, 299, 1), "running", "session transition grace")?;
+  u:assert_eq(u:watch_status(0, 0, 0, 0, 1, 300, 1), "idle_timeout", "five minute idle threshold")?;
+  u:assert_eq(u:watch_status(0, 0, 0, 1, 1, 1, 0), "controller_missing", "dead controller")?;
+  u:assert_eq(u:watch_status(0, 0, 1, 0, 1, 900, 0), "complete", "completed experiment needs no worker")?;
+  u:assert_eq(u:watch_status(0, 0, 0, 2, 1, 1, 1), "multiple_inflight", "unexpected concurrency")
+}
+
+@test {name: "watchdog distinguishes deliberate stops from failures", tags: ["watch"]}
+def u:test_watch_stop_status() {
+  "Budget exhaustion and a requested pause are not a disappeared-controller fault.";
+  u:assert_eq(u:watch_stop_status("controller_missing", 1, 0), "budget_exhausted", "budget stop")?;
+  u:assert_eq(u:watch_stop_status("controller_missing", 0, 1), "paused", "requested stop")?;
+  u:assert_eq(u:watch_stop_status("backend_error", 1, 1), "backend_error", "do not hide errors")?;
+  u:assert_eq(u:watch_stop_status("running", 0, 1), "running", "boundary pause waits for active session")
+}
+
+u:run_registered_tests()

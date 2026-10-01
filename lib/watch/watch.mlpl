@@ -1,0 +1,51 @@
+# Operational watchdog policy, independent of generation and mathematical grading. No dependencies.
+
+def u:watch_status(errors, interrupted, complete, inflight, call_age, idle_age, controller_alive) {
+  "Stop on infrastructure failure or conservative wall thresholds; mathematical accuracy is deliberately not an input.";
+  if gt(errors, 0) {
+    "backend_error"
+  } else {
+    if gt(interrupted, 0) {
+      "interrupted"
+    } else {
+      if complete {
+        "complete"
+      } else {
+        if 1 - controller_alive {
+          "controller_missing"
+        } else {
+          if gt(inflight, 1) {
+            "multiple_inflight"
+          } else {
+            if inflight * ge(call_age, 600) {
+              "call_timeout"
+            } else {
+              if (1 - inflight) * ge(idle_age, 300) {
+                "idle_timeout"
+              } else {
+                "running"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+def u:watch_stop_status(status, budget_exhausted, stop_requested) {
+  "Classify an absent controller's expected exit without hiding an observed failure.";
+  if str_eq(status, "controller_missing") {
+    if budget_exhausted {
+      "budget_exhausted"
+    } else {
+      if stop_requested {
+        "paused"
+      } else {
+        status
+      }
+    }
+  } else {
+    status
+  }
+}

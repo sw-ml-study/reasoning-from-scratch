@@ -633,3 +633,9 @@ symbolic simplification remains **missing** for full SymPy-equivalent grading.
   frozen MLPL runner across bounded sessions, respecting its accounting and
   stopping on errors or no progress. It adds no generation or grading semantics.
   Full500 generation is now active; completion and accuracy remain pending.
+
+- **Supported:** read-only MLPL journal observation and a separate watchdog
+  policy validate immutable records without opening the live writer lock.
+  Scope-checked process termination passes a model-free native-owner test;
+  fixture tests protect unrelated PIDs. Minute-by-minute progress is local
+  HTML/JSON/log output; future chat notifications are not scheduled by this tool.

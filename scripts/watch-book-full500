@@ -1,0 +1,72 @@
+#!/bin/sh
+# Observe immutable records without taking the writer lock; refresh local progress and stop unhealthy execution.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+control=out/book-full500-control
+mkdir -p "$control"
+exec 9>"$control/watch.lock"
+flock -n 9 || { echo 'another watchdog is active' >&2; exit 1; }
+mode=${1:---watch}
+case "$mode" in --watch|--once) ;; *) echo 'usage: watch-book-full500 [--watch|--once]' >&2; exit 2;; esac
+WATCH_STORE=out/book-full500-v1-store
+WATCH_FILES=$control/watch-files.txt
+WATCH_REPORT=$control/progress.json
+STORE_LIBRARY=/disk1/tmp/reasoning-tools/durable-store/target/release/libmlpl_durable_store.so
+export WATCH_STORE WATCH_FILES WATCH_REPORT STORE_LIBRARY
+probe() {
+    WATCH_NOW=$(date +%s)
+    : > "$WATCH_FILES"
+    for file in "$WATCH_STORE"/a-start-*.json "$WATCH_STORE"/b-terminal-*.json; do
+        [ ! -f "$file" ] || printf '%s\n' "$file" >> "$WATCH_FILES"
+    done
+    WATCH_LAST_START=$(stat -c %Y "$WATCH_STORE"/a-start-*.json 2>/dev/null | sort -n | tail -1)
+    WATCH_LAST_RECORD=$(stat -c %Y "$WATCH_STORE"/a-start-*.json "$WATCH_STORE"/b-terminal-*.json 2>/dev/null | sort -n | tail -1)
+    WATCH_LAST_START=${WATCH_LAST_START:-$WATCH_NOW}
+    WATCH_LAST_RECORD=${WATCH_LAST_RECORD:-$WATCH_NOW}
+    WATCH_ALIVE=0
+    controller=$(cat "$control/pid" 2>/dev/null || true)
+    case "$controller" in ''|*[!0-9]*) ;; *)
+        if [ "$(readlink "/proc/$controller/cwd" 2>/dev/null || true)" = "$repo" ] && tr '\000' '\n' < "/proc/$controller/cmdline" 2>/dev/null | grep -Fx -e scripts/continue-book-full500 -e "$repo/scripts/continue-book-full500" >/dev/null; then WATCH_ALIVE=1; fi
+        ;;
+    esac
+    WATCH_STOP_REQUESTED=0
+    [ ! -f "$control/STOP" ] || WATCH_STOP_REQUESTED=1
+    export WATCH_NOW WATCH_LAST_START WATCH_LAST_RECORD WATCH_ALIVE WATCH_STOP_REQUESTED
+    scripts/run-mlpl-demo demos/watch_book_full500.mlpl > "$control/watch-probe.log" 2>&1
+}
+render() {
+    stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    jq -r --arg stamp "$stamp" '"\($stamp) \(.status): \(.accounting.successes)/2500 successful; \(.accounting.errors) errors; \(.accounting.interrupted) interrupted; \(.tokens) tokens; \(.capped) caps; active-call age \(.call_age_seconds)s"' "$WATCH_REPORT"
+    cat "$WATCH_REPORT" >> "$control/progress-history.jsonl"
+    printf '\n' >> "$control/progress-history.jsonl"
+    {
+        printf '%s\n' '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="refresh" content="60"><title>Full500 live progress</title><style>body{font:20px/1.6 system-ui;max-width:900px;margin:3rem auto;padding:1rem;background:#f7f9fc;color:#172b40}pre{font:18px/1.6 monospace;white-space:pre-wrap}</style><h1>Full500 live progress</h1>'
+        printf '<p>Updated %s UTC. Refreshes every minute.</p><pre>' "$stamp"
+        jq -r '"Status: \(.status)\nSuccessful calls: \(.accounting.successes) / 2500\nPending (including in flight): \(.accounting.pending)\nErrors: \(.accounting.errors)\nInterrupted: \(.accounting.interrupted)\nTokens: \(.tokens)\nToken caps: \(.capped)\nIn flight: \(.inflight)\nActive-call age: \(.call_age_seconds) seconds"' "$WATCH_REPORT"
+        printf '%s\n' '</pre><p>Incomplete until all planned calls are accounted for. This is execution health, not mathematical accuracy. Caps alone do not trigger a stop.</p><p>Stop policy: first backend error/interruption, corrupted records, missing controller, 10-minute active call or 5-minute idle gap. Suspect conditions are checked twice, two seconds apart.</p></html>'
+    } > "$control/progress.html.tmp"
+    mv "$control/progress.html.tmp" "$control/progress.html"
+}
+while :; do
+    status=observer_error
+    if probe; then status=$(jq -r .status "$WATCH_REPORT"); render; fi
+    case "$status" in complete|paused|budget_exhausted) echo "WATCH $status"; exit 0;; esac
+    if [ "$status" != running ]; then
+        # Confirm a transient snapshot/process race before stopping any worker.
+        sleep 2
+        status=observer_error
+        if probe; then status=$(jq -r .status "$WATCH_REPORT"); render; fi
+        case "$status" in complete|paused|budget_exhausted) exit 0;; esac
+        if [ "$status" != running ]; then
+            printf '%s ALERT %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" | tee "$control/alert.txt"
+            printf '<!doctype html><html lang="en"><meta charset="utf-8"><meta http-equiv="refresh" content="60"><title>Full500 alert</title><body style="font:22px/1.6 system-ui;padding:3rem"><h1>Full500 watchdog alert</h1><p>%s</p><p>Observed %s UTC. Execution requires review; no healthy live snapshot is being claimed.</p></body></html>\n' "$status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$control/progress.html.tmp"
+            mv "$control/progress.html.tmp" "$control/progress.html"
+            if [ "$mode" = --once ]; then exit 1; fi
+            scripts/stop-book-full500
+            exit 1
+        fi
+    fi
+    [ "$mode" != --once ] || exit 0
+    sleep 60
+done

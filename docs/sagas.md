@@ -299,3 +299,14 @@ launch, with logs in out/book-full500-control/controller.log. Verify liveness
 before resuming; terminal-shell backgrounding alone is not a persistence
 promise. Step020 must collect the full/budget-limited result. No completed
 full500 accuracy or Python speed ratio is claimed.
+
+User-requested step020 adds independent minute-by-minute monitoring while the
+frozen run continues. MLPL checks record integrity/identity and operational
+thresholds; shell code renders live HTML and signals only a verified controller
+or pinned interpreter owning this experiment's lock. Confirmed errors/corruption,
+600s calls and 300s idle gaps stop the run without retries; mathematical accuracy
+and token caps alone do not. Two native MLPL policy tests and process-scope
+fixtures pass, plus a model-free native-owner termination test. Watchdog managed
+session58726 writes out/book-full500-control/watch.log and progress.html;
+controller session87318 continues unchanged. Results collection is now step021,
+resident-copy work022. Never reconcile while either worker is active.
