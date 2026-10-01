@@ -1,0 +1,2 @@
+{"max_new":2048,"native":0,"rep":0,"seed":43,"stopped":"budget","temperature":0.9,"tokens":2048,"wall_ms":275169.64974900003}
+{"max_new":2048,"native":1,"rep":0,"seed":43,"stopped":"budget","temperature":0.9,"tokens":2048,"wall_ms":154163.5206}

@@ -39,6 +39,16 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+[CUDA tracing](docs/cuda-tracing.md) now separates kernel spans from driver
+launch and transfer delays: 48 decode windows average 57.21 ms, with 4.66 ms
+of summed kernel spans. These timings overlap. A standalone Rust/Candle
+probe also reproduces recurring stalls; no new speedup or driver root cause
+is claimed. The next provider experiments target launch traffic and transfer
+buffers. SQLite CLI is required by the new offline trace-accounting check.
+Native selection also matches all 2,048 sampled tokens in a longer-context
+pair, taking 154.2s versus 275.2s for reference selection. This is synthetic
+acceptance evidence, separate from reasoning accuracy.
+
 **The target is a book reproduction in MLPL with Rust/CUDA.** The exact
 Qwen3-0.6B-Base checkpoint runs in-process through a native extension;
 MLPL controls dataset preparation, prompting, decoding, extraction, voting,

@@ -1,0 +1,17 @@
+{
+  "experiment": "cuda-kernel-trace-acceptance-v1",
+  "date": "2026-09-30",
+  "provider": "v3 unchanged; cuda-profile-v3-provenance.json pins interpreter, model and hardware",
+  "provider_sha256": "539ea87f7367e2ecb9e847232310097202d1f4318ab992c3aaf8cd3dae4ff56a",
+  "nsight": "2026.5.1.161-3889610 Linux x86_64 CLI, isolated Debian archive extraction",
+  "context_trace_options": "--trace=cuda --sample=none --cpuctxsw=none --gpuctxsw=true --export=sqlite",
+  "initial_trace_options": "--trace=cuda,osrt --sample=none --cpuctxsw=process-tree --cuda-memory-usage=true --export=sqlite",
+  "initial_trace_limitation": "CPU scheduling denied by perf_event_paranoid=2; GPU CUDA tracing succeeded",
+  "workload": "demos/cuda_profile_stages.mlpl: 32/256/1024 repeated-token prefills, sixteen single-token decodes each",
+  "analysis": "docs/tools/cuda-trace-decodes.sql, 48 windows selected from 52 vocabulary transfers; host and GPU spans overlap",
+  "native_probe": "v4 source archive examples/driver_probe.rs; 512 iterations of 800 affine kernels and 607744-byte DtoH; exact values asserted",
+  "stream_diagnostic": "v4 with QWEN_NONBLOCKING_STREAM=1, blocking sync/event tracking defaults unchanged; not adopted",
+  "raw_artifacts": "ignored out/ traces, archive/tool/native hashes in cuda-trace-artifacts.sha256",
+  "primary_scores_changed": false,
+  "new_optimization_adopted": false
+}

@@ -1,0 +1,8 @@
+number = 17
+slug = "cuda-kernel-trace-acceptance"
+status = "in-progress"
+description = "User-authorized CUDA stall diagnosis: preserve v2 and v3 evidence; obtain Nsi..."
+role = "production"
+context_files = []
+created_at = "2026-09-30T18:10:26"
+commits = []

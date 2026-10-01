@@ -1,0 +1,14 @@
+{
+  "token_equal": true,
+  "reference_tokens": 2048,
+  "native_tokens": 2048,
+  "reference_ms": 275169.30639700004,
+  "native_ms": 154163.118944,
+  "seed": 43,
+  "prefill_tokens": 1024,
+  "context": 4096,
+  "temperature": 0.9,
+  "top_p": 0.9,
+  "eos_disabled": true,
+  "quality_evaluation": false
+}

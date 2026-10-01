@@ -1,0 +1,17 @@
+#!/bin/sh
+# Opt-in Nsight trace of pinned-provider fixed stages; writes only ignored artifacts.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+name=${1:-cuda-trace-live}
+case "$name" in ''|*[!a-zA-Z0-9_-]*) echo 'trace name must contain letters, digits, underscore or dash' >&2; exit 2;; esac
+nsys=${NSYS:-/disk1/tmp/reasoning-tools/nsight-cli/opt/nvidia/nsight-systems-cli/2026.5.1/target-linux-x64/nsys}
+[ -x "$nsys" ] || { echo 'set NSYS to an isolated Nsight Systems CLI; see docs/cuda-tracing.md' >&2; exit 1; }
+stem=out/$name
+mkdir -p out
+for suffix in log nsys-rep sqlite jsonl; do
+    [ ! -e "$stem.$suffix" ] || { echo 'trace output already exists; choose a new name' >&2; exit 1; }
+done
+"$nsys" profile --trace=cuda --sample=none --cpuctxsw=none --gpuctxsw=true --export=sqlite --output="$stem" scripts/run-cuda-profile stages > "$stem.log" 2>&1
+scripts/analyze-cuda-trace "$stem.sqlite" > "$stem.jsonl"
+printf 'Trace and 48 decode windows: %s.{log,nsys-rep,sqlite,jsonl}\n' "$stem"

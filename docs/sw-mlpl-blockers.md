@@ -597,3 +597,17 @@ strings, validates individual records, and emits JSONL. No Python converter
 or core optimization is needed. Exact bounded rational linear-symbolic
 comparison is now implemented in `verify/linear.mlpl`; general nonlinear
 symbolic simplification remains **missing** for full SymPy-equivalent grading.
+
+## CUDA trace and persistence findings (2026-09-30)
+
+- **Supported:** external Nsight tracing of the resident provider, with GPU
+  context-switch records and kernel/driver/transfer attribution. See
+  [cuda-tracing.md](cuda-tracing.md). Native standalone Candle also reproduces
+  recurring stalls; this is not evidence of an MLPL-only forward bottleneck.
+- **Awkward:** `write_atomic` provides same-filesystem atomic replacement but
+  the pinned `fs_atomic.rs` performs no file/directory `sync_all`. Do not treat
+  it as power-loss-durable journaling. A generic extension flush/atomic-commit
+  service is the short-term full500 runner requirement; it is not a new
+  syntax/device/autograd feature or a missing-function probe claim.
+- CPU scheduler attribution is currently unavailable from Nsight with the
+  host performance policy; GPU kernel and GPU context-switch capture works.

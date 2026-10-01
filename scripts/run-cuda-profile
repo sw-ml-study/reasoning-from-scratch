@@ -5,8 +5,8 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
 mode=${1:-stages}
 case "$mode" in
-    stages|sampler|primitives|native-sample|matched) ;;
-    *) echo 'usage: run-cuda-profile [stages|sampler|primitives|native-sample|matched]' >&2; exit 2 ;;
+    stages|sampler|primitives|native-sample|matched|long) ;;
+    *) echo 'usage: run-cuda-profile [stages|sampler|primitives|native-sample|matched|long]' >&2; exit 2 ;;
 esac
 QWEN_CUDA_LIBRARY=${QWEN_CUDA_LIBRARY:-/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v3/native/libmlpl_qwen3_cuda_profile.so}
 EXTENSION_LIBRARY=${EXTENSION_LIBRARY:-$repo/../demo-extensions/extensions/hftok/native/x86_64-unknown-linux-gnu/libmlpl_extension_hftok.so}
@@ -25,4 +25,6 @@ esac
 name=$(printf '%s' "$mode" | tr '-' '_')
 printf 'profile mode=%s blocking_sync=%s single_stream_experiment=%s\n' "$mode" "$QWEN_BLOCKING_SYNC" "$QWEN_SINGLE_STREAM"
 sha256sum "$QWEN_CUDA_LIBRARY"
-timeout 240 scripts/run-mlpl-demo "demos/cuda_profile_$name.mlpl"
+limit=240
+[ "$mode" != long ] || limit=1800
+timeout "$limit" scripts/run-mlpl-demo "demos/cuda_profile_$name.mlpl"

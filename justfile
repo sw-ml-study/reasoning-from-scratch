@@ -4,6 +4,10 @@ set shell := ["sh", "-cu"]
 default:
     @just --list
 
+# Opt-in CUDA kernel/driver/context trace; NSYS selects an isolated CLI.
+cuda-trace name="cuda-trace-live":
+    ./scripts/run-cuda-trace {{name}}
+
 # Retry the previously truncated case with a larger bounded development budget (opt-in).
 reasoning-budget:
     ./scripts/run-native-budget

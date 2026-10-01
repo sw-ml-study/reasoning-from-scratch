@@ -1,0 +1,10 @@
+{
+  "decode_windows": 48,
+  "mean_window_ms": 57.21179181249999,
+  "mean_kernel_span_ms": 4.6600043125,
+  "mean_launch_api_ms": 26.757453937500003,
+  "mean_allocation_api_ms": 1.3482411250000002,
+  "mean_dtoh_api_ms": 9.673839062500003,
+  "mean_dtoh_gpu_span_ms": 9.034580083333333,
+  "max_dtoh_gpu_span_ms": 44.213285
+}

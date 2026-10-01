@@ -67,27 +67,27 @@ details[open] summary { margin-bottom:1.5rem; }
 </ul>
 </li>
 <li><a href="#org8a21ee4">6. Step 4: run a controlled comparison</a></li>
-<li><a href="#orgd19b025">7. Results: reasoning helps on the measured sample</a>
+<li><a href="#org2ebe7a9">7. Results: reasoning helps on the measured sample</a>
 <ul>
 <li><a href="#orgbfb557e">7.1. Compare with the book's published results</a></li>
 <li><a href="#orgefbf27e">7.2. What the generated work shows</a></li>
 <li><a href="#orgb069e54">7.3. Recompute the results with ob-mlpl</a></li>
-<li><a href="#org0218a13">7.4. Making the implementation faster</a></li>
+<li><a href="#orgd19b025">7.4. Making the implementation faster</a></li>
 </ul>
 </li>
-<li><a href="#org2ebe7a9">8. Demonstrate the working model</a></li>
-<li><a href="#org4180c98">9. Learning from reasoning: implemented foundations and planned training</a>
+<li><a href="#org95d58d5">8. Demonstrate the working model</a></li>
+<li><a href="#orgd7654b5">9. Learning from reasoning: implemented foundations and planned training</a>
 <ul>
-<li><a href="#org1225600">9.1. Compute group-relative advantages</a></li>
-<li><a href="#org3285ba6">9.2. Execute and check a real parameter update</a></li>
+<li><a href="#org0b6a3d6">9.1. Compute group-relative advantages</a></li>
+<li><a href="#org4180c98">9.2. Execute and check a real parameter update</a></li>
 </ul>
 </li>
-<li><a href="#orgd7654b5">10. Current scope and next experiments</a></li>
-<li><a href="#org91b8ed7">11. Reproduce and publish this document</a>
+<li><a href="#orgb33cf44">10. Current scope and next experiments</a></li>
+<li><a href="#orge0576d7">11. Reproduce and publish this document</a>
 <ul>
-<li><a href="#orgb33cf44">11.1. Identify the experimental inputs</a></li>
-<li><a href="#org1566902">11.2. Refresh the calculations and build HTML</a></li>
-<li><a href="#orgd5c0387">11.3. Run individual blocks in Emacs</a></li>
+<li><a href="#org1566902">11.1. Identify the experimental inputs</a></li>
+<li><a href="#orgd5c0387">11.2. Refresh the calculations and build HTML</a></li>
+<li><a href="#org91b8ed7">11.3. Run individual blocks in Emacs</a></li>
 </ul>
 </li>
 </ul>
@@ -598,8 +598,8 @@ are explicitly scoped differences.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd19b025" class="outline-2">
-<h2 id="orgd19b025"><span class="section-number-2">7.</span> Results: reasoning helps on the measured sample</h2>
+<div id="outline-container-org2ebe7a9" class="outline-2">
+<h2 id="org2ebe7a9"><span class="section-number-2">7.</span> Results: reasoning helps on the measured sample</h2>
 <div class="outline-text-2" id="text-7">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1004,8 +1004,8 @@ requires the retained local responses and downloaded reference answers.
 </p>
 </div>
 </div>
-<div id="outline-container-org0218a13" class="outline-3">
-<h3 id="org0218a13"><span class="section-number-3">7.4.</span> Making the implementation faster</h3>
+<div id="outline-container-orgd19b025" class="outline-3">
+<h3 id="orgd19b025"><span class="section-number-3">7.4.</span> Making the implementation faster</h3>
 <div class="outline-text-3" id="text-7-4">
 <p>
 A matched performance experiment measures the cost of the MLPL/native
@@ -1055,6 +1055,16 @@ They do not establish a speedup over the book's Python implementation.
 </p>
 
 <p>
+A longer acceptance pair uses a synthetic 1024-token prefill and forces
+2048 sampled output tokens within context4096. All 2048 token IDs match
+exactly: reference selection takes 275.17 s and native selection 154.16 s
+(1.78× for this single pair). EOS is disabled for this test. It checks the
+full token budget and longer cache, not reasoning accuracy. The
+<a href="results/cuda-long-acceptance-summary.json">acceptance record</a> and <a href="cuda-tracing.md">reproduction recipe</a> retain these controls.
+</p>
+
+
+<p>
 A fixed-vocabulary profile measures 96.29 ms per sampled token in MLPL:
 15.11 ms for temperature/softmax, 57.47 ms for nucleus filtering and 23.71 ms
 for categorical selection. Native selection through the extension takes
@@ -1065,13 +1075,21 @@ the resident step.
 </p>
 
 <p>
-CUDA forward and transfer measurements still vary substantially. A
-synchronized fixed-token profile records forward calls from 5.02 to 99.35 ms;
-final-logit conversion/transfer ranges from 0.323 to 42.52 ms. Kernel/driver
-tracing is needed to attribute the long delays precisely. These instrumented
-stage timings are not summed with the separate sampler profile to predict
-end-to-end latency. See the <a href="cuda-performance.md">performance analysis and reproducible commands</a>
-for measurements, ownership of fixes and native source/build identities.
+Kernel/driver tracing identifies where more speed is available. Across 48
+fixed decode windows, mean elapsed time is 57.21 ms, summed kernel spans
+4.66 ms, driver launch APIs 26.76 ms, allocation/free APIs 1.35 ms, and
+device-to-host APIs 9.67 ms. <b>These timings overlap and must not be added.</b>
+Each decode launches 814–817 kernels. Reducing launch traffic and testing
+reused pinned transfer buffers are therefore concrete next experiments.
+</p>
+
+<p>
+The GPU context trace shows no switch to another process during the measured
+kernel window. A standalone Rust/Candle probe also reproduces recurring
+stalls without MLPL or model weights. The precise library/driver cause is
+still unresolved; no additional speedup is claimed from these diagnostics.
+See the <a href="cuda-tracing.md">trace analysis and reproduction commands</a> and
+<a href="cuda-performance.md">performance evidence</a> for scope and source/build identities.
 </p>
 
 <p>
@@ -1103,7 +1121,34 @@ print("sampled paired trials:", tally(reference))
 print("MLPL mean seconds:", mean(reference) / 1000)
 print("native mean seconds:", mean(native) / 1000)
 print("matched speedup:", speedup)
-if eq(tally(reference), 4) * eq(tally(native), 4) * eq(mean(reference), expected.sampled_reference_ms) * eq(mean(native), expected.sampled_native_ms) * eq(speedup, expected.sampled_speedup) {
+trace_lines = str_split(read_text("docs/results/cuda-trace-v3-decodes.jsonl")?, "\n")
+kernel_spans = []
+launch_spans = []
+i = 0
+while lt(i, list_len(trace_lines)) {
+  line = u:text_trim(list_get(trace_lines, i)?);
+  if str_len(line) {
+    row = parse_json(line)?;
+    kernel_spans = concat(kernel_spans, row.kernel_span_ms);
+    launch_spans = concat(launch_spans, row.launch_api_ms)
+  };
+  i = i + 1
+}
+trace_summary = parse_json(read_text("docs/results/cuda-trace-v3-summary.json")?)?
+print("traced decode windows:", tally(kernel_spans))
+print("mean summed kernel spans ms:", mean(kernel_spans))
+print("mean driver launch API ms:", mean(launch_spans))
+trace_ok = eq(tally(kernel_spans), 48) * lt(abs(mean(kernel_spans) - trace_summary.mean_kernel_span_ms), 0.000000001) * lt(abs(mean(launch_spans) - trace_summary.mean_launch_api_ms), 0.000000001)
+
+long_rows = str_split(read_text("docs/results/cuda-long-acceptance.jsonl")?, "\n")
+long_reference = parse_json(list_get(long_rows, 0)?)?
+long_native = parse_json(list_get(long_rows, 1)?)?
+long_acceptance = parse_json(read_text("docs/results/cuda-long-acceptance-summary.json")?)?
+long_ok = long_acceptance.token_equal * eq(long_reference.tokens, 2048) * eq(long_native.tokens, 2048) * eq(long_reference.native, 0) * eq(long_native.native, 1)
+print("long-context paired tokens:", long_reference.tokens)
+print("long-context single-pair speedup:", long_reference.wall_ms / long_native.wall_ms)
+
+if long_ok * trace_ok * eq(tally(reference), 4) * eq(tally(native), 4) * eq(mean(reference), expected.sampled_reference_ms) * eq(mean(native), expected.sampled_native_ms) * eq(speedup, expected.sampled_speedup) {
   ok("paired performance matches recorded evidence")
 } else {
   err("paired performance evidence differs")
@@ -1111,18 +1156,23 @@ if eq(tally(reference), 4) * eq(tally(native), 4) * eq(mean(reference), expected
 </code></pre>
 </div>
 
-<pre class="example">
+<pre class="example" id="org0218a13">
 sampled paired trials: 4
 MLPL mean seconds: 14.247333495249997
 native mean seconds: 6.000122366999998
 matched speedup: 2.374507155655481
+traced decode windows: 48
+mean summed kernel spans ms: 4.6600043125
+mean driver launch API ms: 26.757453937500003
+long-context paired tokens: 2048
+long-context single-pair speedup: 1.7849206393188717
 Ok(paired performance matches recorded evidence)
 </pre>
 </div>
 </div>
 </div>
-<div id="outline-container-org2ebe7a9" class="outline-2">
-<h2 id="org2ebe7a9"><span class="section-number-2">8.</span> Demonstrate the working model</h2>
+<div id="outline-container-org95d58d5" class="outline-2">
+<h2 id="org95d58d5"><span class="section-number-2">8.</span> Demonstrate the working model</h2>
 <div class="outline-text-2" id="text-8">
 <p>
 An authored prompt asks about a tank with 120 liters, losing 35 and then
@@ -1159,8 +1209,8 @@ versioned output and execution manifest, preserving the measured run.
 </p>
 </div>
 </div>
-<div id="outline-container-org4180c98" class="outline-2">
-<h2 id="org4180c98"><span class="section-number-2">9.</span> Learning from reasoning: implemented foundations and planned training</h2>
+<div id="outline-container-orgd7654b5" class="outline-2">
+<h2 id="orgd7654b5"><span class="section-number-2">9.</span> Learning from reasoning: implemented foundations and planned training</h2>
 <div class="outline-text-2" id="text-9">
 <p>
 Inference-time scaling spends more computation with fixed weights.
@@ -1171,8 +1221,8 @@ policy. Distillation trains a student on checked teacher responses using
 answer-only loss. These are the book's later stages.
 </p>
 </div>
-<div id="outline-container-org1225600" class="outline-3">
-<h3 id="org1225600"><span class="section-number-3">9.1.</span> Compute group-relative advantages</h3>
+<div id="outline-container-org0b6a3d6" class="outline-3">
+<h3 id="org0b6a3d6"><span class="section-number-3">9.1.</span> Compute group-relative advantages</h3>
 <div class="outline-text-3" id="text-9-1">
 <p>
 For rewards <code>[1,1,0,0]</code>, subtract the group mean and divide by the unbiased
@@ -1182,7 +1232,7 @@ the full policy objective also needs sequence probabilities and masking.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org95d58d5"><code># Educational reward normalization, not a trained policy.
+<pre class="src src-mlpl" id="org1225600"><code># Educational reward normalization, not a trained policy.
 rewards = [1, 1, 0, 0]
 centered = rewards - mean(rewards)
 deviation = sqrt(reduce_add(centered * centered) / (tally(rewards) - 1))
@@ -1210,8 +1260,8 @@ Ok(1)
 </pre>
 </div>
 </div>
-<div id="outline-container-org3285ba6" class="outline-3">
-<h3 id="org3285ba6"><span class="section-number-3">9.2.</span> Execute and check a real parameter update</h3>
+<div id="outline-container-org4180c98" class="outline-3">
+<h3 id="org4180c98"><span class="section-number-3">9.2.</span> Execute and check a real parameter update</h3>
 <div class="outline-text-3" id="text-9-2">
 <p>
 A small MLPL autograd example fits <code>prediction=w*x</code> to <code>y=2*x</code> for
@@ -1222,7 +1272,7 @@ known independently of the implementation.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-mlpl" id="org0b6a3d6"><code># Actual six-step scalar regression; no language-model weight is changed.
+<pre class="src src-mlpl" id="org3285ba6"><code># Actual six-step scalar regression; no language-model weight is changed.
 w = param[1]
 w = [0]
 x = [1, 2, 3, 4]
@@ -1269,8 +1319,8 @@ before/after accuracy.
 </div>
 </div>
 </div>
-<div id="outline-container-orgd7654b5" class="outline-2">
-<h2 id="orgd7654b5"><span class="section-number-2">10.</span> Current scope and next experiments</h2>
+<div id="outline-container-orgb33cf44" class="outline-2">
+<h2 id="orgb33cf44"><span class="section-number-2">10.</span> Current scope and next experiments</h2>
 <div class="outline-text-2" id="text-10">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1297,9 +1347,9 @@ before/after accuracy.
 </tr>
 
 <tr>
-<td class="org-left">Native forward and MLPL sampling work</td>
-<td class="org-left">Further kernel/driver attribution and long-context native-selection acceptance</td>
-<td class="org-left">Fixed-logit/supplied-uniform parity and matched generation timing before changing the backend</td>
+<td class="org-left">Native selection matches all 2048 tokens in a long-context pair; CUDA traces locate launch/transfer costs</td>
+<td class="org-left">Pinned-buffer and allocation-free launch experiments, then fewer launches where safe</td>
+<td class="org-left">Numerical/token parity and repeated end-to-end gains before changing the backend</td>
 </tr>
 
 <tr>
@@ -1331,12 +1381,12 @@ mathematical errors.
 </p>
 </div>
 </div>
-<div id="outline-container-org91b8ed7" class="outline-2">
-<h2 id="org91b8ed7"><span class="section-number-2">11.</span> Reproduce and publish this document</h2>
+<div id="outline-container-orge0576d7" class="outline-2">
+<h2 id="orge0576d7"><span class="section-number-2">11.</span> Reproduce and publish this document</h2>
 <div class="outline-text-2" id="text-11">
 </div>
-<div id="outline-container-orgb33cf44" class="outline-3">
-<h3 id="orgb33cf44"><span class="section-number-3">11.1.</span> Identify the experimental inputs</h3>
+<div id="outline-container-org1566902" class="outline-3">
+<h3 id="org1566902"><span class="section-number-3">11.1.</span> Identify the experimental inputs</h3>
 <div class="outline-text-3" id="text-11-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -1412,8 +1462,8 @@ directories. Publishing the report does not redistribute them.
 </p>
 </div>
 </div>
-<div id="outline-container-org1566902" class="outline-3">
-<h3 id="org1566902"><span class="section-number-3">11.2.</span> Refresh the calculations and build HTML</h3>
+<div id="outline-container-orgd5c0387" class="outline-3">
+<h3 id="orgd5c0387"><span class="section-number-3">11.2.</span> Refresh the calculations and build HTML</h3>
 <div class="outline-text-3" id="text-11-2">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
@@ -1441,8 +1491,8 @@ also includes the Org source, MLPL libraries and committed numeric evidence.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd5c0387" class="outline-3">
-<h3 id="orgd5c0387"><span class="section-number-3">11.3.</span> Run individual blocks in Emacs</h3>
+<div id="outline-container-org91b8ed7" class="outline-3">
+<h3 id="org91b8ed7"><span class="section-number-3">11.3.</span> Run individual blocks in Emacs</h3>
 <div class="outline-text-3" id="text-11-3">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host, then evaluate this setup once.

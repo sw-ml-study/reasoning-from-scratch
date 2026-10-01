@@ -360,3 +360,26 @@ these bounded probes; keep defaults unchanged. Shipping a single-stream
 optimization requires enforcing tensor/stream lifetime isolation, not merely
 assuming it. Publish the provider through demo-extensions only after the
 consumer's parity and native tests, with the portable pinned build inputs.
+
+## E7 — trace-led launch/transfer probes and durable experiment records
+
+The [Nsight evidence](cuda-tracing.md) measures 814–817 kernels per decode,
+substantial driver-launch time and intermittent slow 594KiB transfers. A
+model-free Candle diagnostic reproduces recurring stalls. Do not assign the
+cause to MLPL or desktop contention without additional evidence. Implement
+isolated comparisons of reused pinned host buffers, allocation-free launches
+and graph replay/fusion where cache semantics permit. Require unchanged
+numeric and supplied-uniform results plus repeated end-to-end improvements.
+The nonblocking-stream diagnostic is not an accepted optimization. Source
+and evidence hashes are in `results/cuda-trace-artifacts.sha256`.
+
+The full500 consumer additionally needs generic durable filesystem commits:
+write a unique same-directory temporary file, flush/sync its contents, rename,
+then sync the parent directory before acknowledging success. Started records
+must be acknowledged before model dispatch. Use exclusive run locking and
+validate SHA-256 on reads; reject duplicate, unexpected or mismatched attempt
+identities in MLPL accounting. Expose failure at every persistence boundary;
+crash-injection tests must prove terminal reconciliation and interrupted
+attempt accounting. The existing MLPL `write_atomic` has atomic visibility
+but no power-loss durability. Keep experiment semantics in MLPL and expose
+only generic persistence primitives. No sibling changes are authorized here.

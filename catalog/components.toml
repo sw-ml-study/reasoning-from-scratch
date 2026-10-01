@@ -381,6 +381,7 @@ status = "accepted"
 id = "CUDASELECT"
 # Measured 2.37x sampled generation improvement on exact-matched 128-token traces;
 # native provider remains an isolated pinned source/build handoff.
+# Nsight kernel/driver evidence and long-context acceptance: docs/cuda-tracing.md.
 slug = "resident-native-selection"
 chapter = 4
 source = "lib/cuda/offload.mlpl"

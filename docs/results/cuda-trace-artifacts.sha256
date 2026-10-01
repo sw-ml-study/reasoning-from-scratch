@@ -1,0 +1,8 @@
+61829db6392e5c293ada1319df86a97c3356bc810335a1975cb551fcfe3eca08  /disk1/tmp/reasoning-tools/nsight-systems-cli.deb
+2cac293d6a5ec4fd853f59d3111dba7673a21213e3da7512d6659fa34866f823  /disk1/tmp/reasoning-tools/qwen3-cuda-provider-v4-source.tar.gz
+3ac4f39c4344d56ca5eaa6da858dbb296bb533bca03e880aed03cf0d7bf22f78  /disk1/tmp/reasoning-tools/qwen3-cuda-provider-v4/native/libmlpl_qwen3_cuda_trace.so
+1e085b045c5c9f227cce3f0b80e755b4eb8c3485f843bbd7e8ea6774f8262787  /disk1/tmp/reasoning-tools/qwen3-cuda-provider/target/release/examples/driver_probe
+a9b114c2e76b6fac44e0fcb914ffc575190760091d5c1b4d859d5dee6dedb4ec  out/cuda-trace-v3-context.nsys-rep
+a4c4d8fffe2ed5693842b881744b8cc02059589b24d2b7953060276f18568238  out/cuda-trace-v3-context.sqlite
+722b0ca3e99cc4e112fd689060b2def6c57648f188ddcf8bc4d362d6b5376ad6  out/cuda-trace-v3-stages.nsys-rep
+040244c259931c80d9953f39567efeecb1d97f7083bea446ad176daa0e25da1f  out/cuda-trace-v3-stages.sqlite

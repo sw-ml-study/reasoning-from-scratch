@@ -100,7 +100,7 @@ The calling thread consumes approximately the forward wall time (mean 47.15ms
 CPU versus 47.48ms wall), consistent with active execution or spin waiting,
 not simply being descheduled. CUDA event spans also contain the delays, but
 **include host launch gaps**: they are not aggregate kernel time or occupancy.
-A 610KiB vocabulary transfer is normally submillisecond; its occasional 40ms
+A 594KiB vocabulary transfer is normally submillisecond; its occasional 40ms
 latency cannot be explained merely by the payload size. The aggregate stage
 mean is instrumentation/workload-specific and is not added to the independent
 sampler timing to predict production latency.
@@ -109,7 +109,7 @@ Host inspection found no other compute application on the GPU; the display
 and remote desktop remain active. Blocking context synchronization and the
 single-stream event-tracking diagnostic did not remove long stalls. Their
 small runs establish no reliable speedup, and defaults remain unchanged.
-A kernel/driver trace is the next attribution step. The current Candle build
+A [kernel/driver trace](cuda-tracing.md) now separates those spans. The current Candle build
 uses standard matmul attention rather than its optional CUDA flash-attention
 feature. That is an optimization candidate, not a proven cause of all stalls.
 
@@ -161,3 +161,13 @@ or a completed experiment. Implement/test crash recovery and pin all rendered
 prompts before launch. Long-context acceptance and further CUDA attribution
 remain useful before paying the full run cost. Native model training retains
 its separate loss/backward/update/save/reload gate.
+
+## Kernel-trace attribution
+
+The [Nsight analysis](cuda-tracing.md) now attributes 48 fixed decode windows:
+mean elapsed 57.21ms, summed kernel spans 4.66ms, driver launch APIs 26.76ms,
+allocation/free APIs 1.35ms and device-to-host APIs 9.67ms. These are overlapping
+measurements. The trace shows no other process context switch during the kernel
+window, and a model-free Rust/Candle probe reproduces recurring stalls.
+No further optimization is adopted from these diagnostics. Transfer-buffer
+and allocation-free launch probes are concrete next experiments.

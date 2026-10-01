@@ -1,6 +1,6 @@
-number = 17
+number = 18
 slug = "cuda-attribution-full500-runner"
-status = "pending"
+status = "in-progress"
 description = "Continue performance dogfooding from docs/cuda-performance.md. Preserve prima..."
 role = "production"
 context_files = []

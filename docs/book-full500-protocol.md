@@ -59,6 +59,13 @@ it does not vote only over surviving successful samples. Every planned case
 remains in its method denominator. A partial run is labeled incomplete;
 completed-success-only accuracy is never presented as full-set accuracy.
 
+Implementation prerequisite: the pinned MLPL `write_atomic` provides rename
+atomicity but does not sync file contents or the directory to durable storage.
+Use a tested generic persistence service with those sync boundaries before
+acknowledging a started or terminal record. See [E7](demo-extensions-requests.md).
+The runner and crash-injection acceptance remain pending; no full500 answers
+have been generated.
+
 ## Quality and runtime reporting
 
 Report answer accuracy, paired gains/losses, truncations, interruptions,

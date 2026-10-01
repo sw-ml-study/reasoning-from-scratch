@@ -1,0 +1,9 @@
+#!/bin/sh
+# Extract fixed-stage decode windows; no Python and no inference.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ "$#" -eq 1 ] || { echo 'usage: analyze-cuda-trace trace.sqlite' >&2; exit 2; }
+[ -f "$1" ] || { echo 'trace database missing' >&2; exit 1; }
+count=$(sqlite3 -readonly "$1" 'SELECT count(*) FROM CUPTI_ACTIVITY_KIND_MEMCPY WHERE bytes=607744 AND copyKind=2;')
+[ "$count" = 52 ] || { echo 'expected 52 fixed-workload vocabulary transfers; refusing mismatched trace' >&2; exit 1; }
+sqlite3 -readonly "$1" < "$repo/docs/tools/cuda-trace-decodes.sql"

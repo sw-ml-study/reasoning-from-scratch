@@ -223,7 +223,7 @@ history and preserves all underlying experimental evidence. The gate covers
 
 Step 016, `book-scale-readiness`, profiles native and sampling costs, closes
 targeted grading gaps and freezes a resumable full 500-case protocol before
-paying that inference cost. Core resident-copy work is deferred as step 017.
+paying that inference cost. Core resident-copy work is deferred in the queue.
 Provider publication still awaits sibling-write authorization; native
 language-model training needs separate acceptance.
 
@@ -240,7 +240,29 @@ ownership and acceptance rather than blaming implementation language.
 
 The full500 method/accounting protocol is frozen in
 [book-full500-protocol.md](book-full500-protocol.md), but execution has not
-started and its resumable runner is not yet implemented. The next step
-combines deeper CUDA attribution, long-context acceptance and the tested
+started and its resumable runner is not yet implemented. The following work
+combines CUDA attribution, long-context acceptance and the tested
 resumable runner before committing to full500 execution cost. Native training
 and provider publication remain separate deliverables.
+
+Step 017, `cuda-kernel-trace-acceptance`, adds Nsight kernel/driver and GPU
+context-switch attribution. Forty-eight fixed decode windows average 57.21ms,
+with 4.66ms summed kernel spans, 26.76ms driver launch APIs, 1.35ms allocation/
+free APIs and 9.67ms device-to-host APIs (overlapping, not additive). No other
+process context switch is observed during the kernel window. A model-free
+Rust/Candle probe reproduces recurring stalls. Nonblocking-stream diagnostics
+are not adopted. Raw traces and isolated diagnostic sources are hash-pinned;
+numeric evidence, SQLite extraction and its offline fixture are published.
+
+This focused diagnostic step was inserted before the broader runner step.
+Step 018 retains remaining optimization experiments, crash-safe full500
+implementation and pre-execution manifest/prompt pins. Inspection found that
+MLPL atomic rename does not sync durable storage; E7 specifies the generic
+persistence service and crash tests. Full500 has not started. Core resident
+copy profiling is now step 019; native training remains a separate gate.
+
+The step017 long-context acceptance also passes: a synthetic1024-token
+prefill plus2048 sampled output tokens yields exact reference/native token
+identity at context4096. Wall times275.170s and154.164s are one sequential
+pair, not a quality result. The gate now includes55 exact tangles and the
+SQLite trace fixture; native MLPL test count remains189.
