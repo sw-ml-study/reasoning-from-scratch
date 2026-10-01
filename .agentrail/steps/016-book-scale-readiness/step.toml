@@ -1,8 +1,9 @@
 number = 16
 slug = "book-scale-readiness"
-status = "in-progress"
+status = "completed"
 description = "Continue the user's book recreation in MLPL plus Rust/CUDA, using the complet..."
 role = "production"
 context_files = []
 created_at = "2026-09-30T08:26:39"
-commits = []
+completed_at = "2026-09-30T17:49:25"
+commits = ["11f5013a8cbf9532bd301abf0abfdcd2442925c6"]
