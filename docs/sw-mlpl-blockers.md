@@ -611,3 +611,20 @@ symbolic simplification remains **missing** for full SymPy-equivalent grading.
   syntax/device/autograd feature or a missing-function probe claim.
 - CPU scheduler attribution is currently unavailable from Nsight with the
   host performance policy; GPU kernel and GPU context-switch capture works.
+
+## Full500 runner and CUDA transport acceptance
+
+- **Supported via isolated generic extension:** durable immutable records,
+  locking, SHA256 validation and file/directory sync. MLPL owns recovery and
+  exactly-once accounting; five journal tests plus native crash/integration
+  acceptance pass. The core rename-only builtin is unchanged.
+- **Supported:** accounted native decoding preserves the existing uniform
+  stream and separates prefill from later native-step time. Selection remains
+  included in those native steps, not separately timed per call.
+- **Awkward:** kernel launch count and dynamic cache storage impede direct
+  graph capture of the current Qwen provider. The model-free graph probe gives
+  about2.1x median improvement on identical tiny-kernel work, not a model
+  speedup. Reused pinned transfers do not consistently remove stalls.
+- Full500 inputs are prepared without answer generation. See
+  [runner status](book-full500-runner.md); native provider/store publication
+  outside this machine remains separate from local prototype acceptance.

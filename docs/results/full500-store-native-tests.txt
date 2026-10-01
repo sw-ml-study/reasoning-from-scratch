@@ -1,0 +1,24 @@
+   Compiling mlpl-durable-store-prototype v0.1.0 (/disk1/tmp/reasoning-tools/durable-store)
+    Finished `release` profile [optimized] target(s) in 0.84s
+     Running unittests src/lib.rs (/disk1/tmp/reasoning-tools/durable-store/target/release/deps/mlpl_durable_store-2b9c9854cacfe970)
+
+running 4 tests
+test tests::crash_worker ... ok
+test tests::rejects_symlinks_and_oversize ... ok
+
+running 1 test
+test tests::commit_reopen_integrity_and_lock ... ok
+
+running 1 test
+
+running 1 test
+test tests::process_crashes_never_publish_partial_terminal ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+   Doc-tests mlpl_durable_store
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

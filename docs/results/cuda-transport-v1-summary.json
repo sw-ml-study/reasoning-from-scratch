@@ -1,0 +1,26 @@
+[
+  {
+    "mode": 0,
+    "n": 64,
+    "forward_mean_ms": 5.5820761874999985,
+    "transfer_mean_ms": 0.36306546874999995,
+    "forward_median_ms": 1.1570015,
+    "transfer_max_ms": 6.182906999999999
+  },
+  {
+    "mode": 1,
+    "n": 64,
+    "forward_mean_ms": 2.795450546875001,
+    "transfer_mean_ms": 0.7625083281250002,
+    "forward_median_ms": 1.157458,
+    "transfer_max_ms": 30.375276
+  },
+  {
+    "mode": 2,
+    "n": 64,
+    "forward_mean_ms": 0.6113885312499998,
+    "transfer_mean_ms": 1.0714347499999999,
+    "forward_median_ms": 0.5515685,
+    "transfer_max_ms": 23.443676
+  }
+]

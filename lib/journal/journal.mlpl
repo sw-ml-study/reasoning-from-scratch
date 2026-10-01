@@ -1,0 +1,114 @@
+# Pure MLPL planned-attempt identity, replay and all-case denominator rules. Requires text/text.mlpl. State codes: 0 unstarted, 1 started, 2 success, 3 error, 4 interrupted. Persistence is a separate generic service.
+
+def u:journal_key(run_id, ordinal) {
+  "Canonical immutable key for five slots per author-ordered case.";
+  str_concat(run_id, str_concat("/", str_concat(to_string(floor(ordinal / 5)), str_concat("/", to_string(mod(ordinal, 5))))))
+}
+
+def u:journal_plan(text, run_id, cases) {
+  "Validate a complete canonical manifest before reading outcomes or dispatching any model call.";
+  if lt(cases, 1) + (1 - eq(cases, floor(cases))) + eq(str_len(run_id), 0) {
+    err("invalid planned case count or run id")
+  } else {
+    rows = str_split(u:text_trim(text), "\n");
+    if list_len(rows) - cases * 5 {
+      err("manifest must contain exactly five slots per case")
+    } else {
+      i = 0;
+      while lt(i, list_len(rows)) {
+        row = parse_json(list_get(rows, i)?)?;
+        if (1 - eq(row.ordinal, i)) + (1 - str_eq(row.key, u:journal_key(run_id, i))) + eq(str_len(row.request_hash), 0) {
+          err("manifest key, ordinal or request hash invalid")?
+        };
+        i = i + 1
+      };
+      ok({rows: rows, count: cases * 5, cases: cases, run_id: run_id})
+    }
+  }
+}
+
+def u:journal_apply(state, plan, event) {
+  "Apply one identity-checked event; reject duplicates, retries, terminal-before-start and hash mismatches.";
+  i = event.ordinal;
+  if (1 - eq(tally(state), plan.count)) + lt(i, 0) + gt(i, plan.count - 1) + (1 - eq(i, floor(i))) {
+    err("unexpected attempt ordinal or state size")
+  } else {
+    row = parse_json(list_get(plan.rows, i)?)?;
+    if (1 - str_eq(event.key, row.key)) + (1 - str_eq(event.request_hash, row.request_hash)) {
+      err("attempt identity or request hash mismatch")
+    } else {
+      next = if str_eq(event.kind, "start") {
+        1
+      } else {
+        if str_eq(event.kind, "success") {
+          2
+        } else {
+          if str_eq(event.kind, "error") {
+            3
+          } else {
+            if str_eq(event.kind, "interrupted") {
+              4
+            } else {
+              0
+            }
+          }
+        }
+      };
+      prior = at(state, i);
+      allowed = if eq(next, 1) {
+        eq(prior, 0)
+      } else {
+        gt(next, 1) * eq(prior, 1)
+      };
+      if 1 - allowed {
+        err("duplicate or invalid attempt transition")
+      } else {
+        mask = eq(range(plan.count), i);
+        ok(state * (1 - mask) + next * mask)
+      }
+    }
+  }
+}
+
+def u:journal_recover(state) {
+  "Classify every unresolved start as interrupted without silently rerunning it.";
+  state + 3 * eq(state, 1)
+}
+
+def u:journal_slot(index, group, sample) {
+  "Rotate direct, greedy-CoT and three-sample groups while retaining fixed canonical slot IDs.";
+  method = mod(index + group, 3);
+  if eq(method, 2) {
+    2 + sample
+  } else {
+    method
+  }
+}
+
+def u:journal_summary(state) {
+  "Count all planned cases; a voted group succeeds only when all three sampled slots succeed.";
+  if eq(tally(state), 0) + mod(tally(state), 5) + reduce_add(lt(state, 0) + gt(state, 4) + (1 - eq(state, floor(state)))) {
+    err("invalid journal state")
+  } else {
+    cases = tally(state) / 5;
+    groups = [0, 0, 0];
+    i = 0;
+    while lt(i, cases) {
+      p = i * 5;
+      groups = groups + [eq(at(state, p), 2), eq(at(state, p + 1), 2), eq(at(state, p + 2), 2) * eq(at(state, p + 3), 2) * eq(at(state, p + 4), 2)];
+      i = i + 1
+    };
+    pending = reduce_add(eq(state, 0) + eq(state, 1));
+    ok({planned_cases: cases, planned_calls: tally(state), successful_groups: groups, pending: pending, complete: eq(pending, 0), successes: reduce_add(eq(state, 2)), errors: reduce_add(eq(state, 3)), interrupted: reduce_add(eq(state, 4))})
+  }
+}
+
+def u:journal_terminal(event) {
+  "Reject malformed successful payloads before further generation; a token cap is eligible, a deadline is not.";
+  if str_eq(event.kind, "success") {
+    if (1 - str_eq(type_of(event.text), "string")) + (1 - eq(tally(event.ids), event.tokens)) + lt(event.tokens, 0) + gt(event.tokens, 2048) + lt(event.wall_ms, 0) + (1 - (str_eq(event.stopped, "eos") + str_eq(event.stopped, "budget"))) {
+      err("malformed successful terminal")?
+    }
+  };
+  ok(1)
+}

@@ -266,3 +266,17 @@ prefill plus2048 sampled output tokens yields exact reference/native token
 identity at context4096. Wall times275.170s and154.164s are one sequential
 pair, not a quality result. The gate now includes55 exact tangles and the
 SQLite trace fixture; native MLPL test count remains189.
+
+Step 018 delivers the durable full500 runner and frozen preparation: 500 cases,
+1000 prompt hashes and 2500 immutable request keys, with no benchmark generation.
+Five journal tests and one timed-decoder test bring the native MLPL suite to
+195; the literate source has 60 exact tangles. Native crash-boundary tests and
+runner replay/interruption/error/duplicate/corruption acceptance pass. The
+10-call authored CUDA smoke takes 30.9s with no backend errors (six short caps).
+The isolated transport probe measures about 2.1x median improvement for a toy
+captured graph, not a model speedup; pinned buffers do not reliably remove stalls.
+
+Next: execute/resume the frozen full500 experiment, retaining all denominators
+and reporting incomplete results honestly. Planning range 15.3–24.6h is an
+estimate; the cumulative budget is 48h. Stable-cache CUDA graph work, native
+package publication and language-model training remain separate deliverables.

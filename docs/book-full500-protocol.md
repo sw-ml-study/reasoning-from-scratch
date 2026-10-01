@@ -1,8 +1,9 @@
 # Full MATH-500 inference protocol
 
 Protocol `book-full500-v1`, frozen design on 2026-09-30. Execution is **not
-started**. The next implementation step must deliver and test the resumable
-runner and commit its execution manifest before generating benchmark answers.
+started**. The tested [resumable runner](book-full500-runner.md) now prepares
+500 cases, 1000 prompt hashes and 2500 immutable request identities. Its
+execution manifest must be committed before generating benchmark answers.
 The first-ten `book-author-v2` primary results remain immutable.
 
 ## Inputs and controls
@@ -39,7 +40,7 @@ Assign each planned call the immutable key `(run_id, case_index, slot)`,
 where slots are direct, greedy-CoT and sampled-1/2/3. Commit a complete
 planned-key manifest before execution. Before dispatch, durably record a
 started attempt with its prompt/token/control hashes. Write the response
-and terminal outcome using atomic replacement, then record its hashes.
+and terminal outcome as one checksummed immutable record with atomic no-replace publication.
 Never use the presence of a successful grade as the definition of completion.
 
 On restart, reconcile the durable journal and terminal files:
@@ -63,8 +64,10 @@ Implementation prerequisite: the pinned MLPL `write_atomic` provides rename
 atomicity but does not sync file contents or the directory to durable storage.
 Use a tested generic persistence service with those sync boundaries before
 acknowledging a started or terminal record. See [E7](demo-extensions-requests.md).
-The runner and crash-injection acceptance remain pending; no full500 answers
-have been generated.
+The isolated durable-store extension passes process-crash injection at file
+sync, publication and directory sync. Runner replay, corruption, duplication
+and interrupted/error denominator fixtures pass. No full500 answers have
+been generated; physical power-loss behavior is not experimentally tested.
 
 ## Quality and runtime reporting
 

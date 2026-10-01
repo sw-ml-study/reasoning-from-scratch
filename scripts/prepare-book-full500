@@ -1,0 +1,22 @@
+#!/bin/sh
+# Prepare all prompt/request hashes with MLPL; never generate model answers.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+BOOK_BACKEND=${BOOK_BACKEND:-cuda}
+case "$BOOK_BACKEND" in
+  cuda) BOOK_PREPARED=${BOOK_PREPARED:-out/book-full500-prepared} ;;
+  fixture) BOOK_PREPARED=${BOOK_PREPARED:-out/book-full500-fixture-prepared} ;;
+  cuda-smoke) BOOK_PREPARED=${BOOK_PREPARED:-out/book-full500-cuda-smoke} ;;
+  *) echo 'BOOK_BACKEND must be cuda, fixture or cuda-smoke' >&2; exit 2;;
+esac
+case "$BOOK_PREPARED" in out/*) ;; *) echo 'prepared directory must be under out/' >&2; exit 2;; esac
+[ ! -e "$BOOK_PREPARED/manifest.json" ] || { echo 'prepared manifest already exists; refusing overwrite' >&2; exit 1; }
+mkdir -p "$BOOK_PREPARED"
+STORE_LIBRARY=${STORE_LIBRARY:-/disk1/tmp/reasoning-tools/durable-store/target/release/libmlpl_durable_store.so}
+EXTENSION_LIBRARY=$(scripts/select-extension hftok)
+REPO_ROOT=$repo
+export BOOK_BACKEND BOOK_PREPARED STORE_LIBRARY EXTENSION_LIBRARY REPO_ROOT
+scripts/run-mlpl-demo demos/prepare_book_full500.mlpl > "$BOOK_PREPARED/prepare.log" 2>&1
+grep '^PREPARED' "$BOOK_PREPARED/prepare.log"
+[ -f "$BOOK_PREPARED/manifest.json" ]

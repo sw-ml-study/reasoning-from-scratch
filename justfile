@@ -158,3 +158,15 @@ cuda-profile mode="stages":
 # Recompute paired performance summaries from public numeric evidence.
 cuda-profile-report:
     ./scripts/run-mlpl-demo demos/cuda_profile_report.mlpl
+
+# Render all author-ordered prompts and immutable request identities; no inference.
+book-full500-prepare:
+    ./scripts/prepare-book-full500
+
+# Resume the frozen full500 experiment (default: a 15-minute session, stops between calls).
+book-full500 *args:
+    ./scripts/run-book-full500 {{args}}
+
+# Opt-in native persistence/recovery fixtures; no GPU or downloaded dataset.
+book-full500-store-check:
+    ./scripts/check-full500-store

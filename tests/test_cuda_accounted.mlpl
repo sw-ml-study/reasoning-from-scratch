@@ -1,0 +1,27 @@
+# Timed native-step decoding must preserve the existing supplied-uniform and stopping contract.
+include "lib/scaling/scaling.mlpl";
+include "lib/cuda/offload.mlpl";
+include "lib/cuda/accounted.mlpl";
+
+def u:cuda_accounted_fixture(request) {
+  "A supplied uniform selects between two authored token IDs.";
+  ok(if lt(request.uniform, 0.5) {
+      7
+    } else {
+      8
+    })
+}
+
+@test {name: "accounted decoder preserves tokens and counts prefill separately", tags: ["cuda"]}
+def u:test_cuda_accounted() {
+  "Timing counters do not change seeded decoding and include exactly one prefill call.";
+  provider = {step: :u:cuda_accounted_fixture, handle: 0};
+  options = {seed: 43, temperature: 0.9, top_p: 0.9, max_new: 8, eos: 99, max_ms: 10000};
+  a = u:cuda_decode_native(provider, [1, 2], options)?;
+  b = u:cuda_decode_accounted(provider, [1, 2], options)?;
+  u:assert_eq(a.ids, b.ids, "token identity")?;
+  u:assert_eq(b.calls, 8, "one prefill and seven decode calls")?;
+  u:assert_eq(lt(b.prefill_step_ms, 0) + lt(b.decode_steps_ms, 0), 0, "nonnegative timing")
+}
+
+u:run_registered_tests()

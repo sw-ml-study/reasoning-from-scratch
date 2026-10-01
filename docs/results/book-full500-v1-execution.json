@@ -1,0 +1,81 @@
+{
+  "schema": "reasoning.book-full500.execution.v1",
+  "run_id": "book-full500-v1",
+  "status": "prepared; no benchmark generation yet",
+  "inputs": {
+    "backend": "cuda",
+    "calls": 2500,
+    "cases": 500,
+    "cases_sha256": "8c64443b4679d04084c214ae2cd13788f384ae5e3b17c33086a8960e97aa686b",
+    "context": 4096,
+    "max_new": 2048,
+    "planned_sha256": "ab527cf0e7078131ce5f11d411d5c160c26832daeaad6dd22c2bd5bb55347ee9",
+    "prompt_hashes_sha256": "db0dd6000ce60f73cef60e0c7b8b145452a58d3644f2462db1a7aa58a1f0dc31",
+    "requests_sha256": "7a0d78fef5d93556532599415bb1b28e3867ad734ef46f97364b283f79f2d19b",
+    "run_id": "book-full500-v1"
+  },
+  "author_revision": "1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f",
+  "source_baseline_commit": "086fade5c2aaa36f02c081bfce31420deca5c8b6",
+  "source_pin_rule": "Every generation source and native artifact is SHA256-pinned in book-full500-v1-execution.sha256; the launch log records the actual execution commit.",
+  "model": "Qwen3-0.6B-Base",
+  "dtype": "bf16",
+  "model_sha256": "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba",
+  "interpreter_commit": "49c15b3e659ecc32603e10312a5197039b636397",
+  "interpreter_sha256": "d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0",
+  "provider": "v3 supplied-uniform resident native step",
+  "provider_sha256": "539ea87f7367e2ecb9e847232310097202d1f4318ab992c3aaf8cd3dae4ff56a",
+  "store_sha256": "7ad006645278a6760d361d0d162746b93915cf2171cbbdccc2f232cd80083a3c",
+  "hardware": {
+    "gpu": "RTX 5060 Ti 16 GiB",
+    "cpu": "Xeon W-2135",
+    "driver": "615.71.09",
+    "cuda": "13.4.59",
+    "sm": 120
+  },
+  "controls": {
+    "max_new": 2048,
+    "context": 4096,
+    "eos": 151643,
+    "direct_temperature": 0,
+    "cot_temperature": 0,
+    "sampled_temperature": 0.9,
+    "top_p": 0.9,
+    "seeds": [
+      43,
+      44,
+      45
+    ],
+    "greedy_unused_seed": 42,
+    "rng": "MLPL xorshift64(13,7,17), discard16, explicit uniforms",
+    "reset_kv": true,
+    "group_order": "rotate by author case index",
+    "vote": "raw extracted strings, first-observed plurality ties, all3 required",
+    "grade": "MLPL numeric/literal/bounded linear equivalence after selection"
+  },
+  "timing": {
+    "selection": "included in prefill/decode native steps; not separately measured per call",
+    "session_budget_ms": 900000,
+    "cumulative_budget_ms": 172800000,
+    "boundary": "stop between calls; final call may overrun the wall target",
+    "interrupted_session_charge": "wall elapsed including downtime, sealed on first recovery",
+    "estimate_hours": [
+      15.3,
+      24.6
+    ],
+    "estimate_basis": "first10 total23484 tokens scaled50x, divided by measured13.28–21.33 tokens/s; not a full500 prediction",
+    "worst_case_token_cap_hours_at_13_28_tps": 107.1
+  },
+  "acceptance": {
+    "native_long_tokens": 2048,
+    "token_identity": true,
+    "fixture_recovery": "full500-recovery-fixture.json",
+    "native_store_tests": "full500-store-native-tests.txt",
+    "cuda_smoke": "full500-cuda-smoke-summary.json"
+  },
+  "limitations": [
+    "Inference only; native language-model training is separate",
+    "No same-hardware Python timing comparison",
+    "Nonlinear symbolic verifier coverage remains limited",
+    "Native store/provider source delivery remains isolated under /disk1/tmp"
+  ]
+}

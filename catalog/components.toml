@@ -388,3 +388,30 @@ source = "lib/cuda/offload.mlpl"
 test = "tests/test_cuda_offload.mlpl"
 documentation = "docs/cuda-performance.md"
 status = "accepted"
+
+[[component]]
+id = "JOURNAL"
+slug = "immutable-attempt-accounting"
+chapter = 4
+source = "lib/journal/journal.mlpl"
+test = "tests/test_journal.mlpl"
+documentation = "docs/book-full500-runner.md"
+status = "accepted"
+
+[[component]]
+id = "JOURNALSTORE"
+slug = "durable-record-adapter"
+chapter = 4
+source = "lib/journal/store.mlpl"
+test = "scripts/check-full500-store"
+documentation = "docs/book-full500-runner.md"
+status = "accepted"
+
+[[component]]
+id = "CUDAACCOUNT"
+slug = "native-step-timing"
+chapter = 4
+source = "lib/cuda/accounted.mlpl"
+test = "tests/test_cuda_accounted.mlpl"
+documentation = "docs/book-full500-runner.md"
+status = "accepted"

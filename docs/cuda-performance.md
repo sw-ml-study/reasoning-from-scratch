@@ -156,10 +156,9 @@ through the extension repository is still a separate delivery step.
 ## Before the full benchmark
 
 The [full500 protocol](book-full500-protocol.md) fixes methods and exactly-once
-attempt accounting. It is a design freeze, not a completed resumable runner
-or a completed experiment. Implement/test crash recovery and pin all rendered
-prompts before launch. Long-context acceptance and further CUDA attribution
-remain useful before paying the full run cost. Native model training retains
+attempt accounting. The [tested runner](book-full500-runner.md) now prepares
+all 1000 prompts and 2500 request identities; the full experiment has not run.
+Long-context token parity and crash/replay acceptance pass. Native model training retains
 its separate loss/backward/update/save/reload gate.
 
 ## Kernel-trace attribution
@@ -169,5 +168,6 @@ mean elapsed 57.21ms, summed kernel spans 4.66ms, driver launch APIs 26.76ms,
 allocation/free APIs 1.35ms and device-to-host APIs 9.67ms. These are overlapping
 measurements. The trace shows no other process context switch during the kernel
 window, and a model-free Rust/Candle probe reproduces recurring stalls.
-No further optimization is adopted from these diagnostics. Transfer-buffer
-and allocation-free launch probes are concrete next experiments.
+No further optimization is adopted from these diagnostics. The [transfer/graph probe](cuda-transport.md) measures about 2.1x lower median
+time for a fixed toy graph, with inconsistent pinned-transfer benefits.
+Adopting graph replay for Qwen requires stable cache storage and new parity checks.

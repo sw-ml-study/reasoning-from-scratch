@@ -1,0 +1,34 @@
+# Generic native-service adapters for journal records. Native code owns locking, checksums and durable immutable writes; MLPL owns identities, transitions, recovery and scoring.
+
+def u:journal_result(value) {
+  "Normalize SDK raw successes and Result failures without swallowing storage errors.";
+  if str_eq(type_of(value), "result") {
+    value
+  } else {
+    ok(value)
+  }
+}
+
+def u:journal_name(ordinal, kind) {
+  "Separate immutable started and terminal records with deterministic sortable filenames.";
+  str_concat(if str_eq(kind, "start") {
+      "a-start-"
+    } else {
+      "b-terminal-"
+    }, str_concat(to_string(ordinal), ".json"))
+}
+
+def u:journal_hash(text) {
+  "Return SHA256 of exact UTF8 bytes through the generic persistence extension.";
+  u:journal_result(_durable_store:hash({body: text}))
+}
+
+def u:journal_read(handle, name) {
+  "Read a checksum-verified record; missing is distinct from corruption or permission failure.";
+  u:journal_result(_durable_store:read({handle: handle.handle, name: name}))
+}
+
+def u:journal_put(handle, name, body) {
+  "Acknowledge only after immutable publication and file/directory sync complete.";
+  u:journal_result(_durable_store:put({handle: handle.handle, name: name, body: body}))
+}

@@ -1,0 +1,111 @@
+# Render and hash every planned prompt and request before any full500 generation. Fixture mode uses only two authored cases and never loads a model.
+include "lib/text/text.mlpl";
+include "lib/eval/harness.mlpl";
+include "lib/eval/author.mlpl";
+include "lib/eval/json_array.mlpl";
+include "lib/journal/journal.mlpl";
+include "lib/journal/store.mlpl";
+
+namespace = load_extension(env("STORE_LIBRARY")?)
+fixture = str_eq(env("BOOK_BACKEND")?, "fixture")
+authored = fixture + str_eq(env("BOOK_BACKEND")?, "cuda-smoke")
+rows = str_split(u:text_trim(if authored {
+      read_text("fixtures/eval/full500-smoke.jsonl")?
+    } else { u:eval_json_array_lines(read_text("data/math500/book-author.json")?)? }), "\n")
+cases = if authored {
+  2
+} else {
+  500
+}
+if list_len(rows) - cases {
+  err("wrong planned dataset count")?
+}
+run_id = if fixture {
+  "book-full500-fixture-v1"
+} else {
+  if authored {
+    "book-full500-cuda-smoke-v1"
+  } else {
+    "book-full500-v1"
+  }
+}
+max_new = if fixture {
+  4
+} else {
+  if authored {
+    64
+  } else {
+    2048
+  }
+}
+prepared = env("BOOK_PREPARED")?
+if 1 - fixture {
+  namespace = load_extension(env("EXTENSION_LIBRARY")?);
+  tok = _hftok:load_path(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"))
+}
+template = parse_json(read_text("fixtures/prompts/book-author.json")?)?
+plan_text = ""
+requests_text = ""
+prompt_hashes = ""
+i = 0
+while lt(i, cases) {
+  item = parse_json(list_get(rows, i)?)?;
+  direct = u:eval_author_prompt(template, item.problem, 0);
+  cot = u:eval_author_prompt(template, item.problem, 1);
+  direct_ids = if fixture {
+    [10, 11]
+  } else { _hftok:encode(tok, direct) };
+  cot_ids = if fixture {
+    [10, 11, 12]
+  } else { _hftok:encode(tok, cot) };
+  if gt(tally(direct_ids) + max_new, 4096) + gt(tally(cot_ids) + max_new, 4096) {
+    err("planned prompt exceeds frozen context")?
+  };
+  direct_hash = u:journal_hash(direct)?;
+  cot_hash = u:journal_hash(cot)?;
+  stem = str_concat(prepared, str_concat("/prompt-", to_string(i)));
+  write_atomic(str_concat(stem, "-direct.txt"), direct)?;
+  write_atomic(str_concat(stem, "-cot.txt"), cot)?;
+  prompt_hashes = str_concat(prompt_hashes, str_concat(direct_hash, str_concat("  ", str_concat(stem, "-direct.txt\n"))));
+  prompt_hashes = str_concat(prompt_hashes, str_concat(cot_hash, str_concat("  ", str_concat(stem, "-cot.txt\n"))));
+  slot = 0;
+  while lt(slot, 5) {
+    ordinal = i * 5 + slot;
+    ids = if eq(slot, 0) {
+      direct_ids
+    } else {
+      cot_ids
+    };
+    options = {max_new: max_new, eos: 151643, seed: if lt(slot, 2) {
+        42
+      } else {
+        41 + slot
+      }, temperature: if lt(slot, 2) {
+        0
+      } else {
+        0.9
+      }, top_p: 0.9, max_ms: 172800000};
+    request = {ordinal: ordinal, key: u:journal_key(run_id, ordinal), index: i, slot: slot, prompt_sha256: if eq(slot, 0) {
+        direct_hash
+      } else {
+        cot_hash
+      }, token_sha256: u:journal_hash(to_json(ids)?)?, controls_sha256: u:journal_hash(to_json(options)?)?, ids: ids, options: options};
+    body = to_json(request)?;
+    plan_text = str_concat(plan_text, str_concat(to_json({ordinal: ordinal, key: request.key, request_hash: u:journal_hash(body)?})?, "\n"));
+    requests_text = str_concat(requests_text, str_concat(body, "\n"));
+    slot = slot + 1
+  };
+  i = i + 1
+}
+u:journal_plan(plan_text, run_id, cases)?
+write_atomic(str_concat(prepared, "/plan.jsonl"), plan_text)?
+write_atomic(str_concat(prepared, "/requests.jsonl"), requests_text)?
+write_atomic(str_concat(prepared, "/prompt-hashes.sha256"), prompt_hashes)?
+write_atomic(str_concat(prepared, "/cases.jsonl"), str_concat(str_join(rows, "\n"), "\n"))?
+write_atomic(str_concat(prepared, "/manifest.json"), to_json({run_id: run_id, backend: if fixture {
+        "fixture"
+      } else {
+        "cuda"
+      }, cases: cases, calls: cases * 5, max_new: max_new, context: 4096, planned_sha256: u:journal_hash(plan_text)?, requests_sha256: u:journal_hash(requests_text)?, cases_sha256: u:journal_hash(str_concat(str_join(rows, "\n"), "\n"))?, prompt_hashes_sha256: u:journal_hash(prompt_hashes)?})?)?
+if 1 - fixture { _hftok:close(tok) }
+print("PREPARED", run_id, "cases", cases, "calls", cases * 5)

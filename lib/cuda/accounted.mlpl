@@ -1,0 +1,50 @@
+# Timed native-step adapter. Requires scaling.mlpl. Preserves explicit uniforms and reports prefill versus subsequent native-step time, both including selection.
+
+def u:cuda_decode_accounted(provider, ids, options) {
+  "Decode through a parity-checked native step; preserve explicit MLPL random draws and stop accounting without transferring vocabulary arrays.";
+  u:scaling_seed(options.seed)?;
+  u:scaling_scalar(options.max_new, "max_new")?;
+  u:scaling_scalar(options.temperature, "temperature")?;
+  u:scaling_scalar(options.max_ms, "max_ms")?;
+  if eq(tally(ids), 0) + lt(options.max_new, 1) + (1 - eq(options.max_new, floor(options.max_new))) + lt(options.temperature, 0) + (1 - gt(options.max_ms, 0)) {
+    err({kind: "generation_bounds", message: "invalid prompt or generation budget"})
+  } else {
+    u:scaling_controls(1, options.top_p)?;
+    uniforms = u:scaling_uniforms(options.seed, options.max_new)?;
+    started = clock_ms();
+    inputs = ids;
+    generated = [];
+    calls = 0;
+    prefill_step_ms = 0;
+    decode_steps_ms = 0;
+    running = 1;
+    reason = "budget";
+    while running {
+      if gt(clock_ms() - started, options.max_ms) {
+        reason = "deadline";
+        running = 0
+      } else {
+        step_started = clock_ms();
+        id = call(provider.step, {handle: provider.handle, ids: inputs, temperature: options.temperature, top_p: options.top_p, uniform: at(uniforms, tally(generated))})?;
+        step_ms = clock_ms() - step_started;
+        if eq(calls, 0) {
+          prefill_step_ms = step_ms
+        } else {
+          decode_steps_ms = decode_steps_ms + step_ms
+        };
+        calls = calls + 1;
+        if eq(id, options.eos) {
+          reason = "eos";
+          running = 0
+        } else {
+          generated = concat(generated, id);
+          inputs = [id];
+          if eq(tally(generated), options.max_new) {
+            running = 0
+          }
+        }
+      }
+    };
+    ok({ids: generated, stopped: reason, calls: calls, prefill_step_ms: prefill_step_ms, decode_steps_ms: decode_steps_ms, elapsed_ms: clock_ms() - started})
+  }
+}

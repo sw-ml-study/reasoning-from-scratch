@@ -82,12 +82,13 @@ details[open] summary { margin-bottom:1.5rem; }
 <li><a href="#org4180c98">9.2. Execute and check a real parameter update</a></li>
 </ul>
 </li>
-<li><a href="#orgb33cf44">10. Current scope and next experiments</a></li>
-<li><a href="#orge0576d7">11. Reproduce and publish this document</a>
+<li><a href="#orgb33cf44">10. Scaling the book experiment to 500 cases</a></li>
+<li><a href="#org1566902">11. Current scope and next experiments</a></li>
+<li><a href="#org6165353">12. Reproduce and publish this document</a>
 <ul>
-<li><a href="#org1566902">11.1. Identify the experimental inputs</a></li>
-<li><a href="#orgd5c0387">11.2. Refresh the calculations and build HTML</a></li>
-<li><a href="#org91b8ed7">11.3. Run individual blocks in Emacs</a></li>
+<li><a href="#orgd5c0387">12.1. Identify the experimental inputs</a></li>
+<li><a href="#org91b8ed7">12.2. Refresh the calculations and build HTML</a></li>
+<li><a href="#orge0576d7">12.3. Run individual blocks in Emacs</a></li>
 </ul>
 </li>
 </ul>
@@ -1320,8 +1321,51 @@ before/after accuracy.
 </div>
 </div>
 <div id="outline-container-orgb33cf44" class="outline-2">
-<h2 id="orgb33cf44"><span class="section-number-2">10.</span> Current scope and next experiments</h2>
+<h2 id="orgb33cf44"><span class="section-number-2">10.</span> Scaling the book experiment to 500 cases</h2>
 <div class="outline-text-2" id="text-10">
+<p>
+The <a href="book-full500-runner.md">MLPL runner</a> prepares all 500 author-ordered cases: 500 direct answers,
+500 greedy chain-of-thought answers and 1500 sampled answers for three-vote
+selection. Its <a href="results/book-full500-v1-execution.json">execution manifest</a>, 1000 prompt hashes and 2500 request
+identities are frozen before benchmark generation. No full500 quality result
+is available yet. The measured ten-case results above remain the quality evidence.
+</p>
+
+<p>
+MLPL owns scheduling, seeds, stopping, grading and recovery decisions. A generic
+Rust extension writes checksummed immutable records, syncing contents and the
+directory before acknowledging publication. A started call without a response
+becomes an interruption after restart; completed responses are never regenerated.
+All 500 cases stay in each method's denominator, and voting requires all three
+responses. An incomplete run is labeled incomplete. Fixture acceptance covers
+replay, duplicates, corruption, an interrupted call and a backend error.
+</p>
+
+<p>
+A ten-call authored CUDA smoke completes in 30.9 seconds, including 6.2 seconds
+of loading, with no backend errors. Six responses reach its short 64-token cap;
+this tests integration, not MATH-500 accuracy. The full experiment uses 2048 new
+tokens and context 4096. A planning range of 15.3–24.6 hours combines existing
+token counts with measured throughput; distribution shifts and long outputs
+can increase runtime. The runner checks a 48-hour cumulative budget between
+calls. It reports prefill and decode times including selection, memory samples,
+truncations, interruptions, errors and paired method outcomes.
+</p>
+
+<p>
+The <a href="cuda-transport.md">CUDA transport experiment</a> rotates pageable transfer, pinned transfer and
+captured-graph modes over two trials of an allocation-free 800-kernel sequence.
+Graph replay reduces median forward time from about 1.16 ms to 0.55 ms in both
+trials. Pinned buffers do not consistently eliminate transfer stalls. This is
+a toy-kernel result, not a Qwen speedup or a Python comparison. Model graph
+capture needs stable cache addresses and shapes, followed by numerical and
+seeded-token parity and repeated end-to-end measurements.
+</p>
+</div>
+</div>
+<div id="outline-container-org1566902" class="outline-2">
+<h2 id="org1566902"><span class="section-number-2">11.</span> Current scope and next experiments</h2>
+<div class="outline-text-2" id="text-11">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -1348,7 +1392,7 @@ before/after accuracy.
 
 <tr>
 <td class="org-left">Native selection matches all 2048 tokens in a long-context pair; CUDA traces locate launch/transfer costs</td>
-<td class="org-left">Pinned-buffer and allocation-free launch experiments, then fewer launches where safe</td>
+<td class="org-left">Stable cache storage and captured decode, then matched model acceptance</td>
 <td class="org-left">Numerical/token parity and repeated end-to-end gains before changing the backend</td>
 </tr>
 
@@ -1381,13 +1425,13 @@ mathematical errors.
 </p>
 </div>
 </div>
-<div id="outline-container-orge0576d7" class="outline-2">
-<h2 id="orge0576d7"><span class="section-number-2">11.</span> Reproduce and publish this document</h2>
-<div class="outline-text-2" id="text-11">
+<div id="outline-container-org6165353" class="outline-2">
+<h2 id="org6165353"><span class="section-number-2">12.</span> Reproduce and publish this document</h2>
+<div class="outline-text-2" id="text-12">
 </div>
-<div id="outline-container-org1566902" class="outline-3">
-<h3 id="org1566902"><span class="section-number-3">11.1.</span> Identify the experimental inputs</h3>
-<div class="outline-text-3" id="text-11-1">
+<div id="outline-container-orgd5c0387" class="outline-3">
+<h3 id="orgd5c0387"><span class="section-number-3">12.1.</span> Identify the experimental inputs</h3>
+<div class="outline-text-3" id="text-12-1">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -1462,9 +1506,9 @@ directories. Publishing the report does not redistribute them.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd5c0387" class="outline-3">
-<h3 id="orgd5c0387"><span class="section-number-3">11.2.</span> Refresh the calculations and build HTML</h3>
-<div class="outline-text-3" id="text-11-2">
+<div id="outline-container-org91b8ed7" class="outline-3">
+<h3 id="org91b8ed7"><span class="section-number-3">12.2.</span> Refresh the calculations and build HTML</h3>
+<div class="outline-text-3" id="text-12-2">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
@@ -1491,9 +1535,9 @@ also includes the Org source, MLPL libraries and committed numeric evidence.
 </p>
 </div>
 </div>
-<div id="outline-container-org91b8ed7" class="outline-3">
-<h3 id="org91b8ed7"><span class="section-number-3">11.3.</span> Run individual blocks in Emacs</h3>
-<div class="outline-text-3" id="text-11-3">
+<div id="outline-container-orge0576d7" class="outline-3">
+<h3 id="orge0576d7"><span class="section-number-3">12.3.</span> Run individual blocks in Emacs</h3>
+<div class="outline-text-3" id="text-12-3">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host, then evaluate this setup once.
 Each MLPL block runs in a fresh interpreter. Temporary sources live under

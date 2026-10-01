@@ -383,3 +383,24 @@ crash-injection tests must prove terminal reconciliation and interrupted
 attempt accounting. The existing MLPL `write_atomic` has atomic visibility
 but no power-loss durability. Keep experiment semantics in MLPL and expose
 only generic persistence primitives. No sibling changes are authorized here.
+
+### E7 local acceptance delivered
+
+The isolated generic store now supplies locked, immutable SHA256-enveloped
+records with file/directory sync. Native crash-boundary tests and the MLPL
+partial/resume/interruption/duplicate/corruption suite pass. Source archive
+and library are pinned in `results/full500-native-artifacts.sha256`; see
+[runner contracts](book-full500-runner.md). No experiment semantics moved
+into Rust. Sibling packaging/delivery remains a separate work order.
+
+### E8 — stable-buffer CUDA decode capture
+
+The [allocation-free transport probe](cuda-transport.md) repeats a roughly
+2.1x median improvement from graph replay of800 tiny kernels, but does not
+prove a Qwen speedup. Design stable-address/in-place KV storage and captured
+single-token decode, or kernel fusion using existing Rust CUDA crates.
+Retain dynamic prefill and bounded contexts. Acceptance requires F32/BF16
+numeric checks, fixed logits/supplied uniforms, seeded full-token sequence
+comparisons at realistic context and2048-token limits, error/reset behavior,
+and repeated whole-generation throughput. Keep the v3 baseline intact.
+Pinned host buffers alone are not accepted as a cure for intermittent stalls.

@@ -1,0 +1,35 @@
+#!/bin/sh
+# Opt-in native-store integration acceptance. No GPU or downloaded questions.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+mkdir -p out
+work=$(mktemp -d "$repo/out/full500-store-test.XXXXXX")
+BOOK_PREPARED=${work#"$repo/"}/prepared
+BOOK_BACKEND=fixture
+export BOOK_PREPARED BOOK_BACKEND
+scripts/prepare-book-full500 > "$work/prepare.log"
+BOOK_STORE_ROOT=$work/clean
+export BOOK_STORE_ROOT
+BOOK_MAX_CALLS=1 scripts/run-book-full500 --fixture > "$work/partial.log"
+jq -e '.complete==0 and .accounting.planned_cases==2 and .session_calls==1 and .accounting.pending==9' "$BOOK_PREPARED/last-summary.json" >/dev/null
+sha256sum "$BOOK_STORE_ROOT/b-terminal-0.json" > "$work/terminal.sha256"
+scripts/run-book-full500 --fixture > "$work/complete.log"
+jq -e '.complete==1 and .accounting.successes==10 and .session_calls==9 and .correct==[2,2,2]' "$BOOK_PREPARED/last-summary.json" >/dev/null
+sha256sum -c "$work/terminal.sha256" >/dev/null
+scripts/run-book-full500 --fixture > "$work/replay.log"
+jq -e '.session_calls==0 and .accounting.successes==10' "$BOOK_PREPARED/last-summary.json" >/dev/null
+BOOK_STORE_ROOT=$work/interrupted
+export BOOK_STORE_ROOT
+if BOOK_FIXTURE_CRASH=2 scripts/run-book-full500 --fixture > "$work/crash.log" 2>&1; then echo 'expected authored interruption' >&2; exit 1; fi
+BOOK_FIXTURE_ERROR=3 scripts/run-book-full500 --fixture > "$work/recover.log"
+jq -e '.complete==1 and .accounting.interrupted==1 and .accounting.errors==1 and .accounting.successes==8 and .correct==[2,2,1] and .accounting.planned_cases==2 and .session_calls==7' "$BOOK_PREPARED/last-summary.json" >/dev/null
+cp "$BOOK_PREPARED/last-summary.json" "$work/recovery-summary.json"
+cp "$BOOK_STORE_ROOT/b-terminal-0.json" "$BOOK_STORE_ROOT/b-terminal-999.json"
+if scripts/run-book-full500 --fixture > "$work/duplicate.log" 2>&1; then echo 'duplicate accepted' >&2; exit 1; fi
+# Separate damaged-record case; do not erase the duplicate evidence.
+BOOK_STORE_ROOT=$work/clean
+export BOOK_STORE_ROOT
+printf '%s\n' '{"body":"damaged","sha256":"wrong"}' > "$BOOK_STORE_ROOT/b-terminal-0.json"
+if scripts/run-book-full500 --fixture > "$work/corrupt.log" 2>&1; then echo 'corruption accepted' >&2; exit 1; fi
+printf 'PASS partial/resume/no-regeneration/interruption/backend-error/full-denominator/duplicate/corruption: %s\n' "$work"

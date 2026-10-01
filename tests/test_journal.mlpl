@@ -1,0 +1,81 @@
+# Crash-recovery accounting fixtures: no GPU, dataset, filesystem extension or external model.
+include "lib/text/text.mlpl";
+include "lib/journal/journal.mlpl";
+
+def u:journal_fixture_plan() {
+  "Five canonical slots for one authored case.";
+  text = "";
+  i = 0;
+  while lt(i, 5) {
+    text = str_concat(text, str_concat(to_json({ordinal: i, key: str_concat("fixture/0/", to_string(i)), request_hash: str_concat("hash-", to_string(i))})?, "\n"));
+    i = i + 1
+  };
+  u:journal_plan(text, "fixture", 1)
+}
+
+def u:journal_fixture_event(plan, ordinal, kind) {
+  "Construct an identity-matched event from a planned slot.";
+  row = parse_json(list_get(plan.rows, ordinal)?)?;
+  {ordinal: ordinal, key: row.key, request_hash: row.request_hash, kind: kind}
+}
+
+@test {name: "journal replay retains success and interrupts unresolved starts", tags: ["journal"]}
+def u:test_journal_replay() {
+  "Recovery never regenerates a terminal or silently drops a started call.";
+  plan = u:journal_fixture_plan()?;
+  state = zeros([5]);
+  state = u:journal_apply(state, plan, u:journal_fixture_event(plan, 0, "start"))?;
+  state = u:journal_apply(state, plan, u:journal_fixture_event(plan, 0, "success"))?;
+  state = u:journal_apply(state, plan, u:journal_fixture_event(plan, 1, "start"))?;
+  recovered = u:journal_recover(state);
+  u:assert_eq(recovered, [2, 4, 0, 0, 0], "success retained and interruption explicit")?;
+  u:assert_eq(u:journal_recover(recovered), recovered, "idempotent recovery")?;
+  u:assert_err(u:journal_apply(recovered, plan, u:journal_fixture_event(plan, 0, "start")), "never regenerate success")
+}
+
+@test {name: "journal rejects duplicate mismatched unknown and out-of-order records", tags: ["journal"]}
+def u:test_journal_invalid() {
+  "Replay aborts before generation on any identity or transition violation.";
+  plan = u:journal_fixture_plan()?;
+  start = u:journal_fixture_event(plan, 0, "start");
+  state = u:journal_apply(zeros([5]), plan, start)?;
+  u:assert_err(u:journal_apply(state, plan, start), "duplicate")?;
+  u:assert_err(u:journal_apply(state, plan, {ordinal: 0, key: start.key, request_hash: "wrong", kind: "success"}), "hash mismatch")?;
+  u:assert_err(u:journal_apply(state, plan, {ordinal: 0, key: "other/0/0", request_hash: start.request_hash, kind: "success"}), "run identity")?;
+  u:assert_err(u:journal_apply(state, plan, {ordinal: 99, key: start.key, request_hash: start.request_hash, kind: "success"}), "unexpected id")?;
+  u:assert_err(u:journal_apply(zeros([5]), plan, u:journal_fixture_event(plan, 1, "success")), "terminal before start")?;
+  u:assert_err(u:journal_apply(state, plan, u:journal_fixture_event(plan, 0, "retry")), "unknown event")
+}
+
+@test {name: "journal denominators include every case and voting needs all three", tags: ["journal"]}
+def u:test_journal_denominators() {
+  "Incomplete, interrupted and backend-error slots cannot disappear from method accounting.";
+  report = u:journal_summary([2, 3, 2, 4, 2, 0, 0, 2, 2, 2])?;
+  u:assert_eq(report.planned_cases, 2, "all cases")?;
+  u:assert_eq(report.successful_groups, [1, 0, 1], "no vote over survivors")?;
+  u:assert_eq(report.complete, 0, "partial")?;
+  u:assert_eq(report.interrupted, 1, "interrupted visible")?;
+  u:assert_eq(report.errors, 1, "backend error visible")?;
+  u:assert_err(u:journal_summary([2, 2]), "bad slot count")
+}
+
+@test {name: "journal planned keys are canonical unique and complete", tags: ["journal"]}
+def u:test_journal_plan() {
+  "Malformed manifests cannot redefine the denominator or repeat a call identity.";
+  plan = u:journal_fixture_plan()?;
+  u:assert_err(u:journal_plan(str_concat(list_get(plan.rows, 0)?, "\n"), "fixture", 1), "missing slots")?;
+  u:assert_err(u:journal_plan(str_join(plan.rows, "\n"), "other", 1), "wrong run")?;
+  u:assert_eq(u:journal_slot(1, 0, 0), 1, "case rotation CoT first")?;
+  u:assert_eq(u:journal_slot(1, 1, 2), 4, "third vote slot")
+}
+
+@test {name: "journal rejects malformed successful terminal payloads", tags: ["journal"]}
+def u:test_journal_terminal() {
+  "Mismatched counts cannot cancel other validation failures; deadlines are not successful completions.";
+  u:assert_err(u:journal_terminal({kind: "success", text: "x", ids: [1], tokens: 2, wall_ms: -1, stopped: "eos"}), "count and timing invalid")?;
+  u:assert_err(u:journal_terminal({kind: "success", text: "x", ids: [1], tokens: 1, wall_ms: 1, stopped: "deadline"}), "deadline")?;
+  u:assert_eq(u:journal_terminal({kind: "success", text: "x", ids: [1], tokens: 1, wall_ms: 1, stopped: "budget"})?, 1, "valid capped answer")
+}
+
+
+u:run_registered_tests()

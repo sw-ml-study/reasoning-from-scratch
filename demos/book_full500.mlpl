@@ -1,0 +1,277 @@
+# Resumable book experiment. MLPL owns scheduling, immutable identities, interruption recovery, full denominators and grading after selection. Native services provide durable records and CUDA steps.
+include "lib/text/text.mlpl";
+include "lib/verify/number.mlpl";
+include "lib/verify/expr.mlpl";
+include "lib/verify/extract.mlpl";
+include "lib/verify/normalize.mlpl";
+include "lib/verify/grade.mlpl";
+include "lib/verify/linear.mlpl";
+include "lib/scaling/scaling.mlpl";
+include "lib/scaling/consistency.mlpl";
+include "lib/eval/author.mlpl";
+include "lib/eval/paired.mlpl";
+include "lib/eval/book_report.mlpl";
+include "lib/journal/journal.mlpl";
+include "lib/journal/store.mlpl";
+include "lib/cuda/accounted.mlpl";
+
+def u:cuda_full500_step(request) {
+  "Normalize CUDA SDK scalar success and preserve provider errors.";
+  u:journal_result(_qwen3_cuda:step(request))
+}
+
+session_started = clock_ms()
+namespace = load_extension(env("STORE_LIBRARY")?)
+prepared = env("BOOK_PREPARED")?
+manifest_body = read_text(str_concat(prepared, "/manifest.json"))?
+manifest = parse_json(manifest_body)?
+if 1 - str_eq(manifest.run_id, env("BOOK_EXPECT_RUN_ID")?) {
+  err("runner mode does not match prepared run identity")?
+}
+fixture = str_eq(manifest.backend, "fixture")
+if 1 - (fixture + str_eq(manifest.backend, "cuda")) {
+  err("unknown backend")?
+}
+plan_text = read_text(str_concat(prepared, "/plan.jsonl"))?
+requests_text = read_text(str_concat(prepared, "/requests.jsonl"))?
+cases_text = read_text(str_concat(prepared, "/cases.jsonl"))?
+if (1 - str_eq(u:journal_hash(plan_text)?, manifest.planned_sha256)) + (1 - str_eq(u:journal_hash(requests_text)?, manifest.requests_sha256)) + (1 - str_eq(u:journal_hash(cases_text)?, manifest.cases_sha256)) {
+  err("prepared input hash mismatch")?
+}
+plan = u:journal_plan(plan_text, manifest.run_id, manifest.cases)?
+requests = str_split(u:text_trim(requests_text), "\n")
+cases = str_split(u:text_trim(cases_text), "\n")
+if (1 - eq(list_len(requests), plan.count)) + (1 - eq(list_len(cases), plan.cases)) {
+  err("prepared input count mismatch")?
+}
+# Verify every request before dispatch, including slots not reached in this session.
+i = 0
+while lt(i, plan.count) {
+  row = parse_json(list_get(plan.rows, i)?)?;
+  body = list_get(requests, i)?;
+  request = parse_json(body)?;
+  if (1 - str_eq(u:journal_hash(body)?, row.request_hash)) + (1 - str_eq(request.key, row.key)) + (1 - eq(request.ordinal, i)) {
+    err("planned request mismatch")?
+  };
+  i = i + 1
+}
+execution = if 1 - str_eq(manifest.run_id, "book-full500-v1") {
+  "authored fixture"
+} else {
+  read_text("docs/results/book-full500-v1-execution.json")?
+}
+metadata = to_json({prepared: manifest_body, execution: execution})?
+store = {handle: _durable_store:open({root: env("BOOK_STORE_ROOT")?})}
+existing = u:journal_read(store, "run.json")?
+if existing.found {
+  if 1 - str_eq(existing.body, metadata) {
+    err("run manifest changed; new run identity required")?
+  }
+} else { u:journal_put(store, "run.json", metadata)? }
+names = str_split(u:journal_result(_durable_store:names({handle: store.handle}))?, "\n")
+state = zeros([plan.count])
+previous_active_ms = 0
+uncertain_sessions = 0
+now_unix_ms = parse_json(env("BOOK_UNIX_MS")?)?
+i = 0
+while lt(i, list_len(names)) {
+  name = list_get(names, i)?;
+  if 1 - str_eq(name, "run.json") {
+    record = u:journal_read(store, name)?;
+    if 1 - record.found {
+      err("listed record disappeared")?
+    };
+    event = parse_json(record.body)?;
+    if str_eq(event.kind, "session_start") {
+      if (1 - str_eq(name, str_concat("c-session-", str_concat(event.session, ".json")))) + (1 - str_eq(event.run_id, manifest.run_id)) + lt(now_unix_ms, event.unix_ms) {
+        err("invalid session identity or clock moved backward")?
+      };
+      done = u:journal_read(store, str_concat("d-session-", str_concat(event.session, ".json")))?;
+      if done.found {
+        finished = parse_json(done.body)?;
+        if (1 - str_eq(finished.session, event.session)) + (1 - str_eq(finished.run_id, manifest.run_id)) + lt(finished.elapsed_ms, 0) {
+          err("invalid completed session")?
+        };
+        previous_active_ms = previous_active_ms + finished.elapsed_ms
+      } else {
+        # Conservative charge includes downtime when an interrupted session has no end record.
+        previous_active_ms = previous_active_ms + now_unix_ms - event.unix_ms;
+        uncertain_sessions = uncertain_sessions + 1;
+        u:journal_put(store, str_concat("d-session-", str_concat(event.session, ".json")), to_json({kind: "session_end", session: event.session, run_id: manifest.run_id, elapsed_ms: now_unix_ms - event.unix_ms, recovered: 1, timing: "conservative elapsed wall time including downtime"})?)?
+      }
+    } else {
+      if str_eq(event.kind, "session_end") {
+        start = u:journal_read(store, str_concat("c-session-", str_concat(event.session, ".json")))?;
+        if (1 - start.found) + (1 - str_eq(name, str_concat("d-session-", str_concat(event.session, ".json")))) {
+          err("orphan session end")?
+        }
+      } else {
+        if 1 - str_eq(name, u:journal_name(event.ordinal, event.kind)) {
+          err("unexpected or duplicate record name")?
+        };
+        state = u:journal_apply(state, plan, event)?;
+        u:journal_terminal(event)?
+      }
+    }
+  };
+  i = i + 1
+}
+# Publish explicit interrupted terminals before dispatching any unstarted slot.
+i = 0
+while lt(i, plan.count) {
+  if eq(at(state, i), 1) {
+    row = parse_json(list_get(plan.rows, i)?)?;
+    event = {kind: "interrupted", ordinal: i, key: row.key, request_hash: row.request_hash, message: "durable start without terminal at recovery"};
+    u:journal_put(store, u:journal_name(i, "interrupted"), to_json(event)?)?;
+    state = u:journal_apply(state, plan, event)?
+  };
+  i = i + 1
+}
+session = env("BOOK_SESSION")?
+wall_budget = parse_json(env("BOOK_WALL_MS")?)?
+call_budget = parse_json(env("BOOK_MAX_CALLS")?)?
+if lt(wall_budget, 0) + gt(wall_budget, 172800000) + lt(call_budget, 0) + (1 - eq(call_budget, floor(call_budget))) {
+  err("invalid session budget")?
+}
+u:journal_put(store, str_concat("c-session-", str_concat(session, ".json")), to_json({kind: "session_start", session: session, run_id: manifest.run_id, unix_ms: now_unix_ms, requested_wall_ms: wall_budget})?)?
+load_ms = 0
+if (1 - fixture) * gt(reduce_add(eq(state, 0)), 0) * gt(call_budget, 0) * gt(wall_budget, 0) * lt(previous_active_ms, 172800000) {
+  namespace = load_extension(env("QWEN_CUDA_LIBRARY")?);
+  namespace = load_extension(env("EXTENSION_LIBRARY")?);
+  loaded = clock_ms();
+  h = _qwen3_cuda:open({root: str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base"), context: 4096, dtype: "bf16", config_sha256: "504a6b58c4271583724e66584b6b7698aea18450209df6b2f7582df0e89cee59", weights_sha256: "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"});
+  tok = _hftok:load_path(str_concat(env("REPO_ROOT")?, "/models/qwen3-0.6b-base/tokenizer.json"));
+  load_ms = clock_ms() - loaded
+}
+dispatched = 0
+i = 0
+while lt(i, plan.cases) * lt(dispatched, call_budget) * lt(clock_ms() - session_started, wall_budget) * lt(previous_active_ms + clock_ms() - session_started, 172800000) {
+  group = 0;
+  while lt(group, 3) {
+    samples = if eq(mod(i + group, 3), 2) {
+      3
+    } else {
+      1
+    };
+    sample = 0;
+    while lt(sample, samples) * lt(dispatched, call_budget) * lt(clock_ms() - session_started, wall_budget) * lt(previous_active_ms + clock_ms() - session_started, 172800000) {
+      ordinal = i * 5 + u:journal_slot(i, group, sample);
+      if eq(at(state, ordinal), 0) {
+        request = parse_json(list_get(requests, ordinal)?)?;
+        row = parse_json(list_get(plan.rows, ordinal)?)?;
+        start = {kind: "start", ordinal: ordinal, key: row.key, request_hash: row.request_hash, prompt_sha256: request.prompt_sha256, token_sha256: request.token_sha256, controls_sha256: request.controls_sha256, session: session};
+        u:journal_put(store, u:journal_name(ordinal, "start"), to_json(start)?)?;
+        state = u:journal_apply(state, plan, start)?;
+        print("DISPATCH", row.key);
+        if fixture * eq(ordinal, parse_json(env("BOOK_FIXTURE_CRASH")?)?) {
+          err("authored interruption after durable start")?
+        };
+        began = clock_ms();
+        if fixture {
+          result = if eq(ordinal, parse_json(env("BOOK_FIXTURE_ERROR")?)?) {
+            err("authored backend failure")
+          } else {
+            ok({ids: [4 + 2 * i], stopped: "eos", elapsed_ms: 1, calls: 1, prefill_step_ms: 1, decode_steps_ms: 0})
+          }
+        } else {
+          u:journal_result(_qwen3_cuda:reset({handle: h}))?;
+          result = u:cuda_decode_accounted({step: :u:cuda_full500_step, handle: h}, request.ids, request.options)
+        };
+        if is_err(result) {
+          event = {kind: "error", ordinal: ordinal, key: row.key, request_hash: row.request_hash, wall_ms: clock_ms() - began, message: err_message(result)}
+        } else {
+          response = unwrap(result);
+          if str_eq(response.stopped, "deadline") {
+            event = {kind: "error", ordinal: ordinal, key: row.key, request_hash: row.request_hash, wall_ms: clock_ms() - began, message: "infrastructure deadline", stopped: "deadline"}
+          } else {
+            text = if fixture {
+              str_concat("\\boxed{", str_concat(to_string(4 + 2 * i), "}"))
+            } else {
+              if tally(response.ids) { _hftok:decode(tok, response.ids) } else {
+                ""
+              }
+            };
+            event = {kind: "success", ordinal: ordinal, key: row.key, request_hash: row.request_hash, ids: response.ids, text: text, stopped: response.stopped, tokens: tally(response.ids), wall_ms: clock_ms() - began, prefill_step_ms: response.prefill_step_ms, decode_steps_ms: response.decode_steps_ms, calls: response.calls}
+          }
+        };
+        u:journal_terminal(event)?;
+        u:journal_put(store, u:journal_name(ordinal, event.kind), to_json(event)?)?;
+        state = u:journal_apply(state, plan, event)?;
+        dispatched = dispatched + 1
+      };
+      sample = sample + 1
+    };
+    group = group + 1
+  };
+  i = i + 1
+}
+if gt(load_ms, 0) { _qwen3_cuda:close({handle: h}); _hftok:close(tok) }
+# Derive every method outcome from terminal records. Failures remain in all-case denominators.
+method_text = ""
+correct = [0, 0, 0]
+direct_outcomes = []
+cot_outcomes = []
+vote_outcomes = []
+tokens = 0
+capped = 0
+prefill_ms = 0
+decode_ms = 0
+i = 0
+while lt(i, plan.cases) {
+  item = parse_json(list_get(cases, i)?)?;
+  method = 0;
+  while lt(method, 3) {
+    vote = {keys: "", counts: []};
+    expected = if eq(method, 2) {
+      3
+    } else {
+      1
+    };
+    sample = 0;
+    successful = 0;
+    while lt(sample, expected) {
+      ordinal = i * 5 + method + sample;
+      if eq(at(state, ordinal), 2) {
+        event = parse_json(u:journal_read(store, u:journal_name(ordinal, "success"))?.body)?;
+        vote = u:eval_author_vote_add(vote, u:eval_author_candidate(event.text))?;
+        successful = successful + 1;
+        tokens = tokens + event.tokens;
+        capped = capped + str_eq(event.stopped, "budget");
+        prefill_ms = prefill_ms + event.prefill_step_ms;
+        decode_ms = decode_ms + event.decode_steps_ms
+      };
+      sample = sample + 1
+    };
+    ready = eq(successful, expected);
+    # Reference answer is first accessed for grading after the vote has been selected.
+    grade = if ready { u:eval_author_vote(vote, item.answer)?.correct } else {
+      0
+    };
+    correct = correct + eq(range(3), method) * grade;
+    if eq(method, 0) {
+      direct_outcomes = concat(direct_outcomes, grade)
+    } else {
+      if eq(method, 1) {
+        cot_outcomes = concat(cot_outcomes, grade)
+      } else {
+        vote_outcomes = concat(vote_outcomes, grade)
+      }
+    };
+    method_text = str_concat(method_text, str_concat(to_json({index: i, method: method, successful: successful, required: expected, eligible: ready, correct: grade})?, "\n"));
+    method = method + 1
+  };
+  i = i + 1
+}
+accounting = u:journal_summary(state)?
+paired = if accounting.complete {
+  {cot_vs_direct: u:eval_book_pairs({indices: range(plan.cases), outcomes: direct_outcomes}, {indices: range(plan.cases), outcomes: cot_outcomes}), vote_vs_cot: u:eval_book_pairs({indices: range(plan.cases), outcomes: cot_outcomes}, {indices: range(plan.cases), outcomes: vote_outcomes}), vote_vs_direct: u:eval_book_pairs({indices: range(plan.cases), outcomes: direct_outcomes}, {indices: range(plan.cases), outcomes: vote_outcomes})}
+} else {
+  {status: "unavailable until all planned calls are accounted for"}
+}
+elapsed = clock_ms() - session_started
+u:journal_put(store, str_concat("d-session-", str_concat(session, ".json")), to_json({kind: "session_end", session: session, run_id: manifest.run_id, elapsed_ms: elapsed, dispatched: dispatched, load_ms: load_ms})?)?
+summary = {run_id: manifest.run_id, paired: paired, accounting: accounting, correct: correct, planned_case_accuracy: correct / plan.cases, complete: accounting.complete, tokens: tokens, capped: capped, prefill_steps_ms_including_selection: prefill_ms, decode_steps_ms_including_selection: decode_ms, separate_selection_timing: "unavailable; included in native steps", session_calls: dispatched, session_elapsed_ms: elapsed, load_ms: load_ms, charged_prior_ms: previous_active_ms, uncertain_prior_sessions: uncertain_sessions}
+write_atomic(str_concat(prepared, "/last-summary.json"), to_json(summary)?)?
+write_atomic(str_concat(prepared, "/last-methods.jsonl"), method_text)?
+u:journal_result(_durable_store:close({handle: store.handle}))?
+print("FINISHED full500", to_json(summary)?)

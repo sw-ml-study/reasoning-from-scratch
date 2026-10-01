@@ -39,12 +39,19 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+The [full500 runner](docs/book-full500-runner.md) is implemented and tested:
+500 cases, 1000 prompt hashes and 2500 request identities are prepared. Durable
+replay, interruption/error accounting and corruption rejection pass. A ten-call
+authored CUDA smoke completes in 30.9 seconds with no backend errors. Full500
+answers are not generated yet; the planning range is 15.3–24.6 hours, with a
+48-hour cumulative execution budget. This is an estimate, not a measured ETA.
+
 [CUDA tracing](docs/cuda-tracing.md) now separates kernel spans from driver
 launch and transfer delays: 48 decode windows average 57.21 ms, with 4.66 ms
 of summed kernel spans. These timings overlap. A standalone Rust/Candle
 probe also reproduces recurring stalls; no new speedup or driver root cause
-is claimed. The next provider experiments target launch traffic and transfer
-buffers. SQLite CLI is required by the new offline trace-accounting check.
+is claimed. A [toy graph experiment](docs/cuda-transport.md) halves median launch-sequence
+time; applying it to the model still requires stable cache storage and parity. SQLite CLI is required by the new offline trace-accounting check.
 Native selection also matches all 2,048 sampled tokens in a longer-context
 pair, taking 154.2s versus 275.2s for reference selection. This is synthetic
 acceptance evidence, separate from reasoning accuracy.

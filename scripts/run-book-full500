@@ -1,0 +1,56 @@
+#!/bin/sh
+# Resume only unstarted requests; MLPL reconciles immutable durable records first.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+unset EXTENSION_FACADE
+mode=${1:-run}
+case "$mode" in
+  --fixture) BOOK_PREPARED=${BOOK_PREPARED:-out/book-full500-fixture-prepared}; BOOK_EXPECT_RUN_ID=book-full500-fixture-v1 ;;
+  --cuda-smoke) BOOK_PREPARED=${BOOK_PREPARED:-out/book-full500-cuda-smoke}; BOOK_EXPECT_RUN_ID=book-full500-cuda-smoke-v1 ;;
+  run|--reconcile)
+    BOOK_PREPARED=out/book-full500-prepared; BOOK_EXPECT_RUN_ID=book-full500-v1
+    git ls-files --error-unmatch docs/results/book-full500-v1-execution.json >/dev/null
+    git diff --quiet HEAD -- docs/results/book-full500-v1-execution.json docs/results/book-full500-v1-execution.sha256 docs/results/book-full500-v1-prompt-hashes.sha256 docs/results/book-full500-v1-plan.jsonl
+    sha256sum -c docs/results/book-full500-v1-execution.sha256
+    sha256sum -c docs/results/book-full500-v1-prompt-hashes.sha256
+    [ "$mode" != --reconcile ] || BOOK_MAX_CALLS=0
+    ;;
+  *) echo 'usage: run-book-full500 [--fixture|--cuda-smoke|--reconcile]' >&2; exit 2;;
+esac
+BOOK_STORE_ROOT=${BOOK_STORE_ROOT:-$repo/out/$BOOK_EXPECT_RUN_ID-store}
+BOOK_WALL_MS=${BOOK_WALL_MS:-900000}
+BOOK_MAX_CALLS=${BOOK_MAX_CALLS:-2500}
+BOOK_SESSION=$(date -u +%Y%m%dT%H%M%S%N)-$$
+BOOK_UNIX_MS=$(date +%s%3N)
+BOOK_FIXTURE_CRASH=${BOOK_FIXTURE_CRASH:--1}
+BOOK_FIXTURE_ERROR=${BOOK_FIXTURE_ERROR:--1}
+STORE_LIBRARY=${STORE_LIBRARY:-/disk1/tmp/reasoning-tools/durable-store/target/release/libmlpl_durable_store.so}
+QWEN_CUDA_LIBRARY=/disk1/tmp/reasoning-tools/qwen3-cuda-provider-v3/native/libmlpl_qwen3_cuda_profile.so
+EXTENSION_LIBRARY=$(scripts/select-extension hftok)
+case "$mode" in run|--reconcile)
+  STORE_LIBRARY=/disk1/tmp/reasoning-tools/durable-store/target/release/libmlpl_durable_store.so
+  selected_mlpl=$(scripts/select-mlpl)
+  [ "$(sha256sum "$selected_mlpl" | awk '{print $1}')" = d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0 ] || { echo 'interpreter differs from execution pin' >&2; exit 1; }
+  [ "$(sha256sum "$EXTENSION_LIBRARY" | awk '{print $1}')" = 815f3ec0efac3df883b04c92163681a3ae812190677fca45db598bc1ed85783b ] || { echo 'tokenizer differs from execution pin' >&2; exit 1; }
+  ;;
+esac
+REPO_ROOT=$repo
+LD_LIBRARY_PATH=/opt/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+QWEN_BLOCKING_SYNC=0
+QWEN_SINGLE_STREAM=0
+export BOOK_PREPARED BOOK_EXPECT_RUN_ID BOOK_STORE_ROOT BOOK_WALL_MS BOOK_MAX_CALLS BOOK_SESSION BOOK_UNIX_MS BOOK_FIXTURE_CRASH BOOK_FIXTURE_ERROR STORE_LIBRARY QWEN_CUDA_LIBRARY EXTENSION_LIBRARY REPO_ROOT LD_LIBRARY_PATH QWEN_BLOCKING_SYNC QWEN_SINGLE_STREAM
+log=$BOOK_PREPARED/session-$BOOK_SESSION.log
+printf 'source_commit=%s session=%s\n' "$(git rev-parse HEAD)" "$BOOK_SESSION"
+scripts/run-mlpl-demo demos/book_full500.mlpl > "$log" 2>&1 &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null || true; exit 130' HUP INT TERM
+if [ "$mode" != --fixture ] && [ "$mode" != --reconcile ]; then
+  while kill -0 "$child" 2>/dev/null; do
+    nvidia-smi --query-gpu=timestamp,memory.used,utilization.gpu --format=csv,noheader >> "$BOOK_PREPARED/memory-$BOOK_SESSION.log"
+    awk '/^VmHWM:/ {print}' "/proc/$child/status" >> "$BOOK_PREPARED/memory-$BOOK_SESSION.log" 2>/dev/null || true
+    sleep 2
+  done
+fi
+wait "$child"
+if ! grep '^FINISHED full500' "$log"; then tail -12 "$log"; exit 1; fi
