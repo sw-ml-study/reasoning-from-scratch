@@ -186,3 +186,7 @@ book-full500-progress:
 # Optional model-free native stop acceptance; requires the pinned durable-store extension.
 book-full500-watch-native-check:
     ./scripts/check-watch-native-stop
+
+# Read-only terminal progress, ETA and provisional reasoning results; default every 10 minutes.
+book-full500-status *args:
+    ./scripts/book-full500-status {{args}}

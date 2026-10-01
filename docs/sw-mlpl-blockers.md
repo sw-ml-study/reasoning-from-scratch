@@ -639,3 +639,8 @@ symbolic simplification remains **missing** for full SymPy-equivalent grading.
   Scope-checked process termination passes a model-free native-owner test;
   fixture tests protect unrelated PIDs. Minute-by-minute progress is local
   HTML/JSON/log output; future chat notifications are not scheduled by this tool.
+
+- **Supported operational display:** the read-only shell/jq terminal viewer
+  consumes MLPL-produced scoring snapshots and watchdog history for progress,
+  rate-based ETA and matched-case diagnostics. It does not introduce new
+  model/grading semantics, take locks, or require another interpreter process.

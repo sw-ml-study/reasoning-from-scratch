@@ -39,6 +39,10 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+Run `just book-full500-status` in another terminal for progress percentage,
+projected ETA and provisional reasoning results every ten minutes. Add `60`
+for minute updates or `--once` for one report. Ctrl-C stops only this viewer.
+
 [Live monitoring](docs/book-full500-watchdog.md) now checks the experiment every
 minute, refreshes a local dashboard, and stops verified workers on confirmed
 execution failures or conservative stall thresholds. It does not stop based

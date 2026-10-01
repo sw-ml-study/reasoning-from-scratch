@@ -726,7 +726,31 @@ process scoping and an isolated native journal owner's termination. The live
 experiment continues with unchanged generation/source pins. This monitoring
 publishes local progress; it does not schedule future chat notifications.
 
+** Terminal progress and provisional reasoning benefit
+
+Run =just book-full500-status= in another terminal for an immediate report and
+updates every ten minutes. Supply =60= for minute updates or =--once= for one
+report. This read-only viewer consumes existing MLPL scoring snapshots and
+watchdog history; it starts no worker and Ctrl-C stops only the viewer.
+
+Progress is accounted calls divided by 2500: 500 direct calls, 500 greedy
+chain-of-thought calls and 1500 voting samples. Errors and interruptions count
+as terminal accounting and remain visible separately. ETA extrapolates from
+roughly the last hour of completed calls, displaying hours remaining and a
+local finish time. Stale observations, alerts or zero progress suppress ETA.
+Response-length differences across questions can shift the projection.
+
+The viewer also reports provisional direct/CoT/voting accuracy and paired
+gains/losses on the same cases completed successfully by all three methods.
+Scoring snapshots refresh at session boundaries, approximately every fifteen
+minutes. The diagnostic cohort excludes unfinished or failed groups; it does
+not replace the primary 500-case denominators or claim full-set accuracy.
+The author-ordered prefix can be unrepresentative. These diagnostics measure
+answer correctness under the existing verifier, not the validity of every
+reasoning step, and do not trigger score-based early stopping.
+
 * Current scope and next experiments
+
 
 
 

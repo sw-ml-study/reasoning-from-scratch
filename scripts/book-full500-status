@@ -1,0 +1,96 @@
+#!/bin/sh
+# Read-only terminal progress and paired-prefix diagnostics from existing watchdog/scoring files.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repo"
+export LC_ALL=C
+mode=loop
+interval=${1:-600}
+case "$interval" in
+    --help|-h) echo 'usage: book-full500-status [interval_seconds|--once] (default: 600 seconds)'; exit 0;;
+    --once) mode=once; interval=600;;
+    ''|*[!0-9]*) echo 'interval must be an integer from 1 to 86400 seconds' >&2; exit 2;;
+esac
+[ "$interval" -ge 1 ] && [ "$interval" -le 86400 ] || { echo 'interval must be 1..86400 seconds' >&2; exit 2; }
+[ "$#" -le 1 ] || { echo 'expected at most one argument' >&2; exit 2; }
+trap 'exit 130' INT TERM HUP
+control=out/book-full500-control
+snapshot=$control/progress.json
+history=$control/progress-history.jsonl
+methods=out/book-full500-prepared/last-methods.jsonl
+show_status() {
+    printf '\n--- Full500: %s ---\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    if [ ! -r "$snapshot" ]; then echo 'WAITING: watchdog snapshot is unavailable; ETA unavailable.'; return 1; fi
+    history_source=$history
+    [ -r "$history_source" ] || history_source=/dev/null
+    now=$(date +%s)
+    # Only the final unterminated append is ignored; malformed complete history lines fail visibly.
+    alert_time=0
+    [ ! -r "$control/alert.txt" ] || alert_time=$(stat -c %Y "$control/alert.txt")
+    metrics=$(jq -er --argjson now "$now" --argjson alert "$alert_time" --rawfile history "$history_source" '
+      def completed: .accounting.successes + .accounting.errors + .accounting.interrupted;
+      def valid: .run_id=="book-full500-v1" and (.unix_seconds|type)=="number"
+        and .accounting.planned_calls==2500 and (.status|type)=="string"
+        and ([.accounting.successes,.accounting.errors,.accounting.interrupted,.tokens,.capped] | all(.[];type=="number" and .>=0 and .==floor))
+        and completed<=2500;
+      if valid|not then error("invalid watchdog snapshot") else . end |
+      . as $last | completed as $done | ($now-.unix_seconds) as $age |
+      ($history|split("\n")|.[0:-1]|map(select(length>0)|fromjson)|map(select(.run_id==$last.run_id and .unix_seconds < $last.unix_seconds))|sort_by(.unix_seconds)) as $rows |
+      (([$rows[]|select(.unix_seconds <= ($last.unix_seconds-3600))]|last) // $rows[0]) as $anchor |
+      (if $anchor==null then 0 else .unix_seconds-$anchor.unix_seconds end) as $span |
+      (if $anchor==null then 0 else $done-($anchor|completed) end) as $delta |
+      (if .status=="complete" and $done==2500 then "complete"
+       elif $age>180 or $age<0 then "STALE"
+       elif $alert >= .unix_seconds then "watchdog_alert"
+       elif .accounting.errors>0 or .accounting.interrupted>0 then "failed_attempts"
+       else .status end) as $health |
+      (if $health=="running" and $span>=300 and $delta>0 then (2500-$done)*$span/$delta else -1 end) as $remaining |
+      [$done,100*$done/2500,$health,$age,.accounting.errors,.accounting.interrupted,.tokens,.capped,$remaining,
+       (if $remaining>=0 then $delta*3600/$span else 0 end),.unix_seconds,
+       (if $remaining>=0 then (.unix_seconds+$remaining|floor) else 0 end),$span] | @tsv' "$snapshot") || { echo 'DATA ERROR: invalid progress/history; ETA unavailable.'; return 1; }
+    IFS="$(printf '\t')" read -r done percent health age errors interrupted tokens caps remaining rate observed finish span <<VALUES
+$metrics
+VALUES
+    printf 'Progress: %.1f%% complete (%d/2500 attempts) | %s\n' "$percent" "$done" "$health"
+    printf 'Health: %d errors, %d interruptions, %d token caps | %d tokens\n' "$errors" "$interrupted" "$caps" "$tokens"
+    printf 'Watchdog observation: %s (%ss ago)\n' "$(date -d "@$observed" '+%H:%M:%S %Z')" "$age"
+    if [ "$health" = complete ]; then
+        echo 'ETA: finished (all planned attempts accounted for).'
+    elif [ "$finish" -gt 0 ]; then
+        hours=$(awk -v seconds="$remaining" 'BEGIN {printf "%.1f",seconds/3600}')
+        minutes=$(awk -v seconds="$span" 'BEGIN {printf "%.0f",seconds/60}')
+        printf 'ETA: %s hours remaining; projected finish %s\n' "$hours" "$(date -d "@$finish" '+%Y-%m-%d %H:%M %Z')"
+        printf 'Rate: %.1f calls/hour over the last %s minutes; projection assumes similar future call lengths.\n' "$rate" "$minutes"
+    else
+        echo 'ETA unavailable: stale/unhealthy data, no recent progress, or less than five minutes of history.'
+    fi
+    if [ -r "$control/alert.txt" ] && [ "$(stat -c %Y "$control/alert.txt")" -ge "$observed" ]; then
+        echo 'WATCHDOG ALERT (inspect watch.log before relying on the projection):'
+        cat "$control/alert.txt"
+    fi
+    if [ ! -r "$methods" ]; then echo 'Reasoning results: waiting for a completed scoring session.'; return 0; fi
+    printf 'Scoring snapshot: %s (refreshed at session boundaries)\n' "$(date -r "$methods" '+%Y-%m-%d %H:%M:%S %Z')"
+    quality=$(jq -esr '
+      if all(.[]; (.index|type)=="number" and .index>=0 and .index<500 and .index==(.index|floor)
+        and (.method==0 or .method==1 or .method==2) and (.eligible==0 or .eligible==1) and (.correct==0 or .correct==1))|not
+      then error("invalid scoring rows") else . end |
+      group_by(.index) | map(sort_by(.method)) |
+      if all(.[];length==3 and map(.method)==[0,1,2])|not then error("duplicate or missing method rows") else . end |
+      map(select(all(.[];.eligible==1))) as $pairs | ($pairs|length) as $n |
+      if $n==0 then "Reasoning results: no common completed cases yet."
+      else ($pairs|map(.[0].correct)|add) as $direct | ($pairs|map(.[1].correct)|add) as $cot | ($pairs|map(.[2].correct)|add) as $vote |
+      "PROVISIONAL reasoning: same \($n)/500 cases completed successfully by all three methods.",
+      "  Direct: \($direct)/\($n) (\((1000*$direct/$n|round)/10)%) | CoT: \($cot)/\($n) (\((1000*$cot/$n|round)/10)%) | Vote: \($vote)/\($n) (\((1000*$vote/$n|round)/10)%)",
+      "  CoT vs direct: \(($pairs|map(select(.[1].correct>.[0].correct))|length)) gains, \(($pairs|map(select(.[1].correct<.[0].correct))|length)) losses; \((1000*($cot-$direct)/$n|round)/10) percentage-point difference.",
+      "  Vote vs CoT: \(($pairs|map(select(.[2].correct>.[1].correct))|length)) gains, \(($pairs|map(select(.[2].correct<.[1].correct))|length)) losses; \((1000*($vote-$cot)/$n|round)/10) percentage-point difference.",
+      "  Matched-case diagnostic only: excludes pending/failed groups; full500 primary denominator remains 500."
+      end' "$methods") || { echo 'Reasoning results unavailable: malformed scoring snapshot.'; return 1; }
+    printf '%s\n' "$quality"
+}
+while :; do
+    result=0
+    show_status || result=$?
+    [ "$mode" != once ] || exit "$result"
+    printf 'Next update in %ss. Ctrl-C stops this viewer only.\n' "$interval"
+    sleep "$interval"
+done

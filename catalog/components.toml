@@ -433,3 +433,12 @@ source = "lib/watch/watch.mlpl"
 test = "tests/test_watch.mlpl"
 documentation = "docs/book-full500-watchdog.md"
 status = "accepted"
+
+[[component]]
+id = "FULL500TERMINAL"
+slug = "terminal-progress-and-paired-diagnostics"
+chapter = 4
+source = "scripts/book-full500-status"
+test = "tests/check-full500-status.sh"
+documentation = "docs/book-full500-watchdog.md"
+status = "accepted"

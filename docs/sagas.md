@@ -310,3 +310,13 @@ fixtures pass, plus a model-free native-owner termination test. Watchdog managed
 session58726 writes out/book-full500-control/watch.log and progress.html;
 controller session87318 continues unchanged. Results collection is now step021,
 resident-copy work022. Never reconcile while either worker is active.
+
+User-requested step021 adds `just book-full500-status`: immediate terminal
+output, then every ten minutes by default, with configurable cadence and a
+one-shot mode. It displays accounted-call percentage, trailing-hour ETA and
+same-case provisional direct/CoT/vote scores with paired gains/losses. Fixture
+acceptance covers rate selection, partial history appends, stale/error/complete
+states, alerts, uneven method completion and argument validation. It is a
+read-only consumer and starts no reporter or benchmark worker. Existing
+watchdog and frozen inference continue unchanged. Full results collection
+moves to022; resident-copy work023. Chat reporting is not scheduled.
