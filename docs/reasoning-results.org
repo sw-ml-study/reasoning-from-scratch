@@ -1,7 +1,7 @@
 #+title: Building a Reasoning Model with MLPL, Rust and CUDA
 #+subtitle: Recreating the book's methods: implementation, reproducible experiments, and measured reasoning gains
 #+author: Michael A Wright
-#+date: 2026-09-30
+#+date: 2026-10-02
 #+language: en
 #+options: toc:2 num:t ^:nil html-postamble:nil
 #+property: header-args:mlpl :dir .. :results output verbatim :exports both :eval no-export :tangle no
@@ -17,17 +17,14 @@ experiment tools—prompting, generation control, answer verification,
 self-consistency and analysis—are MLPL programs. No Python runs in this
 implementation.
 
-Our working demonstration uses *Qwen3-0.6B-Base*, the book's starting model,
-on a 16 GiB RTX 5060 Ti. On the author's first ten MATH-500 problems, direct
-prompting solves *3/10*, greedy chain-of-thought solves *4/10*, and voting
-across three sampled reasoning responses solves *6/10*. All fifty model
-calls finish, with zero backend errors, in *38 minutes 22 seconds*.
-
-The demonstration establishes an inference-time reasoning benefit on this
-fixed sample. Two questions become correct through valid intermediate
-calculations in the greedy reasoning condition. Voting improves the net
-result further, although some individual questions regress. The full
-500-problem benchmark remains planned work.
+Our completed experiment uses *Qwen3-0.6B-Base*, the book's starting model,
+on a 16 GiB RTX 5060 Ti. On all *500 MATH-500 problems*, direct prompting
+solves *72/500 (14.4%)*, greedy chain-of-thought solves *213/500 (42.6%)*,
+and three-sample voting solves *199/500 (39.8%)*. All 2500 model calls
+complete with zero backend errors or interruptions. Chain-of-thought improves
+answer accuracy by *28.2 percentage points*; voting does not improve on it.
+Generation call time totals *18.86 hours*. The ten-case experiment below
+provides a smaller worked example; the full-set results are the main evidence.
 
 “From scratch” describes the implementation of the reasoning system and
 its methods. As in the book, we start with pretrained base weights; we do
@@ -35,7 +32,7 @@ not pretrain a language model. In this experiment the 596,049,920 parameters
 remain fixed. MLPL training objectives and toy updates are implemented;
 training this native language model is a separate, unfinished stage.
 
-This document is executable research. Six named =ob-mlpl= blocks run the
+This document is executable research. Seven named =ob-mlpl= blocks run the
 production sampling and verification libraries, recompute the measured
 results, and illustrate reward normalization and a checked gradient update.
 Their outputs are recorded below and checked before publication.
@@ -49,7 +46,7 @@ Our implementation follows those stages with the following division of work.
 | Book stage | Method | Our implementation and evidence |
 |------------+--------+---------------------------------|
 | Chapter 2 and architecture appendix | Tokenize, run Qwen3, cache attention keys/values, generate tokens | Independent MLPL transformer/reference; native Rust tokenizer and Candle CUDA forward; numerical acceptance checks |
-| Chapter 3 | Extract and grade answers; evaluate MATH-500 | MLPL text scanning, normalization, bounded equivalence and experiment accounting; measured ten-case baseline |
+| Chapter 3 | Extract and grade answers; evaluate MATH-500 | MLPL text scanning, normalization, bounded equivalence and experiment accounting; measured full MATH-500 baseline |
 | Chapter 4 | Chain-of-thought, temperature/top-p sampling, self-consistency | MLPL prompt and sampler contracts, raw-answer voting; measured direct/CoT/voting comparison |
 | Chapter 5 | Score and refine candidate responses | MLPL scoring/refinement modules with fixture tests; real-checkpoint evaluation planned |
 | Chapters 6–7 | Reward correct answers, compute group advantages, optimize a policy | MLPL reward/objective contracts and toy tests; native language-model backward/update path planned |
@@ -263,7 +260,7 @@ including its [[https://github.com/rasbt/reasoning-from-scratch/blob/1c0b9b17f80
 framework RNG, floating-point arithmetic and general symbolic equivalence
 are explicitly scoped differences.
 
-* Results: reasoning helps on the measured sample
+* Worked example: the ten-case pilot
 
 | Method | Correct | Accuracy | Descriptive 95% Wilson interval |
 |--------+---------+----------+--------------------------------|
@@ -334,12 +331,9 @@ The author's [[https://github.com/rasbt/reasoning-from-scratch/tree/1c0b9b17f80d
 | CoT with three sampled candidates | 42.2% | 211.6 min |
 | CoT with ten sampled candidates | 52.0% | 862.6 min |
 
-This model size can benefit from inference-time reasoning. Our sample also
-shows a net benefit, but the different evaluation size prevents claiming
-matching or superior accuracy. Hardware and generated-token counts also
-differ, so these times are not a language-speed comparison. The Python
-implementation already calls native CUDA kernels; a speedup must be
-measured on matched work.
+This model size can benefit from inference-time reasoning. The completed
+full500 comparison below establishes our corresponding accuracy and timing
+measurements. The ten-case example is not used to estimate full-set accuracy.
 
 ** What the generated work shows
 
@@ -643,7 +637,163 @@ checkpoint. Reasoning improvement then requires separate training and
 held-out data, a no-update control, fixed evaluation settings and reported
 before/after accuracy.
 
-* Scaling the book experiment to 500 cases
+* Full MATH-500 results: reasoning improves accuracy
+
+All 2500 planned calls completed across all 500 questions, with zero backend
+errors, zero interruptions and no pending requests. The fixed base weights
+solve substantially more problems when prompted for intermediate steps.
+
+| Method | Correct / 500 | Accuracy | Gain over direct |
+|--------+---------------+----------+------------------|
+| Direct, greedy | 72 | 14.4% | — |
+| Chain-of-thought, greedy | 213 | 42.6% | +28.2 percentage points |
+| Three sampled CoT responses, plurality vote | 199 | 39.8% | +25.4 percentage points |
+
+CoT gains 158 correct answers and loses 17 relative to direct prompting, with
+325 ties. Voting gains 52 and loses 66 relative to greedy CoT, with 382 ties.
+The methods share the same 500 questions. These are final results under our
+bounded MLPL grader, not a claim of general mathematical reliability: even
+CoT misses 287 questions. Written explanations have not all been independently
+checked for valid intermediate reasoning.
+
+Voting uses three temperature-0.9/top-p-0.9 responses, while greedy CoT uses
+one temperature-zero response. Thus this comparison changes both sampling
+and aggregation. It does not isolate voting's effect on identical candidates.
+We cannot attribute the voting deficit to a single cause from these totals.
+Candidate correctness, answer-string fragmentation, ties and truncation are
+useful next diagnostics; changing voting after seeing these answers would
+require a separately labeled experiment.
+
+** Reproduce the full-set analysis in MLPL
+
+The immutable [[file:results/book-full500-v1-final.json][final runner summary]],
+[[file:results/book-full500-v1-final-methods.jsonl][1500 method outcomes]] and
+[[file:results/book-full500-v1-call-metrics.jsonl][2500 numeric call measurements]] contain no questions or generated text.
+This offline block verifies counts and ordering, recomputes accuracy and
+paired gains/losses, and aggregates elapsed time and truncations.
+
+#+name: replay-full500
+#+begin_src mlpl
+include "../lib/text/text.mlpl";
+summary = parse_json(read_text("docs/results/book-full500-v1-final.json")?)?
+methods = str_split(u:text_trim(read_text("docs/results/book-full500-v1-final-methods.jsonl")?), "\n")
+calls = str_split(u:text_trim(read_text("docs/results/book-full500-v1-call-metrics.jsonl")?), "\n")
+outcomes = []
+i = 0
+while lt(i, list_len(methods)) {
+  row = parse_json(list_get(methods, i)?)?;
+  if (1 - eq(row.index, floor(i / 3))) + (1 - eq(row.method, mod(i, 3))) + (1 - row.eligible) { err("invalid method ordering or eligibility")? };
+  outcomes = concat(outcomes, row.correct);
+  i = i + 1
+}
+if (list_len(methods) - 1500) + (list_len(calls) - 2500) { err("incomplete final records")? }
+method = 0
+while lt(method, 3) {
+  correct = 0; tokens = 0; capped = 0; wall = 0; count = 0;
+  i = 0;
+  while lt(i, 500) { correct = correct + at(outcomes, i * 3 + method); i = i + 1 };
+  i = 0;
+  while lt(i, list_len(calls)) {
+    row = parse_json(list_get(calls, i)?)?;
+    if (row.ordinal - i) + (1 - str_eq(row.kind, "success")) { err("invalid call ordering or status")? };
+    slot = mod(row.ordinal, 5);
+    group = if lt(slot, 2) { slot } else { 2 };
+    if eq(group, method) {
+      tokens = tokens + row.tokens; capped = capped + str_eq(row.stopped, "budget");
+      wall = wall + row.wall_ms; count = count + 1
+    };
+    i = i + 1
+  };
+  if correct - at(summary.correct, method) { err("summary accuracy mismatch")? };
+  print("method", method, "correct", correct, "percent", correct / 5, "calls", count, "tokens", tokens, "caps", capped);
+  print("call minutes", round(wall / 6000) / 10, "seconds per question", round(wall / 50000) / 10, "tokens/s", round(tokens * 100000 / wall) / 100);
+  method = method + 1
+}
+gains = 0; losses = 0; vote_gains = 0; vote_losses = 0; i = 0
+while lt(i, 500) {
+  direct = at(outcomes, i * 3); cot = at(outcomes, i * 3 + 1); vote = at(outcomes, i * 3 + 2);
+  gains = gains + cot * (1 - direct); losses = losses + direct * (1 - cot);
+  vote_gains = vote_gains + vote * (1 - cot); vote_losses = vote_losses + cot * (1 - vote);
+  i = i + 1
+}
+print("CoT gains/losses", gains, losses, "vote vs CoT gains/losses", vote_gains, vote_losses)
+if eq(gains, summary.paired.cot_vs_direct.gains) * eq(losses, summary.paired.cot_vs_direct.losses) * eq(vote_gains, summary.paired.vote_vs_cot.gains) * eq(vote_losses, summary.paired.vote_vs_cot.losses) {
+  ok("full500 method counts and paired results agree with the runner")
+} else { err("paired result mismatch") }
+#+end_src
+
+#+RESULTS: replay-full500
+: method 0 correct 72 percent 14.4 calls 500 tokens 48047 caps 6
+: call minutes 37.6 seconds per question 4.5 tokens/s 21.29
+: method 1 correct 213 percent 42.6 calls 500 tokens 337983 caps 52
+: call minutes 264.3 seconds per question 31.7 tokens/s 21.31
+: method 2 correct 199 percent 39.8 calls 1500 tokens 845948 caps 69
+: call minutes 829.9 seconds per question 99.6 tokens/s 16.99
+: CoT gains/losses 158 17 vote vs CoT gains/losses 52 66
+: Ok(full500 method counts and paired results agree with the runner)
+
+** Runtime, tokens and memory
+
+| Method | Calls | Tokens | Token caps | Sum of call minutes | Mean seconds per question |
+|--------+-------+--------+------------+---------------------+---------------------------|
+| Direct | 500 | 48047 | 6 | 37.6 | 4.5 |
+| Greedy CoT | 500 | 337983 | 52 | 264.3 | 31.7 |
+| Three-sample vote | 1500 | 845948 | 69 | 829.9 | 99.6 |
+
+Generation produced *1231978 tokens*. The 127 capped calls are 5.08% of
+attempts; a capped response is still graded under the frozen extraction rule.
+Sum of call wall times is 67910.8 seconds (18.86 hours). Within those calls,
+decode steps including selection total 67533.2 seconds (99.44%), prefill
+326.0 seconds (0.48%), and the remainder is about 51.5 seconds. Sampling is
+included in native step times and is not separately measured. Aggregate call
+throughput is 18.14 tokens/s; direct, greedy CoT and sampled calls respectively
+achieve 21.29, 21.31 and 16.99 tokens/s on their different output workloads.
+
+The [[file:results/book-full500-v1-session-metrics.jsonl][76 session records]] account for 20.33 hours, including model loading,
+grading and conservatively charged recovery downtime. Recorded loading totals
+477.3 seconds; loading time from a recovered session without a normal end is
+not separately recoverable. The difference between charged session time and
+call time must not be labeled GPU overhead. Calendar execution spans about
+30 hours 42 minutes, from October 1 03:09 UTC to October 2 09:51 UTC, including
+pauses. These three timing boundaries answer different questions.
+
+[[file:results/book-full500-v1-memory.json][Memory sampling]] records a peak of 2431 MiB device-wide and 1904460 KiB
+host process high-water memory (about 1.82 GiB). GPU figures include desktop
+and other allocations; two-second sampling can miss brief peaks. Host wall
+spans include launch, transfer, synchronization and scheduling waits. They do
+not establish 99.44% GPU utilization. The existing [[file:cuda-performance.md][CUDA timing analysis]]
+identifies launch/transfer costs; stable cache storage and model graph replay
+remain the next measured optimization, with numerical/token parity required.
+
+** Comparison with the book
+
+The [[https://github.com/rasbt/reasoning-from-scratch/tree/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/ch04/02_math500-inference-scaling-scripts][pinned author results]] use Qwen3-0.6B-Base on all 500 questions with
+DGX Spark CUDA hardware. Our run uses an RTX 5060 Ti. The broad quality result
+is reproduced: chain-of-thought helps this small base model substantially.
+
+| Method | Book accuracy | MLPL accuracy | Book minutes | MLPL call minutes |
+|--------+---------------+---------------+--------------+-------------------|
+| Direct | 15.2% | 14.4% | 10.1 | 37.6 |
+| Greedy CoT | 40.6% | 42.6% | 84.5 | 264.3 |
+| Three-sample CoT vote | 42.2% | 39.8% | 211.6 | 829.9 |
+
+Our elapsed call totals are roughly 3.7×, 3.1× and 3.9× the published times.
+These are descriptive ratios across different systems and timing boundaries,
+not controlled Rust-versus-Python slowdowns. We have no evidence of a speedup.
+Python delegates tensor work to native CUDA libraries too. Output lengths,
+RNG streams, numerical execution and verifier coverage differ; the timing
+comparison lacks a matched same-hardware author run. Accuracy deltas are
+−0.8, +2.0 and −2.4 percentage points, not proof of model superiority.
+
+The voting gain in the book is not reproduced here. Future diagnostics should
+separate sampled-candidate quality, raw-string voting and grading coverage.
+The numerical grader supports a bounded subset of SymPy equivalence, so
+unsupported equivalent answers can contribute to measured failures. The
+[[file:results/book-full500-v1-grading-v2.sha256][grading revision]] is explicit; the original [[file:results/book-full500-v1-execution.json][execution manifest]] remains
+unchanged and retains its pre-execution status as historical provenance.
+
+
+* Execution and verification contracts
 
 ** Numeric grading and unfinished reasoning
 
@@ -662,12 +812,9 @@ a positive multiple of nine ones. The smallest valid answer is 11111111100;
 the generated digit sum of one proves its answer incorrect. A sampled response
 lists multiples until its cap instead. Neither continuation solves the task.
 
-At the 1087-call checkpoint, bounded grading scores 652 complete method groups.
-All 641 grades shared with the previous report agree. Correct counts are
-38/217 direct, 99/218 greedy CoT and 99/217 three-vote; these unequal, incomplete
-cohorts are provisional. Generation settings remain frozen; grading is recorded
-under an explicit versioned amendment. Repetition stopping and verified
-refinement are separate future comparisons, not changes to this experiment.
+All 500 cases are scored under the bounded grading revision. Repetition
+stopping and verified refinement remain separate future comparisons; the
+generation protocol and primary denominator remain fixed.
 
 ** Execution protocol
 
@@ -675,9 +822,8 @@ The [[file:book-full500-runner.md][MLPL runner]] prepares all 500 author-ordered
 500 greedy chain-of-thought answers and 1500 sampled answers for three-vote
 selection. Its [[file:results/book-full500-v1-execution.json][execution manifest]], 1000 prompt hashes and 2500 request
 identities were committed before benchmark generation. Execution started at
-2026-10-01 03:09 UTC and is running in bounded sessions with unattended
-continuation. No full500 quality result is available yet. The measured ten-case
-results above remain the completed quality evidence.
+2026-10-01 03:09 UTC and finished on October 2 at approximately 09:52 UTC.
+The completed numerical outcomes and runtime analysis appear above.
 
 MLPL owns scheduling, seeds, stopping, grading and recovery decisions. A generic
 Rust extension writes checksummed immutable records, syncing contents and the
@@ -703,33 +849,6 @@ trials. Pinned buffers do not consistently eliminate transfer stalls. This is
 a toy-kernel result, not a Qwen speedup or a Python comparison. Model graph
 capture needs stable cache addresses and shapes, followed by numerical and
 seeded-token parity and repeated end-to-end measurements.
-
-** First full500 execution snapshot
-
-The [[file:book-full500-progress.md][first bounded session]] completes 38 of 2500 calls in 930.4 seconds,
-producing 16924 tokens with zero backend errors or interruptions. Three outputs
-reach the 2048-token cap. Continuation is running; the remaining calls are
-pending. The frozen MLPL runner publishes [[file:results/book-full500-v1-progress-01.json][numeric accounting]] and
-[[file:results/book-full500-v1-progress-01-methods.jsonl][method records]] without redistributing questions or generated text.
-
-| Method | Cases with all required responses | Correct recorded | Planned cases |
-|--------+-----------------------------------+------------------+---------------|
-| Direct | 7 | 2 | 500 |
-| Greedy chain of thought | 8 | 3 | 500 |
-| Three-sample vote | 7 | 5 | 500 |
-
-This is incomplete accounting, not full-set accuracy. Unfinished cases remain
-pending, and full-set paired comparisons are withheld. The small ordered prefix
-cannot establish the full-dataset benefit of reasoning.
-
-The session includes 6.3 seconds loading, 5.2 seconds in prefill steps and
-912.7 seconds in decode steps; both step times include native selection.
-Throughput including overhead is 18.2 tokens/second. Sampled peaks are
-2403 MiB of device memory and 1782728 KiB host memory. These host wall spans
-include CUDA launch/transfer waits; they are not kernel utilization. CPU
-fixture checks ran during part of this session. This is operational timing,
-not a controlled Python comparison. The full experiment retains its 48-hour
-budget and will report all denominators if it ends incomplete.
 
 ** Live execution supervision
 
@@ -783,14 +902,14 @@ reasoning step, and do not trigger score-based early stopping.
 
 | Current scope | Next deliverable | Acceptance evidence |
 |---------------+------------------+---------------------|
-| Ten-case inference comparison is measured | Full author-ordered 500-case direct/CoT/voting experiment | Frozen inputs and controls; resumable attempt accounting; all cases retained in the denominator |
+| Full500 direct/CoT/voting experiment is complete | Diagnose voting deficit and evaluate matched performance | Candidate-level analysis; independent grading fixtures; fixed timing boundaries |
 | Native selection matches all 2048 tokens in a long-context pair; CUDA traces locate launch/transfer costs | Stable cache storage and captured decode, then matched model acceptance | Numerical/token parity and repeated end-to-end gains before changing the backend |
 | Numeric, tuple, literal and bounded linear-symbolic grading work | Broader independent equivalence fixtures and coverage | Separate unsupported equivalence from genuine incorrect answers |
 | CUDA provider has a pinned local build and source archive | Publish an installable native extension package | Reproducible build and consumer numerical/sampling acceptance |
 | MLPL learning objectives and toy updates are tested | Native language-model training, then GRPO/distillation evaluation | Gradient/update/save/reload checks followed by held-out reasoning gains |
 
-The path to stronger evidence is to scale the controlled experiment and
-measure each improvement. Answer correctness, completion rate, validity of
+The path to stronger evidence is to measure each proposed improvement
+against this completed baseline. Answer correctness, completion rate, validity of
 reviewed steps, tokens, latency and memory all matter. Zero backend errors
 establish execution reliability for this run; they do not mean zero
 mathematical errors.
@@ -799,14 +918,19 @@ mathematical errors.
 
 ** Identify the experimental inputs
 
+Full500 uses provider v3 with SHA-256
+=539ea87f7367e2ecb9e847232310097202d1f4318ab992c3aaf8cd3dae4ff56a=.
+The frozen execution manifest identifies all controls and native artifacts.
+The table also preserves the earlier ten-case provider identity.
+
 | Artifact or environment | Identity |
 |-------------------------+----------|
 | sw-MLPL source build | =49c15b3e659ecc32603e10312a5197039b636397= |
 | Interpreter binary SHA-256 | =d34ae2bfde1fa89c2af1b34053352d52a563dae8152b5c8425f83818a3dcaba0= |
 | Base weights SHA-256 | =cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba= |
 | Author dataset SHA-256 | =a9eccff7e25ecaf3952614e5b92fe081b4f0549c68ae6a387b96e131df9ddf41= |
-| Native provider SHA-256 | =da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd= |
-| Native implementation | Candle 0.11.0; cudarc 0.19.10; provider 0.2.0 |
+| Ten-case native provider SHA-256 | =da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd= |
+| Ten-case native implementation | Candle 0.11.0; cudarc 0.19.10; provider 0.2.0 |
 | Hardware and CUDA | RTX 5060 Ti, 16 GiB; driver 615.71.09; toolkit 13.4.59; sm_120 |
 | Prompt/template identity | =fixtures/prompts/book-author.json=; twenty rendered prompts hashed before generation |
 | Frozen execution commit | =5647c40= |
@@ -830,7 +954,7 @@ just research-html
 just check
 #+end_src
 
-=research-refresh= executes the six named offline MLPL blocks, saves their
+=research-refresh= executes the seven named offline MLPL blocks, saves their
 results and exports HTML. =research-html= exports stored results without
 executing blocks. Neither command launches model inference or downloads.
 The completion gate checks recorded outputs and exact HTML export, along

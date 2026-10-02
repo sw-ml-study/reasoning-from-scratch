@@ -1,6 +1,9 @@
 # Full500 execution progress
 
-**Running; incomplete.** The frozen `book-full500-v1` experiment has started.
+**Current status: completed.** See the [final 500-case results](book-full500-results.md).
+The first-session snapshot below is retained as historical evidence only.
+
+**Historical first-session snapshot; incomplete at that time.** The frozen `book-full500-v1` experiment had started.
 This snapshot covers the first bounded session, beginning 2026-10-01 03:09 UTC.
 Continuation runs the remaining unstarted requests with unchanged model,
 provider, prompts, seeds and decoding limits. See the

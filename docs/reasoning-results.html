@@ -67,7 +67,7 @@ details[open] summary { margin-bottom:1.5rem; }
 </ul>
 </li>
 <li><a href="#org8a21ee4">6. Step 4: run a controlled comparison</a></li>
-<li><a href="#org2ebe7a9">7. Results: reasoning helps on the measured sample</a>
+<li><a href="#org2ebe7a9">7. Worked example: the ten-case pilot</a>
 <ul>
 <li><a href="#orgbfb557e">7.1. Compare with the book's published results</a></li>
 <li><a href="#orgefbf27e">7.2. What the generated work shows</a></li>
@@ -82,21 +82,27 @@ details[open] summary { margin-bottom:1.5rem; }
 <li><a href="#org4180c98">9.2. Execute and check a real parameter update</a></li>
 </ul>
 </li>
-<li><a href="#org6165353">10. Scaling the book experiment to 500 cases</a>
+<li><a href="#orge0576d7">10. Full MATH-500 results: reasoning improves accuracy</a>
 <ul>
-<li><a href="#orgb33cf44">10.1. Numeric grading and unfinished reasoning</a></li>
-<li><a href="#org1566902">10.2. Execution protocol</a></li>
-<li><a href="#orgd5c0387">10.3. First full500 execution snapshot</a></li>
-<li><a href="#org91b8ed7">10.4. Live execution supervision</a></li>
-<li><a href="#orge0576d7">10.5. Terminal progress and provisional reasoning benefit</a></li>
+<li><a href="#org1566902">10.1. Reproduce the full-set analysis in MLPL</a></li>
+<li><a href="#orgd5c0387">10.2. Runtime, tokens and memory</a></li>
+<li><a href="#org91b8ed7">10.3. Comparison with the book</a></li>
 </ul>
 </li>
-<li><a href="#org67f5a36">11. Current scope and next experiments</a></li>
-<li><a href="#orgdf31732">12. Reproduce and publish this document</a>
+<li><a href="#org67a8f30">11. Execution and verification contracts</a>
 <ul>
-<li><a href="#orgdfca9b1">12.1. Identify the experimental inputs</a></li>
-<li><a href="#org3b83232">12.2. Refresh the calculations and build HTML</a></li>
-<li><a href="#org67a8f30">12.3. Run individual blocks in Emacs</a></li>
+<li><a href="#org6165353">11.1. Numeric grading and unfinished reasoning</a></li>
+<li><a href="#org67f5a36">11.2. Execution protocol</a></li>
+<li><a href="#orgdfca9b1">11.3. Live execution supervision</a></li>
+<li><a href="#org3b83232">11.4. Terminal progress and provisional reasoning benefit</a></li>
+</ul>
+</li>
+<li><a href="#orgdf31732">12. Current scope and next experiments</a></li>
+<li><a href="#org7426fbe">13. Reproduce and publish this document</a>
+<ul>
+<li><a href="#org1f7e03e">13.1. Identify the experimental inputs</a></li>
+<li><a href="#org22925db">13.2. Refresh the calculations and build HTML</a></li>
+<li><a href="#org8231f23">13.3. Run individual blocks in Emacs</a></li>
 </ul>
 </li>
 </ul>
@@ -115,19 +121,14 @@ implementation.
 </p>
 
 <p>
-Our working demonstration uses <b>Qwen3-0.6B-Base</b>, the book's starting model,
-on a 16 GiB RTX 5060 Ti. On the author's first ten MATH-500 problems, direct
-prompting solves <b>3/10</b>, greedy chain-of-thought solves <b>4/10</b>, and voting
-across three sampled reasoning responses solves <b>6/10</b>. All fifty model
-calls finish, with zero backend errors, in <b>38 minutes 22 seconds</b>.
-</p>
-
-<p>
-The demonstration establishes an inference-time reasoning benefit on this
-fixed sample. Two questions become correct through valid intermediate
-calculations in the greedy reasoning condition. Voting improves the net
-result further, although some individual questions regress. The full
-500-problem benchmark remains planned work.
+Our completed experiment uses <b>Qwen3-0.6B-Base</b>, the book's starting model,
+on a 16 GiB RTX 5060 Ti. On all <b>500 MATH-500 problems</b>, direct prompting
+solves <b>72/500 (14.4%)</b>, greedy chain-of-thought solves <b>213/500 (42.6%)</b>,
+and three-sample voting solves <b>199/500 (39.8%)</b>. All 2500 model calls
+complete with zero backend errors or interruptions. Chain-of-thought improves
+answer accuracy by <b>28.2 percentage points</b>; voting does not improve on it.
+Generation call time totals <b>18.86 hours</b>. The ten-case experiment below
+provides a smaller worked example; the full-set results are the main evidence.
 </p>
 
 <p>
@@ -139,7 +140,7 @@ training this native language model is a separate, unfinished stage.
 </p>
 
 <p>
-This document is executable research. Six named <code>ob-mlpl</code> blocks run the
+This document is executable research. Seven named <code>ob-mlpl</code> blocks run the
 production sampling and verification libraries, recompute the measured
 results, and illustrate reward normalization and a checked gradient update.
 Their outputs are recorded below and checked before publication.
@@ -182,7 +183,7 @@ Our implementation follows those stages with the following division of work.
 <tr>
 <td class="org-left">Chapter 3</td>
 <td class="org-left">Extract and grade answers; evaluate MATH-500</td>
-<td class="org-left">MLPL text scanning, normalization, bounded equivalence and experiment accounting; measured ten-case baseline</td>
+<td class="org-left">MLPL text scanning, normalization, bounded equivalence and experiment accounting; measured full MATH-500 baseline</td>
 </tr>
 
 <tr>
@@ -608,7 +609,7 @@ are explicitly scoped differences.
 </div>
 </div>
 <div id="outline-container-org2ebe7a9" class="outline-2">
-<h2 id="org2ebe7a9"><span class="section-number-2">7.</span> Results: reasoning helps on the measured sample</h2>
+<h2 id="org2ebe7a9"><span class="section-number-2">7.</span> Worked example: the ten-case pilot</h2>
 <div class="outline-text-2" id="text-7">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
@@ -904,12 +905,9 @@ The author's <a href="https://github.com/rasbt/reasoning-from-scratch/tree/1c0b9
 </table>
 
 <p>
-This model size can benefit from inference-time reasoning. Our sample also
-shows a net benefit, but the different evaluation size prevents claiming
-matching or superior accuracy. Hardware and generated-token counts also
-differ, so these times are not a language-speed comparison. The Python
-implementation already calls native CUDA kernels; a speedup must be
-measured on matched work.
+This model size can benefit from inference-time reasoning. The completed
+full500 comparison below establishes our corresponding accuracy and timing
+measurements. The ten-case example is not used to estimate full-set accuracy.
 </p>
 </div>
 </div>
@@ -1328,13 +1326,329 @@ before/after accuracy.
 </div>
 </div>
 </div>
-<div id="outline-container-org6165353" class="outline-2">
-<h2 id="org6165353"><span class="section-number-2">10.</span> Scaling the book experiment to 500 cases</h2>
+<div id="outline-container-orge0576d7" class="outline-2">
+<h2 id="orge0576d7"><span class="section-number-2">10.</span> Full MATH-500 results: reasoning improves accuracy</h2>
 <div class="outline-text-2" id="text-10">
+<p>
+All 2500 planned calls completed across all 500 questions, with zero backend
+errors, zero interruptions and no pending requests. The fixed base weights
+solve substantially more problems when prompted for intermediate steps.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-left" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Method</th>
+<th scope="col" class="org-right">Correct / 500</th>
+<th scope="col" class="org-right">Accuracy</th>
+<th scope="col" class="org-left">Gain over direct</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Direct, greedy</td>
+<td class="org-right">72</td>
+<td class="org-right">14.4%</td>
+<td class="org-left">—</td>
+</tr>
+
+<tr>
+<td class="org-left">Chain-of-thought, greedy</td>
+<td class="org-right">213</td>
+<td class="org-right">42.6%</td>
+<td class="org-left">+28.2 percentage points</td>
+</tr>
+
+<tr>
+<td class="org-left">Three sampled CoT responses, plurality vote</td>
+<td class="org-right">199</td>
+<td class="org-right">39.8%</td>
+<td class="org-left">+25.4 percentage points</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+CoT gains 158 correct answers and loses 17 relative to direct prompting, with
+325 ties. Voting gains 52 and loses 66 relative to greedy CoT, with 382 ties.
+The methods share the same 500 questions. These are final results under our
+bounded MLPL grader, not a claim of general mathematical reliability: even
+CoT misses 287 questions. Written explanations have not all been independently
+checked for valid intermediate reasoning.
+</p>
+
+<p>
+Voting uses three temperature-0.9/top-p-0.9 responses, while greedy CoT uses
+one temperature-zero response. Thus this comparison changes both sampling
+and aggregation. It does not isolate voting's effect on identical candidates.
+We cannot attribute the voting deficit to a single cause from these totals.
+Candidate correctness, answer-string fragmentation, ties and truncation are
+useful next diagnostics; changing voting after seeing these answers would
+require a separately labeled experiment.
+</p>
 </div>
-<div id="outline-container-orgb33cf44" class="outline-3">
-<h3 id="orgb33cf44"><span class="section-number-3">10.1.</span> Numeric grading and unfinished reasoning</h3>
+<div id="outline-container-org1566902" class="outline-3">
+<h3 id="org1566902"><span class="section-number-3">10.1.</span> Reproduce the full-set analysis in MLPL</h3>
 <div class="outline-text-3" id="text-10-1">
+<p>
+The immutable <a href="results/book-full500-v1-final.json">final runner summary</a>,
+<a href="results/book-full500-v1-final-methods.jsonl">1500 method outcomes</a> and
+<a href="results/book-full500-v1-call-metrics.jsonl">2500 numeric call measurements</a> contain no questions or generated text.
+This offline block verifies counts and ordering, recomputes accuracy and
+paired gains/losses, and aggregates elapsed time and truncations.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-mlpl" id="orgb33cf44"><code>include "../lib/text/text.mlpl";
+summary = parse_json(read_text("docs/results/book-full500-v1-final.json")?)?
+methods = str_split(u:text_trim(read_text("docs/results/book-full500-v1-final-methods.jsonl")?), "\n")
+calls = str_split(u:text_trim(read_text("docs/results/book-full500-v1-call-metrics.jsonl")?), "\n")
+outcomes = []
+i = 0
+while lt(i, list_len(methods)) {
+  row = parse_json(list_get(methods, i)?)?;
+  if (1 - eq(row.index, floor(i / 3))) + (1 - eq(row.method, mod(i, 3))) + (1 - row.eligible) { err("invalid method ordering or eligibility")? };
+  outcomes = concat(outcomes, row.correct);
+  i = i + 1
+}
+if (list_len(methods) - 1500) + (list_len(calls) - 2500) { err("incomplete final records")? }
+method = 0
+while lt(method, 3) {
+  correct = 0; tokens = 0; capped = 0; wall = 0; count = 0;
+  i = 0;
+  while lt(i, 500) { correct = correct + at(outcomes, i * 3 + method); i = i + 1 };
+  i = 0;
+  while lt(i, list_len(calls)) {
+    row = parse_json(list_get(calls, i)?)?;
+    if (row.ordinal - i) + (1 - str_eq(row.kind, "success")) { err("invalid call ordering or status")? };
+    slot = mod(row.ordinal, 5);
+    group = if lt(slot, 2) { slot } else { 2 };
+    if eq(group, method) {
+      tokens = tokens + row.tokens; capped = capped + str_eq(row.stopped, "budget");
+      wall = wall + row.wall_ms; count = count + 1
+    };
+    i = i + 1
+  };
+  if correct - at(summary.correct, method) { err("summary accuracy mismatch")? };
+  print("method", method, "correct", correct, "percent", correct / 5, "calls", count, "tokens", tokens, "caps", capped);
+  print("call minutes", round(wall / 6000) / 10, "seconds per question", round(wall / 50000) / 10, "tokens/s", round(tokens * 100000 / wall) / 100);
+  method = method + 1
+}
+gains = 0; losses = 0; vote_gains = 0; vote_losses = 0; i = 0
+while lt(i, 500) {
+  direct = at(outcomes, i * 3); cot = at(outcomes, i * 3 + 1); vote = at(outcomes, i * 3 + 2);
+  gains = gains + cot * (1 - direct); losses = losses + direct * (1 - cot);
+  vote_gains = vote_gains + vote * (1 - cot); vote_losses = vote_losses + cot * (1 - vote);
+  i = i + 1
+}
+print("CoT gains/losses", gains, losses, "vote vs CoT gains/losses", vote_gains, vote_losses)
+if eq(gains, summary.paired.cot_vs_direct.gains) * eq(losses, summary.paired.cot_vs_direct.losses) * eq(vote_gains, summary.paired.vote_vs_cot.gains) * eq(vote_losses, summary.paired.vote_vs_cot.losses) {
+  ok("full500 method counts and paired results agree with the runner")
+} else { err("paired result mismatch") }
+</code></pre>
+</div>
+
+<pre class="example">
+method 0 correct 72 percent 14.4 calls 500 tokens 48047 caps 6
+call minutes 37.6 seconds per question 4.5 tokens/s 21.29
+method 1 correct 213 percent 42.6 calls 500 tokens 337983 caps 52
+call minutes 264.3 seconds per question 31.7 tokens/s 21.31
+method 2 correct 199 percent 39.8 calls 1500 tokens 845948 caps 69
+call minutes 829.9 seconds per question 99.6 tokens/s 16.99
+CoT gains/losses 158 17 vote vs CoT gains/losses 52 66
+Ok(full500 method counts and paired results agree with the runner)
+</pre>
+</div>
+</div>
+<div id="outline-container-orgd5c0387" class="outline-3">
+<h3 id="orgd5c0387"><span class="section-number-3">10.2.</span> Runtime, tokens and memory</h3>
+<div class="outline-text-3" id="text-10-2">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Method</th>
+<th scope="col" class="org-right">Calls</th>
+<th scope="col" class="org-right">Tokens</th>
+<th scope="col" class="org-right">Token caps</th>
+<th scope="col" class="org-right">Sum of call minutes</th>
+<th scope="col" class="org-right">Mean seconds per question</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Direct</td>
+<td class="org-right">500</td>
+<td class="org-right">48047</td>
+<td class="org-right">6</td>
+<td class="org-right">37.6</td>
+<td class="org-right">4.5</td>
+</tr>
+
+<tr>
+<td class="org-left">Greedy CoT</td>
+<td class="org-right">500</td>
+<td class="org-right">337983</td>
+<td class="org-right">52</td>
+<td class="org-right">264.3</td>
+<td class="org-right">31.7</td>
+</tr>
+
+<tr>
+<td class="org-left">Three-sample vote</td>
+<td class="org-right">1500</td>
+<td class="org-right">845948</td>
+<td class="org-right">69</td>
+<td class="org-right">829.9</td>
+<td class="org-right">99.6</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Generation produced <b>1231978 tokens</b>. The 127 capped calls are 5.08% of
+attempts; a capped response is still graded under the frozen extraction rule.
+Sum of call wall times is 67910.8 seconds (18.86 hours). Within those calls,
+decode steps including selection total 67533.2 seconds (99.44%), prefill
+326.0 seconds (0.48%), and the remainder is about 51.5 seconds. Sampling is
+included in native step times and is not separately measured. Aggregate call
+throughput is 18.14 tokens/s; direct, greedy CoT and sampled calls respectively
+achieve 21.29, 21.31 and 16.99 tokens/s on their different output workloads.
+</p>
+
+<p>
+The <a href="results/book-full500-v1-session-metrics.jsonl">76 session records</a> account for 20.33 hours, including model loading,
+grading and conservatively charged recovery downtime. Recorded loading totals
+477.3 seconds; loading time from a recovered session without a normal end is
+not separately recoverable. The difference between charged session time and
+call time must not be labeled GPU overhead. Calendar execution spans about
+30 hours 42 minutes, from October 1 03:09 UTC to October 2 09:51 UTC, including
+pauses. These three timing boundaries answer different questions.
+</p>
+
+<p>
+<a href="results/book-full500-v1-memory.json">Memory sampling</a> records a peak of 2431 MiB device-wide and 1904460 KiB
+host process high-water memory (about 1.82 GiB). GPU figures include desktop
+and other allocations; two-second sampling can miss brief peaks. Host wall
+spans include launch, transfer, synchronization and scheduling waits. They do
+not establish 99.44% GPU utilization. The existing <a href="cuda-performance.md">CUDA timing analysis</a>
+identifies launch/transfer costs; stable cache storage and model graph replay
+remain the next measured optimization, with numerical/token parity required.
+</p>
+</div>
+</div>
+<div id="outline-container-org91b8ed7" class="outline-3">
+<h3 id="org91b8ed7"><span class="section-number-3">10.3.</span> Comparison with the book</h3>
+<div class="outline-text-3" id="text-10-3">
+<p>
+The <a href="https://github.com/rasbt/reasoning-from-scratch/tree/1c0b9b17f80d335a9e7f73ca4738486bfa49fa9f/ch04/02_math500-inference-scaling-scripts">pinned author results</a> use Qwen3-0.6B-Base on all 500 questions with
+DGX Spark CUDA hardware. Our run uses an RTX 5060 Ti. The broad quality result
+is reproduced: chain-of-thought helps this small base model substantially.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">Method</th>
+<th scope="col" class="org-right">Book accuracy</th>
+<th scope="col" class="org-right">MLPL accuracy</th>
+<th scope="col" class="org-right">Book minutes</th>
+<th scope="col" class="org-right">MLPL call minutes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Direct</td>
+<td class="org-right">15.2%</td>
+<td class="org-right">14.4%</td>
+<td class="org-right">10.1</td>
+<td class="org-right">37.6</td>
+</tr>
+
+<tr>
+<td class="org-left">Greedy CoT</td>
+<td class="org-right">40.6%</td>
+<td class="org-right">42.6%</td>
+<td class="org-right">84.5</td>
+<td class="org-right">264.3</td>
+</tr>
+
+<tr>
+<td class="org-left">Three-sample CoT vote</td>
+<td class="org-right">42.2%</td>
+<td class="org-right">39.8%</td>
+<td class="org-right">211.6</td>
+<td class="org-right">829.9</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Our elapsed call totals are roughly 3.7×, 3.1× and 3.9× the published times.
+These are descriptive ratios across different systems and timing boundaries,
+not controlled Rust-versus-Python slowdowns. We have no evidence of a speedup.
+Python delegates tensor work to native CUDA libraries too. Output lengths,
+RNG streams, numerical execution and verifier coverage differ; the timing
+comparison lacks a matched same-hardware author run. Accuracy deltas are
+−0.8, +2.0 and −2.4 percentage points, not proof of model superiority.
+</p>
+
+<p>
+The voting gain in the book is not reproduced here. Future diagnostics should
+separate sampled-candidate quality, raw-string voting and grading coverage.
+The numerical grader supports a bounded subset of SymPy equivalence, so
+unsupported equivalent answers can contribute to measured failures. The
+<a href="results/book-full500-v1-grading-v2.sha256">grading revision</a> is explicit; the original <a href="results/book-full500-v1-execution.json">execution manifest</a> remains
+unchanged and retains its pre-execution status as historical provenance.
+</p>
+</div>
+</div>
+</div>
+<div id="outline-container-org67a8f30" class="outline-2">
+<h2 id="org67a8f30"><span class="section-number-2">11.</span> Execution and verification contracts</h2>
+<div class="outline-text-2" id="text-11">
+</div>
+<div id="outline-container-org6165353" class="outline-3">
+<h3 id="org6165353"><span class="section-number-3">11.1.</span> Numeric grading and unfinished reasoning</h3>
+<div class="outline-text-3" id="text-11-1">
 <p>
 The book's chapter 3 implementation uses SymPy integers and symbolic
 simplification. Our MLPL evaluator uses bounded exact rationals and finite
@@ -1355,26 +1669,22 @@ lists multiples until its cap instead. Neither continuation solves the task.
 </p>
 
 <p>
-At the 1087-call checkpoint, bounded grading scores 652 complete method groups.
-All 641 grades shared with the previous report agree. Correct counts are
-38/217 direct, 99/218 greedy CoT and 99/217 three-vote; these unequal, incomplete
-cohorts are provisional. Generation settings remain frozen; grading is recorded
-under an explicit versioned amendment. Repetition stopping and verified
-refinement are separate future comparisons, not changes to this experiment.
+All 500 cases are scored under the bounded grading revision. Repetition
+stopping and verified refinement remain separate future comparisons; the
+generation protocol and primary denominator remain fixed.
 </p>
 </div>
 </div>
-<div id="outline-container-org1566902" class="outline-3">
-<h3 id="org1566902"><span class="section-number-3">10.2.</span> Execution protocol</h3>
-<div class="outline-text-3" id="text-10-2">
+<div id="outline-container-org67f5a36" class="outline-3">
+<h3 id="org67f5a36"><span class="section-number-3">11.2.</span> Execution protocol</h3>
+<div class="outline-text-3" id="text-11-2">
 <p>
 The <a href="book-full500-runner.md">MLPL runner</a> prepares all 500 author-ordered cases: 500 direct answers,
 500 greedy chain-of-thought answers and 1500 sampled answers for three-vote
 selection. Its <a href="results/book-full500-v1-execution.json">execution manifest</a>, 1000 prompt hashes and 2500 request
 identities were committed before benchmark generation. Execution started at
-2026-10-01 03:09 UTC and is running in bounded sessions with unattended
-continuation. No full500 quality result is available yet. The measured ten-case
-results above remain the completed quality evidence.
+2026-10-01 03:09 UTC and finished on October 2 at approximately 09:52 UTC.
+The completed numerical outcomes and runtime analysis appear above.
 </p>
 
 <p>
@@ -1409,82 +1719,9 @@ seeded-token parity and repeated end-to-end measurements.
 </p>
 </div>
 </div>
-<div id="outline-container-orgd5c0387" class="outline-3">
-<h3 id="orgd5c0387"><span class="section-number-3">10.3.</span> First full500 execution snapshot</h3>
-<div class="outline-text-3" id="text-10-3">
-<p>
-The <a href="book-full500-progress.md">first bounded session</a> completes 38 of 2500 calls in 930.4 seconds,
-producing 16924 tokens with zero backend errors or interruptions. Three outputs
-reach the 2048-token cap. Continuation is running; the remaining calls are
-pending. The frozen MLPL runner publishes <a href="results/book-full500-v1-progress-01.json">numeric accounting</a> and
-<a href="results/book-full500-v1-progress-01-methods.jsonl">method records</a> without redistributing questions or generated text.
-</p>
-
-<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
-
-
-<colgroup>
-<col  class="org-left" />
-
-<col  class="org-right" />
-
-<col  class="org-right" />
-
-<col  class="org-right" />
-</colgroup>
-<thead>
-<tr>
-<th scope="col" class="org-left">Method</th>
-<th scope="col" class="org-right">Cases with all required responses</th>
-<th scope="col" class="org-right">Correct recorded</th>
-<th scope="col" class="org-right">Planned cases</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="org-left">Direct</td>
-<td class="org-right">7</td>
-<td class="org-right">2</td>
-<td class="org-right">500</td>
-</tr>
-
-<tr>
-<td class="org-left">Greedy chain of thought</td>
-<td class="org-right">8</td>
-<td class="org-right">3</td>
-<td class="org-right">500</td>
-</tr>
-
-<tr>
-<td class="org-left">Three-sample vote</td>
-<td class="org-right">7</td>
-<td class="org-right">5</td>
-<td class="org-right">500</td>
-</tr>
-</tbody>
-</table>
-
-<p>
-This is incomplete accounting, not full-set accuracy. Unfinished cases remain
-pending, and full-set paired comparisons are withheld. The small ordered prefix
-cannot establish the full-dataset benefit of reasoning.
-</p>
-
-<p>
-The session includes 6.3 seconds loading, 5.2 seconds in prefill steps and
-912.7 seconds in decode steps; both step times include native selection.
-Throughput including overhead is 18.2 tokens/second. Sampled peaks are
-2403 MiB of device memory and 1782728 KiB host memory. These host wall spans
-include CUDA launch/transfer waits; they are not kernel utilization. CPU
-fixture checks ran during part of this session. This is operational timing,
-not a controlled Python comparison. The full experiment retains its 48-hour
-budget and will report all denominators if it ends incomplete.
-</p>
-</div>
-</div>
-<div id="outline-container-org91b8ed7" class="outline-3">
-<h3 id="org91b8ed7"><span class="section-number-3">10.4.</span> Live execution supervision</h3>
-<div class="outline-text-3" id="text-10-4">
+<div id="outline-container-orgdfca9b1" class="outline-3">
+<h3 id="orgdfca9b1"><span class="section-number-3">11.3.</span> Live execution supervision</h3>
+<div class="outline-text-3" id="text-11-3">
 <p>
 An independent <a href="book-full500-watchdog.md">watchdog</a> checks the immutable journal every minute without
 taking the writer lock. MLPL validates checksums, request identities and state
@@ -1511,9 +1748,9 @@ publishes local progress; it does not schedule future chat notifications.
 </p>
 </div>
 </div>
-<div id="outline-container-orge0576d7" class="outline-3">
-<h3 id="orge0576d7"><span class="section-number-3">10.5.</span> Terminal progress and provisional reasoning benefit</h3>
-<div class="outline-text-3" id="text-10-5">
+<div id="outline-container-org3b83232" class="outline-3">
+<h3 id="org3b83232"><span class="section-number-3">11.4.</span> Terminal progress and provisional reasoning benefit</h3>
+<div class="outline-text-3" id="text-11-4">
 <p>
 Run <code>just book-full500-status</code> in another terminal for an immediate report and
 updates every ten minutes. Supply <code>60</code> for minute updates or <code>--once</code> for one
@@ -1543,9 +1780,9 @@ reasoning step, and do not trigger score-based early stopping.
 </div>
 </div>
 </div>
-<div id="outline-container-org67f5a36" class="outline-2">
-<h2 id="org67f5a36"><span class="section-number-2">11.</span> Current scope and next experiments</h2>
-<div class="outline-text-2" id="text-11">
+<div id="outline-container-orgdf31732" class="outline-2">
+<h2 id="orgdf31732"><span class="section-number-2">12.</span> Current scope and next experiments</h2>
+<div class="outline-text-2" id="text-12">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -1565,9 +1802,9 @@ reasoning step, and do not trigger score-based early stopping.
 </thead>
 <tbody>
 <tr>
-<td class="org-left">Ten-case inference comparison is measured</td>
-<td class="org-left">Full author-ordered 500-case direct/CoT/voting experiment</td>
-<td class="org-left">Frozen inputs and controls; resumable attempt accounting; all cases retained in the denominator</td>
+<td class="org-left">Full500 direct/CoT/voting experiment is complete</td>
+<td class="org-left">Diagnose voting deficit and evaluate matched performance</td>
+<td class="org-left">Candidate-level analysis; independent grading fixtures; fixed timing boundaries</td>
 </tr>
 
 <tr>
@@ -1597,21 +1834,28 @@ reasoning step, and do not trigger score-based early stopping.
 </table>
 
 <p>
-The path to stronger evidence is to scale the controlled experiment and
-measure each improvement. Answer correctness, completion rate, validity of
+The path to stronger evidence is to measure each proposed improvement
+against this completed baseline. Answer correctness, completion rate, validity of
 reviewed steps, tokens, latency and memory all matter. Zero backend errors
 establish execution reliability for this run; they do not mean zero
 mathematical errors.
 </p>
 </div>
 </div>
-<div id="outline-container-orgdf31732" class="outline-2">
-<h2 id="orgdf31732"><span class="section-number-2">12.</span> Reproduce and publish this document</h2>
-<div class="outline-text-2" id="text-12">
+<div id="outline-container-org7426fbe" class="outline-2">
+<h2 id="org7426fbe"><span class="section-number-2">13.</span> Reproduce and publish this document</h2>
+<div class="outline-text-2" id="text-13">
 </div>
-<div id="outline-container-orgdfca9b1" class="outline-3">
-<h3 id="orgdfca9b1"><span class="section-number-3">12.1.</span> Identify the experimental inputs</h3>
-<div class="outline-text-3" id="text-12-1">
+<div id="outline-container-org1f7e03e" class="outline-3">
+<h3 id="org1f7e03e"><span class="section-number-3">13.1.</span> Identify the experimental inputs</h3>
+<div class="outline-text-3" id="text-13-1">
+<p>
+Full500 uses provider v3 with SHA-256
+<code>539ea87f7367e2ecb9e847232310097202d1f4318ab992c3aaf8cd3dae4ff56a</code>.
+The frozen execution manifest identifies all controls and native artifacts.
+The table also preserves the earlier ten-case provider identity.
+</p>
+
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -1648,12 +1892,12 @@ mathematical errors.
 </tr>
 
 <tr>
-<td class="org-left">Native provider SHA-256</td>
+<td class="org-left">Ten-case native provider SHA-256</td>
 <td class="org-left"><code>da6811a7eef300843b0e29c14623d45c3047e946667721d43ccd99a334a708bd</code></td>
 </tr>
 
 <tr>
-<td class="org-left">Native implementation</td>
+<td class="org-left">Ten-case native implementation</td>
 <td class="org-left">Candle 0.11.0; cudarc 0.19.10; provider 0.2.0</td>
 </tr>
 
@@ -1686,9 +1930,9 @@ directories. Publishing the report does not redistribute them.
 </p>
 </div>
 </div>
-<div id="outline-container-org3b83232" class="outline-3">
-<h3 id="org3b83232"><span class="section-number-3">12.2.</span> Refresh the calculations and build HTML</h3>
-<div class="outline-text-3" id="text-12-2">
+<div id="outline-container-org22925db" class="outline-3">
+<h3 id="org22925db"><span class="section-number-3">13.2.</span> Refresh the calculations and build HTML</h3>
+<div class="outline-text-3" id="text-13-2">
 <div class="org-src-container">
 <pre class="src src-sh"><code>export MLPL=/disk1/tmp/reasoning-tools/build-49c15b3e/release/mlpl-repl
 export MLPL_ELISP=/disk1/tmp/reasoning-tools/sw-mlpl-49c15b3e/elisp
@@ -1699,7 +1943,7 @@ just check
 </div>
 
 <p>
-<code>research-refresh</code> executes the six named offline MLPL blocks, saves their
+<code>research-refresh</code> executes the seven named offline MLPL blocks, saves their
 results and exports HTML. <code>research-html</code> exports stored results without
 executing blocks. Neither command launches model inference or downloads.
 The completion gate checks recorded outputs and exact HTML export, along
@@ -1715,9 +1959,9 @@ also includes the Org source, MLPL libraries and committed numeric evidence.
 </p>
 </div>
 </div>
-<div id="outline-container-org67a8f30" class="outline-3">
-<h3 id="org67a8f30"><span class="section-number-3">12.3.</span> Run individual blocks in Emacs</h3>
-<div class="outline-text-3" id="text-12-3">
+<div id="outline-container-org8231f23" class="outline-3">
+<h3 id="org8231f23"><span class="section-number-3">13.3.</span> Run individual blocks in Emacs</h3>
+<div class="outline-text-3" id="text-13-3">
 <p>
 Set <code>MLPL</code> and <code>MLPL_ELISP</code> for your host, then evaluate this setup once.
 Each MLPL block runs in a fresh interpreter. Temporary sources live under

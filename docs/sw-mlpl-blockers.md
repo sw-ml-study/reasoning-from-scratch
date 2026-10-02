@@ -1,5 +1,15 @@
 # sw-MLPL capability ledger
 
+## Full500 inference acceptance (2026-10-02)
+
+**Supported:** the pinned MLPL/Rust/CUDA path completes 2500 calls and all
+500-case method groups with zero backend errors/interruption. CoT accuracy
+is 42.6%, versus 14.4% direct; voting is 39.8%. **Awkward:** measured call
+time is 18.86 hours, dominated by decode host spans, including launch/waits
+and sampling. A matched Python timing comparison is unavailable. These
+results do not identify an interpreter bottleneck or establish native
+training acceptance. See [final measurements](book-full500-results.md).
+
 ## Numeric grading range safety (2026-10-01)
 
 **Supported in MLPL:** finite checks, bounded GCD and logarithmic integer powers

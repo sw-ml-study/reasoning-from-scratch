@@ -47,22 +47,19 @@ Run `just book-full500-status` in another terminal for progress percentage,
 projected ETA and provisional reasoning results every ten minutes. Add `60`
 for minute updates or `--once` for one report. Ctrl-C stops only this viewer.
 
-[Live monitoring](docs/book-full500-watchdog.md) now checks the experiment every
-minute, refreshes a local dashboard, and stops verified workers on confirmed
-execution failures or conservative stall thresholds. It does not stop based
-on mathematical accuracy.
+[Full500 is complete](docs/book-full500-results.md): all 2500 calls succeeded
+on all 500 questions. Direct answers score **14.4%**, greedy chain-of-thought
+**42.6%**, and three-sample voting **39.8%**. CoT adds 28.2 percentage points;
+voting falls 2.8 points below greedy CoT. There are 127 token-capped calls,
+zero backend errors and zero interruptions. Generation call time totals
+18.86 hours; charged sessions total 20.33 hours. A same-hardware Python
+speed comparison remains unavailable.
 
-[Full500 is running](docs/book-full500-progress.md). The first session completes
-38/2500 calls and 16924 tokens in 15m30s, with zero backend errors and three
-token caps. Continuation is active; full-set accuracy remains pending.
-
-The [full500 runner](docs/book-full500-runner.md) is implemented and tested:
-500 cases, 1000 prompt hashes and 2500 request identities are prepared. Durable
-replay, interruption/error accounting and corruption rejection pass. A ten-call
-authored CUDA smoke completes in 30.9 seconds with no backend errors. Full500
-generation is now running against those frozen inputs, with bounded unattended
-continuation. Final accuracy is pending. The planning range is 15.3–24.6 hours,
-with a 48-hour cumulative execution budget. This is an estimate, not a measured ETA.
+The [literate Org/HTML report](docs/reasoning-results.html) publishes final
+paired outcomes, tokens, timing boundaries, memory and book comparisons.
+Seven offline MLPL blocks reproduce its calculations. The monitor reports
+completion; no worker restart is necessary. Native optimization and
+language-model training remain separate next steps.
 
 [CUDA tracing](docs/cuda-tracing.md) now separates kernel spans from driver
 launch and transfer delays: 48 decode windows average 57.21 ms, with 4.66 ms
@@ -107,7 +104,7 @@ Read the [publishable HTML report](docs/reasoning-results.html) or its
 [Org/ob-mlpl source](docs/reasoning-results.org) for methods, paired results,
 actual runtimes, analysis of generated reasoning, comparisons with the book
 and planned work. The article explains the working implementation without
-a development-history narrative. `just research-refresh` executes six
+a development-history narrative. `just research-refresh` executes seven
 offline MLPL blocks: sampling, extraction/voting/verification, measured-result
 analysis, paired performance, relative rewards and an analytic-checked gradient update.
 `just research-html` exports without inference.

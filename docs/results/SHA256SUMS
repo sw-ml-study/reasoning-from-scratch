@@ -83,3 +83,9 @@ f1fdfabe104c348b7e1a766dbc3fb3b11b8f312a1333e947501ffb9dd731c12a  docs/results/f
 5ef403f9a4b82ff26cefeeab0a8acf22f0bcd5873c4af43d3c3acdc82f875026  docs/results/full500-watch-shell-tests.txt
 9b5ba2a607392b784b0cea629a5cdfc67528daf1045c1f90e91a6d03e213719f  docs/results/full500-watch-first.json
 3799242b2b759dc8a34d1b5b680a603384a752a97cee5ee2f48dc77758961a0c  docs/results/book-full500-v1-grading-v2-prefix.json
+948750aa3d7762d2d16b2e7a6b7f3744813fe61a69ad999449f0bfc4b968c19f  docs/results/book-full500-v1-final.json
+36bf44b7f2ba8294776e14486bf00a9a8477f756429bf748e3e926a6b456b1e1  docs/results/book-full500-v1-final-methods.jsonl
+22e61433dcbfe1028e7a206c5b89a6701ab00238d039c14619e7df98e791f9c8  docs/results/book-full500-v1-call-metrics.jsonl
+ee7e53934c1f162c29ce83f57abb35ddc6f1d631ba8240fd388b3bb770bd03e3  docs/results/book-full500-v1-session-metrics.jsonl
+446576da3f4a71f1ba2b6b3fab7b64a6a2fb01b6dcd5f5d98e710b7105a0d7db  docs/results/book-full500-v1-memory.json
+d76c6bfb2e13ddd605c209ec89ec860828158e45e195fc43868b0fac0172f05d  docs/results/book-full500-v1-final-provenance.json

@@ -410,6 +410,7 @@ status = "accepted"
 
 [[component]]
 id = "CUDAACCOUNT"
+# Full 2500-call measurement acceptance: docs/book-full500-results.md.
 slug = "native-step-timing"
 chapter = 4
 source = "lib/cuda/accounted.mlpl"

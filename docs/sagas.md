@@ -1,5 +1,13 @@
 # Saga queue
 
+Step 023 `book-full500-results` publishes completed full500 evidence: 2500
+successful calls, 72/213/199 correct direct/CoT/vote answers out of 500,
+127 caps, zero backend errors/interruption and 18.86 hours of call time.
+Seven offline Org/MLPL blocks reproduce the publication, including the full
+numeric call/outcome analysis. See [final results](book-full500-results.md).
+Step 024 profiles resident inference copies; matched Python timing and native
+language-model training remain separate. No execution restart is needed.
+
 Step 022 `verifier-overflow-recovery` adds finite/range guards, bounded Euclid,
 logarithmic powers, adversarial native tests and an explicit grading-v2 source
 amendment. Read-only prefix replay preserves 641 prior eligible grades; all
