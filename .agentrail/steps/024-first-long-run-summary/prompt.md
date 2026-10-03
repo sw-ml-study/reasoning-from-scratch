@@ -1,0 +1,1 @@
+Document the user's results/status/parity/performance/next-steps summary in docs/first-long-run.md, using published full500 evidence. Keep caveats about fixed pretrained weights, bounded grading and unmatched Python hardware/timing. Link the summary for discovery; no inference or performance implementation. Run just check, commit main, complete metadata, push and stop.

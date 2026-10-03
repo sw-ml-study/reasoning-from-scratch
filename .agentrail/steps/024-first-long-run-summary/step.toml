@@ -1,0 +1,8 @@
+number = 24
+slug = "first-long-run-summary"
+status = "in-progress"
+description = "Document the user's results/status/parity/performance/next-steps summary in d..."
+role = "production"
+context_files = []
+created_at = "2026-10-02T19:50:46"
+commits = []

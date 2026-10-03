@@ -39,6 +39,9 @@ comparable. See [`docs/licensing.md`](docs/licensing.md) for the policy.
 
 ## Status
 
+Read [First long run: results, status and next steps](docs/first-long-run.md)
+for the concise summary of reasoning quality, book parity and performance.
+
 The numeric grader now rejects overflow/NaN safely and bounds integer-power
 work. Regrading the saved full500 prefix preserves all 641 previously reported
 eligible grades. [Diagnosis, book comparison and versioned recovery](docs/grading-overflow.md).

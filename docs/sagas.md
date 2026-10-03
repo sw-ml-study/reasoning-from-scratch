@@ -1,5 +1,10 @@
 # Saga queue
 
+Step 024 `first-long-run-summary` records the user's requested overview in
+[`first-long-run.md`](first-long-run.md): final accuracy, partial book parity,
+unmatched timing comparison and next steps. No inference or implementation
+changes. Resident inference copy profiling moves to step 025.
+
 Step 023 `book-full500-results` publishes completed full500 evidence: 2500
 successful calls, 72/213/199 correct direct/CoT/vote answers out of 500,
 127 caps, zero backend errors/interruption and 18.86 hours of call time.
