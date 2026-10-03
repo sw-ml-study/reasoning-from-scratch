@@ -1,8 +1,9 @@
 number = 24
 slug = "first-long-run-summary"
-status = "in-progress"
+status = "completed"
 description = "Document the user's results/status/parity/performance/next-steps summary in d..."
 role = "production"
 context_files = []
 created_at = "2026-10-02T19:50:46"
-commits = []
+completed_at = "2026-10-02T19:54:41"
+commits = ["b6a576dc4c2cad1e1022cf0ac2ca63354d3f9de4"]
